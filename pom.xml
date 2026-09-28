@@ -53,10 +53,27 @@
             <version>3.5.17</version>
         </dependency>
 
+        <!-- MyBatis-Plus 插件模块：3.5.9 起插件改为可选依赖，PaginationInnerInterceptor 在此模块中 -->
+        <dependency>
+            <groupId>com.baomidou</groupId>
+            <artifactId>mybatis-plus-jsqlparser</artifactId>
+            <version>3.5.17</version>
+        </dependency>
+
         <!-- Redis -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
+        <!--
+            Lettuce 连接池依赖：spring.data.redis.lettuce.pool.* 的配置只有在 classpath 上存在
+            commons-pool2 时才会生效，缺了它连接池参数会被静默忽略（不会报错，但也不生效）。
+            版本由 spring-boot-dependencies 统一管理，无需手写。
+        -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-pool2</artifactId>
         </dependency>
 
         <!-- Validation 参数校验 -->
@@ -69,6 +86,32 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <!-- Knife4j Next（社区维护 fork，唯一支持 Spring Boot 4 的版本线） -->
+        <dependency>
+            <groupId>com.baizhukui</groupId>
+            <artifactId>knife4j-openapi3-boot4-spring-boot-starter</artifactId>
+            <version>5.7.5</version>
+        </dependency>
+
+        <!--
+            Hutool 加密模块：BCrypt（sys_user.user_password 的加密方案）、MD5/SHA、AES、
+            SM2/SM3/SM4 等都在这里。
+
+            为什么引 hutool-crypto 而不是全量 hutool-all：
+            - hutool-crypto 会自动带上 hutool-core，加密场景够用，不会把 Excel / PDF / HTTP
+              等用不到的模块一起打进包（体积与依赖冲突面都更小）；
+            - 二者不要同时引入，会造成重复类与版本冲突。若后续图省事要换全量，
+              只把 artifactId 改成 hutool-all 即可，坐标与版本号完全一致。
+
+            版本必须手写：Hutool 不在 spring-boot-dependencies 的版本管理范围内，
+            不写版本号会直接报 'dependencies.dependency.version' is missing。
+        -->
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-crypto</artifactId>
+            <version>5.8.47</version>
         </dependency>
 
         <dependency>

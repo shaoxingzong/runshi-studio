@@ -1,4 +1,16 @@
 spring:
   application:
+    # 应用名：日志、链路追踪、注册中心都会用它标识服务
     name: runshi-studio-web
+  profiles:
+    # 激活的环境：决定加载 application-dev.yml / application-prod.yml。
+    # 部署时可用 --spring.profiles.active=prod 覆盖，不要改这里的值
+    active: dev
 
+server:
+  # 服务端口
+  port: 8080
+  servlet:
+    # 统一前缀，所有接口都挂在 /api 下（如 http://localhost:8080/api/user/login），
+    # 便于 Nginx 按前缀转发、与前端静态资源区分
+    context-path: /api

@@ -5,7 +5,7 @@ USE `studio_db`;
 -- 1. 系统用户表
 DROP TABLE IF EXISTS `sys_user`;
 CREATE TABLE `sys_user` (
-                            `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键 ID',
+                            `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
                             `user_account` varchar(64) NOT NULL COMMENT '登录账号',
                             `user_password` varchar(128) NOT NULL COMMENT '密码（BCrypt/Argon2 哈希串，留足余量）',
                             `user_name` varchar(64) NOT NULL COMMENT '真实姓名/昵称',
@@ -29,7 +29,7 @@ CREATE TABLE `sys_user` (
 -- 2. 工作室成员档案表
 DROP TABLE IF EXISTS `studio_member`;
 CREATE TABLE `studio_member` (
-                                 `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键 ID',
+                                 `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
                                  `user_id` bigint DEFAULT NULL COMMENT '绑定的系统用户 ID（关联 sys_user.id）',
                                  `name` varchar(64) NOT NULL COMMENT '成员姓名',
                                  `avatar` varchar(512) DEFAULT NULL COMMENT '成员照片 URL',
@@ -55,7 +55,7 @@ CREATE TABLE `studio_member` (
 -- 3. 荣誉证书主表
 DROP TABLE IF EXISTS `studio_certificate`;
 CREATE TABLE `studio_certificate` (
-                                      `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键 ID',
+                                      `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
                                       `title` varchar(128) NOT NULL COMMENT '证书/获奖名称',
                                       `award_level` varchar(32) NOT NULL COMMENT '级别维度：national-国家级, provincial-省级, municipal-市级/校级',
                                       `award_type` varchar(32) NOT NULL COMMENT '类型维度：competition-学科竞赛, soft_copyright-软著, patent-专利, paper-论文',
@@ -75,7 +75,7 @@ CREATE TABLE `studio_certificate` (
 -- 4. 成员-证书关联表（物理删除）
 DROP TABLE IF EXISTS `studio_member_certificate`;
 CREATE TABLE `studio_member_certificate` (
-                                             `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键 ID',
+                                             `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
                                              `member_id` bigint NOT NULL COMMENT '成员 ID（关联 studio_member.id）',
                                              `certificate_id` bigint NOT NULL COMMENT '证书 ID（关联 studio_certificate.id）',
                                              `created_at` datetime NOT NULL COMMENT '创建时间',
@@ -87,7 +87,7 @@ CREATE TABLE `studio_member_certificate` (
 -- 5. 项目案例主表
 DROP TABLE IF EXISTS `studio_project`;
 CREATE TABLE `studio_project` (
-                                  `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键 ID',
+                                  `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
                                   `title` varchar(128) NOT NULL COMMENT '项目名称',
                                   `cover_image` varchar(512) DEFAULT NULL COMMENT '项目封面 URL',
                                   `description` varchar(512) NOT NULL COMMENT '项目摘要',
@@ -111,7 +111,7 @@ CREATE TABLE `studio_project` (
 -- 6. 成员-项目关联表（物理删除）
 DROP TABLE IF EXISTS `studio_member_project`;
 CREATE TABLE `studio_member_project` (
-                                         `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键 ID',
+                                         `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
                                          `member_id` bigint NOT NULL COMMENT '成员 ID（关联 studio_member.id）',
                                          `project_id` bigint NOT NULL COMMENT '项目 ID（关联 studio_project.id）',
                                          `created_at` datetime NOT NULL COMMENT '创建时间',
