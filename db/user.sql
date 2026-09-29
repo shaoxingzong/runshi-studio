@@ -10,7 +10,7 @@ CREATE TABLE `sys_user` (
                             `user_password` varchar(128) NOT NULL COMMENT '密码（BCrypt/Argon2 哈希串，留足余量）',
                             `user_name` varchar(64) NOT NULL COMMENT '真实姓名/昵称',
                             `user_avatar` varchar(512) DEFAULT NULL COMMENT '头像 URL',
-                            `user_role` varchar(32) NOT NULL DEFAULT 'visitor' COMMENT '权限角色：visitor-参观人员, member-工作室成员, admin-管理员',
+                            `user_role` varchar(32) NOT NULL DEFAULT 'user' COMMENT '权限角色：user-普通注册用户, member-工作室成员, admin-管理员（取值须与 StpInterfaceImpl 及 @SaCheckRole 入参三处一致）',
                             `user_status` tinyint NOT NULL DEFAULT '0' COMMENT '账号状态：0-正常, 1-封禁',
                             `phone` varchar(20) DEFAULT NULL COMMENT '手机号（未填写时必须存 NULL，禁止存空字符串）',
                             `email` varchar(128) DEFAULT NULL COMMENT '邮箱（未填写时必须存 NULL，禁止存空字符串）',

@@ -114,6 +114,46 @@
             <version>5.8.47</version>
         </dependency>
 
+        <!--
+            Sa-Token 认证框架：Spring Boot 4 专用 starter（1.45.0 起正式支持 Boot 4）。
+
+            为什么不引 sa-token-spring-boot-starter（那个是 Boot 2/3 用的）：
+            Boot 4 内置 Jackson 3，序列化包名从 com.fasterxml.jackson 变成 tools.jackson。
+            本 starter 内部依赖的是 sa-token-spring-boot-webmvc-v3v4-common + sa-token-jackson3，
+            即已经适配 Jackson 3；引旧 starter 会在运行期抛 NoClassDefFoundError。
+
+            版本号必须手写：Sa-Token 不在 spring-boot-dependencies 的版本管理范围内。
+        -->
+        <dependency>
+            <groupId>cn.dev33</groupId>
+            <artifactId>sa-token-spring-boot4-starter</artifactId>
+            <version>1.46.0</version>
+        </dependency>
+
+        <!--
+            Sa-Token 会话持久化到 Redis：登录态、权限、Session 等数据从内存搬到 Redis，
+            服务重启/多实例部署时登录状态不丢失，也不再依赖单机内存。
+
+            为什么是 sa-token-redis-template，而不是 sa-token-redis-jackson：
+            sa-token-spring-boot4-starter 已经带了 sa-token-jackson3（Jackson 3 版序列化）。
+            若再引 sa-token-redis-jackson，会额外引入它的 Jackson 2 版模块 sa-token-jackson，
+            导致「同功能的两个序列化模块并存」，可能让 Sa-Token 的 JSON 模板装配产生歧义。
+            （补充事实：本项目 classpath 上本来就有 Jackson 2 —— 由 knife4j 的 swagger-core-jakarta
+             传递引入 jackson-databind 2.21.5，所以问题不是"有没有 Jackson 2"，而是"不要重复引入同功能模块"。）
+
+            sa-token-redis-template 只依赖 sa-token-core + spring-boot-starter-data-redis（本项目已有），
+            内部注册 SaTokenDaoForRedisTemplate，用 StringRedisTemplate 以 JSON 字符串存储会话数据，
+            序列化交给 starter 自带的 sa-token-jackson3（Jackson 3），因此与 Boot 4 完全兼容。
+
+            注意：它会自动从容器中的 RedisConnectionFactory 取连接，
+            连的是 application-dev.yml 里 spring.data.redis 配置的那个实例，不需要额外配置。
+        -->
+        <dependency>
+            <groupId>cn.dev33</groupId>
+            <artifactId>sa-token-redis-template</artifactId>
+            <version>1.46.0</version>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>

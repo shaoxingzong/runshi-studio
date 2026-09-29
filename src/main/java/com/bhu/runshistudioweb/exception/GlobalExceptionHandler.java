@@ -1,9 +1,18 @@
 package com.bhu.runshistudioweb.exception;
 
+import cn.dev33.satoken.exception.DisableServiceException;
+import cn.dev33.satoken.exception.NotLoginException;
+import cn.dev33.satoken.exception.NotPermissionException;
+import cn.dev33.satoken.exception.NotRoleException;
 import com.bhu.runshistudioweb.common.BaseResponse;
 import com.bhu.runshistudioweb.common.ResultUtils;
 import io.swagger.v3.oas.annotations.Hidden;
+import jakarta.validation.ConstraintViolation;
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.validation.FieldError;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -24,11 +33,23 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
  *     这样前端一个拦截器就能处理所有情况（见 {@link ErrorCode} 的号段约定）。</li>
  * </ol>
  *
- * <p>匹配顺序提示：Spring 会优先选择「最具体」的处理器，所以 {@link BusinessException}
- * 一定会被下面的业务异常方法接住，不会落到兜底的 RuntimeException 方法里，两个方法的顺序不影响结果。
+ * <p>匹配顺序提示：Spring 会优先选择「最具体」的处理器，所以 {@link BusinessException}、
+ * 下面几个 Sa-Token 异常都会精确命中各自的处理方法，不会落到兜底的 RuntimeException 方法里。
  *
- * <p><b>待补充</b>：参数校验异常（MethodArgumentNotValidException、ConstraintViolationException）
- * 目前会被兜底的 RuntimeException 接成 50000，需要补专门的处理器返回 40000。
+ * <p><b>为什么必须单独处理 Sa-Token 异常</b>：它们都继承自 RuntimeException，
+ * 不单独接住就会被兜底方法统一吞成 50000「系统错误」，前端将无法区分
+ * 「该跳登录页」「该提示无权限」和「服务器真的挂了」。
+ *
+ * <p><b>为什么还要单独处理参数校验异常</b>：{@code @Valid} 校验失败抛出的
+ * MethodArgumentNotValidException 也继承自 RuntimeException，不接住就会返回 50000「系统错误」，
+ * 前端会把「账号格式不对」显示成「服务器故障」，排查方向完全被带偏。
+ *
+ * <p>覆盖范围小结：业务异常、Sa-Token 四类鉴权异常、DTO 字段校验失败、方法级校验失败、
+ * 请求体解析失败，都已映射到明确的业务错误码，前端可据此直接给出提示。
+ * 其余异常（路径参数类型不匹配 MethodArgumentTypeMismatchException、
+ * 缺少必填参数 MissingServletRequestParameterException、
+ * 请求方法不支持 HttpRequestMethodNotSupportedException 等）会落到兜底方法返回 50000，
+ * 需要时按同样思路补一个处理器即可。
  */
 @Hidden               // 不在接口文档中暴露异常处理器本身
 @RestControllerAdvice // 全局异常处理，作用于所有 @RestController
@@ -47,6 +68,125 @@ public class GlobalExceptionHandler {
         // log.error 的第二个参数是异常对象，日志框架会自动打印堆栈
         log.error("BusinessException", e);
         return ResultUtils.error(e.getCode(), e.getMessage());
+    }
+
+    /**
+     * 未登录：未携带 token、token 无效/已过期、被顶下线或被踢下线等
+     * 由 Sa-Token 在鉴权时抛出（{@code @SaCheckLogin}、{@code StpUtil.checkLogin()} 等）
+     *
+     * <p>刻意使用 warn 且不打堆栈：未登录属于「预期内」的正常流程，
+     * 若按 error + 堆栈记录，正常的过期登录会把日志淹掉，反而查不到真问题。
+     *
+     * @param e Sa-Token 未登录异常
+     * @return code 固定 40100；message 用 Sa-Token 自带的提示（如「token已过期」），
+     *         文案面向用户、不含内部细节，前端据此提示并跳转登录页
+     */
+    @ExceptionHandler(NotLoginException.class)
+    public BaseResponse<?> notLoginExceptionHandler(NotLoginException e) {
+        log.warn("NotLoginException | type={} | loginType={} | {}", e.getType(), e.getLoginType(), e.getMessage());
+        return ResultUtils.error(ErrorCode.NOT_LOGIN_ERROR, e.getMessage());
+    }
+
+    /**
+     * 角色不足：{@code @SaCheckRole} 校验未通过（角色数据源见
+     * {@link com.bhu.runshistudioweb.service.impl.StpInterfaceImpl}）
+     *
+     * <p>注意：响应里只给固定的「无权限」，**不告诉调用方需要什么角色**——
+     * 角色名属于权限设计信息，只写日志即可，避免为探测提供线索。
+     *
+     * @param e Sa-Token 角色校验异常
+     * @return code 固定 40101
+     */
+    @ExceptionHandler(NotRoleException.class)
+    public BaseResponse<?> notRoleExceptionHandler(NotRoleException e) {
+        log.warn("NotRoleException | role={} | loginType={}", e.getRole(), e.getLoginType());
+        return ResultUtils.error(ErrorCode.NO_AUTH_ERROR);
+    }
+
+    /**
+     * 权限点不足：{@code @SaCheckPermission} 校验未通过（当前项目未使用权限点，预留）
+     *
+     * @param e Sa-Token 权限校验异常
+     * @return code 固定 40101
+     */
+    @ExceptionHandler(NotPermissionException.class)
+    public BaseResponse<?> notPermissionExceptionHandler(NotPermissionException e) {
+        log.warn("NotPermissionException | permission={} | loginType={}", e.getPermission(), e.getLoginType());
+        return ResultUtils.error(ErrorCode.NO_AUTH_ERROR);
+    }
+
+    /**
+     * 账号被封禁：命中 Sa-Token 的账号封禁策略（{@code StpUtil.disable(...)} 等服务维度封禁）
+     *
+     * <p>与「无权限」区分开：无权限是角色不够（40101），封禁是账号本身被限制（40300），
+     * 前端对后者的处理是「提示联系管理员」而不是「跳登录页」。
+     *
+     * @param e Sa-Token 封禁异常
+     * @return code 固定 40300
+     */
+    @ExceptionHandler(DisableServiceException.class)
+    public BaseResponse<?> disableServiceExceptionHandler(DisableServiceException e) {
+        log.warn("DisableServiceException | loginId={} | service={} | level={} | disableTime={}",
+                e.getLoginId(), e.getService(), e.getLevel(), e.getDisableTime());
+        return ResultUtils.error(ErrorCode.FORBIDDEN_ERROR, "账号已被封禁，请联系管理员");
+    }
+
+    /**
+     * 参数校验失败：{@code @RequestBody @Valid} 触发的字段级校验（DTO 上的 @NotBlank / @Size / @Pattern）
+     *
+     * <p>只取**第一条**字段错误返回：前端一次提示一个明确原因就够了，
+     * 全部返回反而让用户不知道先改哪个；完整信息在日志里。
+     *
+     * @param e 参数校验异常（携带 BindingResult）
+     * @return code 固定 40000，message 为字段上声明的提示文案
+     */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public BaseResponse<?> methodArgumentNotValidExceptionHandler(MethodArgumentNotValidException e) {
+        // getDefaultMessage() 取的是注解里 message 的值，例如「账号长度需在 4 ~ 16 位之间」
+        String message = e.getBindingResult().getFieldErrors().stream()
+                .findFirst()
+                .map(FieldError::getDefaultMessage)
+                .orElse(ErrorCode.PARAMS_ERROR.getMessage());
+        log.warn("MethodArgumentNotValidException | {}", message);
+        return ResultUtils.error(ErrorCode.PARAMS_ERROR, message);
+    }
+
+    /**
+     * 参数校验失败：方法级校验（{@code @Validated} + {@code @RequestParam} 上的约束）
+     *
+     * <p>与上一个处理器的区别：{@code @RequestBody} 的校验失败走 MethodArgumentNotValidException，
+     * 而请求参数、路径变量的校验失败走这个异常，两者都要接，否则总有一类会变成 50000。
+     *
+     * @param e 约束违反异常
+     * @return code 固定 40000，message 为第一条违反约束的提示
+     */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public BaseResponse<?> constraintViolationExceptionHandler(ConstraintViolationException e) {
+        String message = e.getConstraintViolations().stream()
+                .findFirst()
+                .map(ConstraintViolation::getMessage)
+                .orElse(ErrorCode.PARAMS_ERROR.getMessage());
+        log.warn("ConstraintViolationException | {}", message);
+        return ResultUtils.error(ErrorCode.PARAMS_ERROR, message);
+    }
+
+    /**
+     * 请求体不可读：请求体不是合法 JSON、字段类型不匹配、缺少请求体等
+     *
+     * <p>典型触发场景：前端漏传 Content-Type、JSON 里把数字写成裸字符串、
+     * 请求体被截断。若不接住，会落到兜底的 RuntimeException 变成 50000「系统错误」，
+     * 前端会把「参数格式不对」显示成「服务器故障」，排查方向被完全带偏。
+     *
+     * <p>注意：响应里**不回显 Jackson 的原始解析信息**（它可能带上类的全限定名与字段路径），
+     * 只给一句无害提示；详细原因记在 warn 日志里。
+     *
+     * @param e 请求体解析失败异常
+     * @return code 固定 40000
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public BaseResponse<?> httpMessageNotReadableExceptionHandler(HttpMessageNotReadableException e) {
+        log.warn("HttpMessageNotReadableException | {}", e.getMessage());
+        return ResultUtils.error(ErrorCode.PARAMS_ERROR, "请求体格式错误，请检查 JSON 是否合法");
     }
 
     /**

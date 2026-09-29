@@ -14,3 +14,16 @@ server:
     # 统一前缀，所有接口都挂在 /api 下（如 http://localhost:8080/api/user/login），
     # 便于 Nginx 按前缀转发、与前端静态资源区分
     context-path: /api
+
+# ===== Actuator 端点暴露范围（这是「安全边界」，不是调试开关）=====
+# 框架默认值恰好只有 health，但这里显式写出来，避免"依赖默认值"的侥幸：
+#   - 一旦有人为了排查方便改成 "*"，/actuator/env（配置项）、/actuator/heapdump（堆转储，
+#     可能含密码与 token）、/actuator/mappings（全部内部接口）会**零鉴权对外开放**；
+#   - 已实测：actuator 端点由独立的 WebMvcEndpointHandlerMapping 处理，
+#     Sa-Token 注册的 MVC 拦截器对它**完全无效**，所以不能指望鉴权框架兜住它。
+#   需要更多端点时，请用 management.server.port 挪到独立端口并限制内网访问，而不是放宽这里。
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

@@ -42,22 +42,30 @@ public class PasswordUtils {
     /**
      * 加密明文密码（注册、重置密码、修改密码时调用）
      *
+     * <p><b>职责边界</b>：本方法只负责「怎么加密」，不做密码强度校验。
+     * 长度、大小写、特殊字符等规则属于业务策略，与具体接口绑定、变化频繁，
+     * 应放在接口层由 DTO 上的 {@code @NotBlank / @Size} 完成；
+     * 写在工具类里会导致「改一次规则就要动公共代码」，也容易出现同一规则散落多处。
+     *
+     * <p>这里保留的唯一校验是「空值兜底」：BCrypt 对 null 会直接抛异常（变成 500 系统错误），
+     * 而空密码一旦入库，等于该账号对外不设防。
+     *
      * @param rawPassword 明文密码
      * @return 60 位 BCrypt 哈希串，可直接写入 sys_user.user_password
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 明文为空时抛出（40000），
-     *         防止把空密码写进库——一旦写入，空密码即可登录
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 明文为 null / 空串 / 纯空格时抛出（40000）
      */
     public static String encrypt(String rawPassword) {
         ThrowUtils.throwIf(StrUtil.isBlank(rawPassword), ErrorCode.PARAMS_ERROR, "密码不能为空");
         // 不显式传盐：hashpw 内部会用 SecureRandom 生成随机盐并拼进结果
+        // 注意：BCrypt 只取明文前 72 个字节，更长的部分会被静默忽略，
+        // 所以上层若放开密码长度上限，需要一并卡在 72 字节以内
         return BCrypt.hashpw(rawPassword);
     }
-
     /**
      * 校验明文密码与库中哈希串是否匹配（登录时调用）
      *
      * <p>已实测：正确的密码返回 true，错误的密码返回 false；
-     * 传入非法哈希串（例如历史遗留的 MD5 值）或空密码时也只会返回 false，不会抛异常，
+     * 传入非法哈希串或空密码时也只会返回 false，不会抛异常，
      * 因此调用方不需要包 try-catch，登录接口不会因此返回 500。
      *
      * @param rawPassword       用户输入的明文密码

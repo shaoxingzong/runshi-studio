@@ -72,6 +72,4 @@ public class BaseResponse<T> implements Serializable {
         this(errorCode.getCode(), null, errorCode.getMessage());
     }
 
-    // getter / setter 由 Lombok 的 @Data 在编译期生成（IDE 里如提示找不到方法，
-    // 需要确认已开启注解处理器，或装了 Lombok 插件）
 }
