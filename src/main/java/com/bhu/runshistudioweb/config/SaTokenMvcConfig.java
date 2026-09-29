@@ -55,6 +55,13 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
             // 注意这是「读」的路径；「写」的路径 /file/upload 不在这里，仍然要求登录
             "/uploads/**",
 
+            // ===== C 端公开接口（匿名可访问）=====
+            // 工作室成员列表：官网「团队成员」页
+            "/member/list",
+            // 荣誉证书列表：官网「荣誉墙」页（接口实现见 CertificateController）
+            "/certificate/list",
+
+
             // ===== 接口文档（Knife4j / OpenAPI）=====
             // 注意：生产环境更稳妥的做法是直接关闭文档（knife4j.enable=false），
             // 而不是长期把这些路径挂在白名单上

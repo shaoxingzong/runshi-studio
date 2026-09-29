@@ -172,6 +172,24 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
+            <!--
+                测试期把上传根目录指向 target 下，而不是真实上传目录（D:/runshi-studio-upload）。
+
+                为什么用系统属性而不是在每个测试类上写 @SpringBootTest(properties = "...")：
+                写法上的差别会带来**多个 Spring 容器**——每个不同的 properties 都会新建并缓存一个上下文，
+                而 Sa-Token 的 SaManager 是静态持有者，跨容器时它会指向另一个上下文里的 Redis 连接工厂，
+                表现为「LettuceConnectionFactory has been STOPPED」这类与代码无关的随机失败。
+                统一用一个上下文后，测试更快也更稳定。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <FILE_ROOT_DIR>${project.build.directory}/test-uploads</FILE_ROOT_DIR>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>

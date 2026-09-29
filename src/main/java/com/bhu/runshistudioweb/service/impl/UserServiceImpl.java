@@ -86,6 +86,7 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
                 ErrorCode.PARAMS_ERROR,
                 "用户密码长度必须在 " + MIN_PASSWORD_LENGTH + " 到 " + MAX_PASSWORD_LENGTH + " 个字符之间");
 
+
         assertAccountNotExists(userAccount);
 
         // 必须存哈希串：明文入库一旦泄露就等于全网账号沦陷；
