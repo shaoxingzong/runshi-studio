@@ -47,6 +47,13 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
             // ===== C 端公开接口（匿名可访问，产品要求游客也能用）=====
             "/user/register",   // 注册：还没有账号的人必须能访问
             "/user/login",      // 登录：未登录的人必须能访问
+            // 官网成员列表：游客浏览官网时就要看到成员页，不能要求先登录。
+            // 只放行这一个「读」路径且只返回脱敏 VO（见 MemberFrontVO）；
+            // 同前缀的管理端接口（/member/add、/member/list/page 等）都不在此列，不会被误放行
+            "/member/list",
+            // 上传后的图片访问路径：官网展示成员头像/证书图片时游客必须能看到。
+            // 注意这是「读」的路径；「写」的路径 /file/upload 不在这里，仍然要求登录
+            "/uploads/**",
 
             // ===== 接口文档（Knife4j / OpenAPI）=====
             // 注意：生产环境更稳妥的做法是直接关闭文档（knife4j.enable=false），

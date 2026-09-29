@@ -68,7 +68,9 @@ public class SysUser implements Serializable {
     private String userAvatar;
 
     /**
-     * 权限角色：visitor-参观人员, member-工作室成员, admin-管理员
+     * 权限角色：user-普通注册用户, member-工作室成员, admin-管理员
+     * 取值定义见 {@link com.bhu.runshistudioweb.model.enums.UserRoleEnum}，
+     * 必须与 DDL 注释、{@code @SaCheckRole} 入参保持一致（三处任一不一致都会静默判定为无权限）
      * 用 varchar 而非 tinyint，是为了排障时一眼读懂、且新增角色不必改表（DESIGN.md 4.2）
      */
     private String userRole;

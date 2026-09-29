@@ -10,11 +10,13 @@ import io.swagger.v3.oas.annotations.Hidden;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.validation.FieldError;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 /**
  * 全局异常处理器：把异常统一转换成标准错误响应 JSON
@@ -55,6 +57,13 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice // 全局异常处理，作用于所有 @RestController
 @Slf4j                // 生成 log 对象，异常必须留痕，否则线上无从排查
 public class GlobalExceptionHandler {
+
+    /**
+     * 上传大小上限，直接从 multipart 配置读取，避免在提示文案里写死数字
+     * （改了 spring.servlet.multipart.max-file-size 而忘记改文案，会让用户看到错误的限制值）
+     */
+    @Value("${spring.servlet.multipart.max-file-size:未知}")
+    private String maxFileSize;
 
     /**
      * 业务异常：code 与 message 原样透传给前端
@@ -187,6 +196,25 @@ public class GlobalExceptionHandler {
     public BaseResponse<?> httpMessageNotReadableExceptionHandler(HttpMessageNotReadableException e) {
         log.warn("HttpMessageNotReadableException | {}", e.getMessage());
         return ResultUtils.error(ErrorCode.PARAMS_ERROR, "请求体格式错误，请检查 JSON 是否合法");
+    }
+
+    /**
+     * 上传文件超过大小限制：由 Spring 在**解析请求体时**抛出，此时请求还没进入 Controller
+     *
+     * <p>为什么必须单独处理：否则会落到兜底的 RuntimeException 变成 50000「系统错误」——
+     * 用户传了一张过大的照片，看到"系统错误"会以为是服务器故障（去重试、去反馈），
+     * 而真实原因只是"文件太大"，换张小图即可。**一次用户自己能解决的输入错误，
+     * 被伪装成服务端故障**；对监控也是污染：告警会把"用户传大文件"统计成服务端异常。
+     *
+     * <p>提示文案里的限制值从 multipart 配置读取，不写死数字。
+     *
+     * @param e 上传超限异常
+     * @return code 固定 40000，提示带上当前配置的大小上限
+     */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public BaseResponse<?> maxUploadSizeExceededExceptionHandler(MaxUploadSizeExceededException e) {
+        log.warn("MaxUploadSizeExceededException | limit={} | {}", maxFileSize, e.getMessage());
+        return ResultUtils.error(ErrorCode.PARAMS_ERROR, "上传文件过大，单个文件不能超过 " + maxFileSize);
     }
 
     /**

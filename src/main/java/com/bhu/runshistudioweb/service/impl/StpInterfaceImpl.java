@@ -62,7 +62,8 @@ public class StpInterfaceImpl implements StpInterface {
      *
      * <p>注意：Sa-Token 对角色名是**大小写敏感的精确字符串比较**，
      * 所以 {@code @SaCheckRole("admin")} 必须与库里存的值完全一致
-     * （本项目的取值为 admin / member / visitor）。
+     * （本项目的取值为 user / member / admin，定义见
+     * {@link com.bhu.runshistudioweb.model.enums.UserRoleEnum}）。
      *
      * @param loginId   登录账号 id
      * @param loginType 账号体系标识，固定为 "login"

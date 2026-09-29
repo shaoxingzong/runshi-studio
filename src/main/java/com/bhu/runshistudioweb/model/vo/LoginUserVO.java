@@ -59,8 +59,10 @@ public class LoginUserVO implements Serializable {
     private String userAvatar;
 
     /**
-     * 用户角色（admin / user）
-     * <p>与 {@code @SaCheckRole} 的比较值完全一致，改角色取值要同步改注解与 StpInterfaceImpl
+     * 用户角色（user / member / admin）
+     * <p>与 {@code @SaCheckRole} 的比较值完全一致，取值定义见
+     * {@link com.bhu.runshistudioweb.model.enums.UserRoleEnum}；
+     * 前端按角色渲染菜单时，请用这里的原始值判断，不要自己写死「admin」之类的中文或大小写变体
      */
     private String userRole;
 
