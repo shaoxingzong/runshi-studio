@@ -18,11 +18,13 @@ import com.bhu.runshistudioweb.model.enums.MemberStatusEnum;
 import com.bhu.runshistudioweb.model.enums.TeamPositionEnum;
 import com.bhu.runshistudioweb.model.vo.MemberFrontVO;
 import com.bhu.runshistudioweb.model.vo.MemberVO;
+import com.bhu.runshistudioweb.service.MemberCertificateService;
 import com.bhu.runshistudioweb.service.StudioMemberService;
 import jakarta.annotation.Resource;
 import org.springframework.beans.BeanUtils;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
@@ -51,9 +53,11 @@ import java.util.List;
  *     并追加 id 倒序作为最终排序键，保证 sort_order 相同的行在分页时次序稳定。</li>
  * </ul>
  *
- * <p>事务说明：当前单条 insert / update 都是一次写，数据库自身的原子性已足够，
- * 因此不加 {@code @Transactional}；等/19 引入成员-证书、成员-项目关联表后，
- * 「主表逻辑删除 + 关联表清理」这类多写操作必须补上事务（DESIGN.md 2.2）。
+ * <p>事务说明：单条 insert / update 是一次写，数据库自身的原子性已足够，因此不加事务；
+ * 而 {@link #deleteMember} 是「清理关联表 + 逻辑删除主表」两次写，
+ * 已加 {@code @Transactional(rollbackFor = Exception.class)}（DESIGN.md 2.2）。
+ * 写 {@code rollbackFor = Exception.class} 的原因：Spring 默认只回滚 RuntimeException，
+ * 受检异常（如 SQLException 的包装）不回滚，显式声明才能覆盖全部情况。
  */
 @Service
 public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, StudioMember>
@@ -84,6 +88,15 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
      */
     @Resource
     private SysUserMapper sysUserMapper;
+
+    /**
+     * 成员-证书关联服务：删除成员时要级联清理关联关系
+     *
+     * <p>依赖方向是单向的（本类 → 关联服务），不会构成循环依赖：
+     * {@code MemberCertificateServiceImpl} 只注入 Mapper，不依赖本类。
+     */
+    @Resource
+    private MemberCertificateService memberCertificateService;
 
     // ==================== 管理端：调用方必须已通过 @SaCheckRole("admin") ====================
 
@@ -181,6 +194,13 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
         }
         // 改绑账号：排除自身再判唯一性（把成员绑到「已属于自己」的账号是合法的重复提交）
         assertUserBindable(memberUpdateRequest.getUserId(), id);
+        // 姓名：传了就必须有实际内容。name 是 NOT NULL 列，
+        // 只做 trim 而不判空的话，"   " 会被清成空串写进库，
+        // 官网成员列表里就会出现一个「没有名字的成员」
+        if (memberUpdateRequest.getName() != null) {
+            ThrowUtils.throwIf(StrUtil.isBlank(memberUpdateRequest.getName()),
+                    ErrorCode.PARAMS_ERROR, "成员姓名不能为空");
+        }
 
         // 只 set 允许修改的字段：id / userId 之外不允许改的字段（deletedAt、审计字段）
         // 一律不出现在这里——更新接口的字段白名单必须由服务端写死，
@@ -223,19 +243,25 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
     }
 
     /**
-     * 删除成员（逻辑删除，接口契约见 StudioMemberService）
+     * 删除成员（逻辑删除 + 级联清理关联表，接口契约见 StudioMemberService）
      *
-     * <p>注意：本方法只删档案本身，不连带清理 {@code studio_member_certificate} 等关联表。
-     * 按 DESIGN.md 2.2 的要求，主表逻辑删除时必须**在同一事务内级联清理关联表**，
-     * 否则会留下指向已删除成员的悬空关联；这一步在关联表功能落地时要补上。
+     * <p>两次写（清理关联表 + 逻辑删除主表）必须在<b>同一事务</b>内完成：
+     * 如果先清关联、主表删除失败，成员还在但证书关系没了（数据静默丢失）；
+     * 如果先删主表、清理失败，就留下指向已删除成员的悬空关联（DESIGN.md 2.2 明确禁止）。
      *
      * @param id 成员 ID
      * @return true 表示删除成功
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean deleteMember(long id) {
         StudioMember existing = this.getById(id);
         ThrowUtils.throwIf(existing == null, ErrorCode.NOT_FOUND_ERROR, "成员不存在");
+
+        // 同一事务内先清关联，再逻辑删除主表（DESIGN.md 2.2）。
+        // removeByMemberId 是物理删除：关联表没有 deleted_at，也不该有——
+        // 成员都被删了，保留他的绑定关系没有意义
+        memberCertificateService.removeByMemberId(id);
 
         // 逻辑删除：实际执行 UPDATE ... SET deleted_at = 毫秒时间戳，
         // 数据可追溯；且该成员绑定过的账号会被释放（唯一索引带 deleted_at），可重新绑定新档案

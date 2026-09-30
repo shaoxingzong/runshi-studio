@@ -16,8 +16,11 @@ import com.bhu.runshistudioweb.model.enums.CertificateTypeEnum;
 import com.bhu.runshistudioweb.model.vo.CertificateFrontVO;
 import com.bhu.runshistudioweb.model.vo.CertificateVO;
 import com.bhu.runshistudioweb.service.CertificateService;
+import com.bhu.runshistudioweb.service.MemberCertificateService;
+import jakarta.annotation.Resource;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -40,9 +43,10 @@ import java.util.List;
  *     与 idx_type_date / idx_level_date 的 {@code (维度列, award_date DESC)} 索引结构同向。</li>
  * </ol>
  *
- * <p>已知待办：按 DESIGN.md 2.2，主表逻辑删除时应**在同一事务内级联清理**
- * {@code studio_member_certificate} 关联表，否则会留下悬空关联；
- * 这一步等关联表功能落地时补上（本类先不做，避免引入跨表事务的复杂度）。
+ * <p>事务说明：{@link #deleteCertificate} 是「清理关联表 + 逻辑删除主表」两次写，
+ * 已加 {@code @Transactional(rollbackFor = Exception.class)}（DESIGN.md 2.2）；
+ * 新增与更新是一次写，不加事务。写 {@code rollbackFor = Exception.class} 的原因：
+ * Spring 默认只回滚 RuntimeException，显式声明才能覆盖受检异常。
  */
 @Service
 public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper, StudioCertificate>
@@ -57,6 +61,15 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
 
     /** 置顶权重不传时的默认值（0 表示不置顶，与 DDL 默认值一致） */
     private static final int DEFAULT_SORT_ORDER = 0;
+
+    /**
+     * 成员-证书关联服务：删除证书时要级联清理关联关系
+     *
+     * <p>依赖方向单向（本类 → 关联服务），不构成循环依赖：
+     * {@code MemberCertificateServiceImpl} 只注入 Mapper，不依赖本类。
+     */
+    @Resource
+    private MemberCertificateService memberCertificateService;
 
     // ==================== 管理端 ====================
 
@@ -112,6 +125,13 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
             ThrowUtils.throwIf(StrUtil.isBlank(certificateUpdateRequest.getImageUrl()),
                     ErrorCode.PARAMS_ERROR, "证书图片不能为空");
         }
+        // 名称：传了就必须有实际内容。
+        // 只做 trim 而不判空的话，"   " 会被清成空串写进库——
+        // 官网列表里就会出现一条「没有名字的证书」，且前端无从判断该怎么展示
+        if (certificateUpdateRequest.getTitle() != null) {
+            ThrowUtils.throwIf(StrUtil.isBlank(certificateUpdateRequest.getTitle()),
+                    ErrorCode.PARAMS_ERROR, "证书名称不能为空");
+        }
 
         // 只 set 允许修改的字段：这是服务端写死的白名单，绝不能直接把 DTO 转成实体 updateById
         StudioCertificate update = new StudioCertificate();
@@ -129,11 +149,25 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
         return this.updateById(update);
     }
 
+    /**
+     * 删除证书（逻辑删除 + 级联清理关联表，接口契约见 CertificateService）
+     *
+     * <p>两次写必须在<b>同一事务</b>内：先清关联再删主表。
+     * 反过来的话，一旦主表删除失败，就会出现「证书还在、关联却没了」的静默数据丢失。
+     *
+     * @param id 证书 ID
+     * @return true 表示删除成功
+     */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean deleteCertificate(long id) {
         ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "证书 id 不合法");
         StudioCertificate existing = this.getById(id);
         ThrowUtils.throwIf(existing == null, ErrorCode.NOT_FOUND_ERROR, "证书不存在");
+
+        // 同一事务内先清关联（DESIGN.md 2.2）：证书被删后，
+        // 「某成员持有该证书」的绑定关系必须一并消失，否则会留下悬空数据
+        memberCertificateService.removeByCertificateId(id);
 
         // 逻辑删除：实际执行 UPDATE ... SET deleted_at = 毫秒时间戳，数据可追溯
         return this.removeById(id);

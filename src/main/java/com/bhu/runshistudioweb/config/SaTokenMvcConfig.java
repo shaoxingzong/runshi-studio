@@ -51,16 +51,15 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
             // 只放行这一个「读」路径且只返回脱敏 VO（见 MemberFrontVO）；
             // 同前缀的管理端接口（/member/add、/member/list/page 等）都不在此列，不会被误放行
             "/member/list",
+            // 官网「某成员的证书」：成员详情页要展示他拿过哪些证书，游客可见。
+            // 同样只放行这一个精确路径，返回的是脱敏的 CertificateFrontVO；
+            // 注意别写成 /member/**——那样会把 /member/list/page 等管理端接口一起放行
+            "/member/certificate/list",
+            // 荣誉证书列表：官网「荣誉墙」页（接口实现见 CertificateController）
+            "/certificate/list",
             // 上传后的图片访问路径：官网展示成员头像/证书图片时游客必须能看到。
             // 注意这是「读」的路径；「写」的路径 /file/upload 不在这里，仍然要求登录
             "/uploads/**",
-
-            // ===== C 端公开接口（匿名可访问）=====
-            // 工作室成员列表：官网「团队成员」页
-            "/member/list",
-            // 荣誉证书列表：官网「荣誉墙」页（接口实现见 CertificateController）
-            "/certificate/list",
-
 
             // ===== 接口文档（Knife4j / OpenAPI）=====
             // 注意：生产环境更稳妥的做法是直接关闭文档（knife4j.enable=false），
