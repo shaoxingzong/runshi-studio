@@ -72,6 +72,11 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
             // 通配符会把它们一起放行（/project/list 与 /project/list/page 只差一个后缀）
             "/project/list",
             "/project/detail",
+            // 官网「AI 咨询」：提问与历史。两条都精确登记，禁止 /ai/**（见 AiChatController 注释）。
+            // 注意路径里带有 chat 段：/ai/chat 是提问（POST），/ai/chat/history 是历史（GET），
+            // 两者必须分别登记——只登记前者会让历史接口返回 40100
+            "/ai/chat",
+            "/ai/chat/history",
             // 上传后的图片访问路径：官网展示成员头像/证书图片时游客必须能看到。
             // 注意这是「读」的路径；「写」的路径 /file/upload 不在这里，仍然要求登录
             "/uploads/**",

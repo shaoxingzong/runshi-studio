@@ -119,3 +119,38 @@ CREATE TABLE `studio_member_project` (
                                          UNIQUE KEY `uk_member_proj` (`member_id`, `project_id`),
                                          KEY `idx_proj_member` (`project_id`, `member_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='成员-项目关联表';
+
+-- 7. AI 咨询会话表
+-- user_id 可空是核心设计：NULL 表示匿名会话（游客），凭不可枚举的雪花 ID 即可续聊；
+-- 非 NULL 则表示「绑定用户的会话，仅本人可续」。归属校验在应用层，见 AiChatServiceImpl。
+DROP TABLE IF EXISTS `studio_ai_session`;
+CREATE TABLE `studio_ai_session` (
+                                     `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
+                                     `user_id` bigint DEFAULT NULL COMMENT '提问用户 ID（关联 sys_user.id）；NULL 表示匿名会话（游客创建）',
+                                     `title` varchar(64) DEFAULT NULL COMMENT '会话标题（取首问前 30 字，仅用于会话列表展示）',
+                                     `created_at` datetime NOT NULL COMMENT '创建时间',
+                                     `updated_at` datetime NOT NULL COMMENT '更新时间（每次追加消息都会刷新，用于按最近活跃排序）',
+                                     `created_by` bigint NOT NULL DEFAULT '0' COMMENT '创建人 ID',
+                                     `updated_by` bigint NOT NULL DEFAULT '0' COMMENT '修改人 ID',
+                                     `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT '逻辑删除毫秒时间戳',
+                                     PRIMARY KEY (`id`),
+                                     KEY `idx_user_updated` (`user_id`, `updated_at` DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 咨询会话表';
+
+-- 8. AI 咨询消息表
+-- 注意 created_at 是秒级精度：同一秒内产生的 user / assistant 两条消息时间相同，
+-- 因此所有查询都必须追加 id 作为次级排序键（雪花 ID 单调递增），否则对话记录会偶发颠倒。
+DROP TABLE IF EXISTS `studio_ai_message`;
+CREATE TABLE `studio_ai_message` (
+                                     `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
+                                     `session_id` bigint NOT NULL COMMENT '会话 ID（关联 studio_ai_session.id）',
+                                     `role` varchar(16) NOT NULL COMMENT '消息角色：user-用户提问, assistant-AI 回答',
+                                     `content` text NOT NULL COMMENT '消息正文（用户问题或 AI 回答原文）',
+                                     `created_at` datetime NOT NULL COMMENT '创建时间',
+                                     `updated_at` datetime NOT NULL COMMENT '更新时间',
+                                     `created_by` bigint NOT NULL DEFAULT '0' COMMENT '创建人 ID',
+                                     `updated_by` bigint NOT NULL DEFAULT '0' COMMENT '修改人 ID',
+                                     `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT '逻辑删除毫秒时间戳',
+                                     PRIMARY KEY (`id`),
+                                     KEY `idx_session_created` (`session_id`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 咨询消息表';
