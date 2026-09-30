@@ -55,8 +55,23 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
             // 同样只放行这一个精确路径，返回的是脱敏的 CertificateFrontVO；
             // 注意别写成 /member/**——那样会把 /member/list/page 等管理端接口一起放行
             "/member/certificate/list",
+            // 官网「成员详情」页：档案 + 证书 + 项目三合一。
+            // 精确路径：管理端的成员详情是 /member/get（要求 admin），两者不能混
+            "/member/detail",
             // 荣誉证书列表：官网「荣誉墙」页（接口实现见 CertificateController）
             "/certificate/list",
+            // 官网首页「大盘数字」：团队人数、证书数与分布，游客进入首页就要看到。
+            // 必须写**精确路径**——写成 /statistic/** 会把将来可能新增的管理端统计接口
+            // （可能含敏感数据）一起放行。本期统计接口只有这一个
+            "/statistic/overview",
+            // 官网「项目案例」页：列表与详情。两条都要**精确登记**：
+            //   /project/list        → C 端列表（脱敏，不含 content）
+            //   /project/detail      → C 端详情（含 Markdown 正文）
+            // 特别注意不能写 /project/** 或 /project/list*：
+            // 管理端还有 /project/list/page、/project/add、/project/get 等接口，
+            // 通配符会把它们一起放行（/project/list 与 /project/list/page 只差一个后缀）
+            "/project/list",
+            "/project/detail",
             // 上传后的图片访问路径：官网展示成员头像/证书图片时游客必须能看到。
             // 注意这是「读」的路径；「写」的路径 /file/upload 不在这里，仍然要求登录
             "/uploads/**",

@@ -13,6 +13,7 @@ import com.bhu.runshistudioweb.model.dto.member.MemberQueryRequest;
 import com.bhu.runshistudioweb.model.dto.member.MemberUpdateRequest;
 import com.bhu.runshistudioweb.model.dto.membercertificate.MemberCertificateQueryRequest;
 import com.bhu.runshistudioweb.model.vo.CertificateFrontVO;
+import com.bhu.runshistudioweb.model.vo.MemberDetailFrontVO;
 import com.bhu.runshistudioweb.model.vo.MemberFrontVO;
 import com.bhu.runshistudioweb.model.vo.MemberVO;
 import com.bhu.runshistudioweb.service.MemberCertificateService;
@@ -42,9 +43,9 @@ import java.util.List;
  * <table border="1">
  *     <caption>接口分组</caption>
  *     <tr><th>分组</th><th>路径</th><th>鉴权</th></tr>
- *     <tr><td>C 端</td><td>{@code /member/list}、{@code /member/certificate/list}</td>
- *     <td><b>匿名可访问</b>——已加入 Sa-Token 白名单（见 SaTokenMvcConfig），
- *     官网游客必须能看成员页与成员详情里的证书</td></tr>
+ *     <tr><td>C 端</td><td>{@code /member/list}、{@code /member/certificate/list}、{@code /member/detail}</td>
+ *     <td><b>匿名可访问</b>——三条路径都以<b>精确路径</b>登记在 Sa-Token 白名单（见 SaTokenMvcConfig）：
+ *     官网游客必须能看成员列表、成员详情，以及详情页里的证书</td></tr>
  *     <tr><td>管理端</td><td>{@code /member/add}、{@code /member/update}、{@code /member/delete}、
  *     {@code /member/get}、{@code /member/list/page}</td>
  *     <td>全部要求 {@code @SaCheckRole("admin")}</td></tr>
@@ -84,17 +85,33 @@ public class StudioMemberController {
     // ==================== C 端：官网展示，匿名可访问 ====================
 
     /**
-     * 官网成员列表（游客可访问）
+     * 官网成员列表（游客可访问，<b>真分页</b>）
      *
-     * <p>固定按置顶权重（sort_order）倒序返回；请求里的分页与排序参数会被忽略——
-     * 公开接口的排序规则由产品定义，不接受任意排序字段。
+     * <p><b>契约变更</b>：本接口原来返回脱敏成员<b>数组</b>（内部截断 200 条，
+     * 那是 刻意留的过渡形态），现在返回<b>分页对象</b>
+     * {@code {records, total, size, current, pages}}，支持前端分页组件。
+     * 改契约的时机选在现在，是因为前端尚未开发、改动成本最低。
      *
-     * @param memberQueryRequest 查询条件（可选：id/姓名/届别/方向/职务/状态），允许为空
-     * @return 脱敏后的成员列表
+     * <p>三处固定行为：
+     * <ul>
+     *     <li><b>排序固定</b>：置顶权重倒序 + id 倒序；请求里的 sortField / sortOrder 会被忽略——
+     *     公开接口的排序规则由产品定义，不接受任意排序字段；</li>
+     *     <li><b>分页参数生效</b>：current / pageSize 由 Service 兜底收敛
+     *     （页码 &lt; 1 视为 1，pageSize &lt; 1 视为 10、&gt; 50 收敛到 50，防匿名接口拉全表）；</li>
+     *     <li><b>枚举闭集校验</b>：teamPosition / memberStatus 传非法值时返回 40000
+     *     并列出合法取值，而不是静默返回空列表。</li>
+     * </ul>
+     *
+     * <p>注意分页元数据（total / size / current / pages）在响应里是<b>字符串</b>：
+     * 项目全局把 Long 序列化成字符串（防雪花 ID 精度丢失），这里刻意不做局部覆盖——
+     * 前端按字符串处理即可。
+     *
+     * @param memberQueryRequest 查询条件（id/姓名/届别/方向/职务/状态 + current/pageSize），允许为空
+     * @return 分页结果，记录为脱敏的 {@link MemberFrontVO}
      */
     @GetMapping("/list")
-    @Operation(summary = "官网成员列表", description = "匿名可访问；支持按届别/方向/职务/状态筛选，固定按置顶权重倒序")
-    public BaseResponse<List<MemberFrontVO>> listFrontMembers(MemberQueryRequest memberQueryRequest) {
+    @Operation(summary = "官网成员列表", description = "匿名可访问；支持按届别/方向/职务/状态筛选 + 真分页，固定按置顶权重倒序")
+    public BaseResponse<Page<MemberFrontVO>> listFrontMembers(MemberQueryRequest memberQueryRequest) {
         return ResultUtils.success(studioMemberService.listFrontMembers(memberQueryRequest));
     }
 
@@ -122,6 +139,25 @@ public class StudioMemberController {
         ThrowUtils.throwIf(query == null || query.getMemberId() == null,
                 ErrorCode.PARAMS_ERROR, "成员 id 不能为空");
         return ResultUtils.success(memberCertificateService.listFrontCertificatesByMember(query.getMemberId()));
+    }
+
+    /**
+     * 官网：成员详情（游客可访问，<b>聚合接口</b>）
+     *
+     * <p>一次返回「基础档案 + 证书 + 项目」三段，省掉前端为渲染一个详情页
+     * 并发调三个接口；服务端也只需要 3 次数据库查询（没有 N+1）。
+     *
+     * <p>三段全部是 C 端脱敏 VO（{@code MemberFrontVO / CertificateFrontVO / ProjectFrontVO}）：
+     * 不含 userId、leaderId、sortOrder、content 与任何审计字段。
+     *
+     * @param id 成员 ID
+     * @return 成员详情；证书 / 项目为空时是空数组而不是 null
+     */
+    @GetMapping("/detail")
+    @Operation(summary = "官网成员详情", description = "匿名可访问；返回档案 + 证书 + 项目三段，成员不存在返回 40400")
+    public BaseResponse<MemberDetailFrontVO> getMemberDetail(@RequestParam("id") long id) {
+        ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "id 不合法");
+        return ResultUtils.success(studioMemberService.getFrontMemberDetail(id));
     }
 
     // ==================== 管理端：全部要求 admin 角色 ====================

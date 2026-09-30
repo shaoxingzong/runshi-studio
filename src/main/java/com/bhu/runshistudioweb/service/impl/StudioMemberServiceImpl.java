@@ -16,17 +16,19 @@ import com.bhu.runshistudioweb.model.entity.StudioMember;
 import com.bhu.runshistudioweb.model.entity.SysUser;
 import com.bhu.runshistudioweb.model.enums.MemberStatusEnum;
 import com.bhu.runshistudioweb.model.enums.TeamPositionEnum;
+import com.bhu.runshistudioweb.model.vo.CertificateFrontVO;
+import com.bhu.runshistudioweb.model.vo.MemberDetailFrontVO;
 import com.bhu.runshistudioweb.model.vo.MemberFrontVO;
 import com.bhu.runshistudioweb.model.vo.MemberVO;
+import com.bhu.runshistudioweb.model.vo.ProjectFrontVO;
 import com.bhu.runshistudioweb.service.MemberCertificateService;
+import com.bhu.runshistudioweb.service.MemberProjectService;
 import com.bhu.runshistudioweb.service.StudioMemberService;
 import jakarta.annotation.Resource;
 import org.springframework.beans.BeanUtils;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import java.util.List;
 
 /**
  * 成员服务实现
@@ -71,14 +73,6 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
     private static final long DEFAULT_PAGE_SIZE = 10L;
     private static final long MAX_PAGE_SIZE = 50L;
 
-    /**
-     * C 端公开列表的最大返回行数
-     *
-     * <p>公开接口必须有上限：游客流量不可控，一旦将来成员量变大（或有人恶意刷），
-     * 无上限的 list 会把整表拉回内存。真正的大列表由 的分页搜索承担。
-     */
-    private static final long FRONT_LIST_MAX_SIZE = 200L;
-
     /** 置顶权重不传时的默认值（0 表示不置顶，与 DDL 默认值一致） */
     private static final int DEFAULT_SORT_ORDER = 0;
 
@@ -97,6 +91,15 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
      */
     @Resource
     private MemberCertificateService memberCertificateService;
+
+    /**
+     * 成员-项目关联服务：删除成员时同样要级联清理
+     *
+     * <p>与上面同一个道理：{@code MemberProjectServiceImpl} 只注入 Mapper，
+     * 它自己不会被本类依赖回去，因此不构成循环依赖。
+     */
+    @Resource
+    private MemberProjectService memberProjectService;
 
     // ==================== 管理端：调用方必须已通过 @SaCheckRole("admin") ====================
 
@@ -259,9 +262,12 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
         ThrowUtils.throwIf(existing == null, ErrorCode.NOT_FOUND_ERROR, "成员不存在");
 
         // 同一事务内先清关联，再逻辑删除主表（DESIGN.md 2.2）。
-        // removeByMemberId 是物理删除：关联表没有 deleted_at，也不该有——
-        // 成员都被删了，保留他的绑定关系没有意义
+        // 注意这里是**两张**关联表：成员-证书与成员-项目，
+        // 必须都清——只清一张就会留下指向已删除成员的悬空关联，
+        // 表现为「某个已删除的成员还出现在项目参与人列表里」。
+        // 两个 removeByXxxId 都是物理删除：关联表没有 deleted_at，也不该有
         memberCertificateService.removeByMemberId(id);
+        memberProjectService.removeByMemberId(id);
 
         // 逻辑删除：实际执行 UPDATE ... SET deleted_at = 毫秒时间戳，
         // 数据可追溯；且该成员绑定过的账号会被释放（唯一索引带 deleted_at），可重新绑定新档案
@@ -282,48 +288,102 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
     public Page<MemberVO> listMemberByPage(MemberQueryRequest memberQueryRequest) {
         MemberQueryRequest query = memberQueryRequest == null ? new MemberQueryRequest() : memberQueryRequest;
 
-        // 分页参数兜底纠正（而不是抛异常）：页码传错没必要让整个查询失败，收敛到合理区间继续查
-        long current = (query.getCurrent() == null || query.getCurrent() < 1) ? 1L : query.getCurrent();
-        long pageSize = (query.getPageSize() == null || query.getPageSize() < 1)
-                ? DEFAULT_PAGE_SIZE : query.getPageSize();
-        // 上限收敛：不设上限时，前端一个 pageSize=100000 就能把整表读进内存
-        pageSize = Math.min(pageSize, MAX_PAGE_SIZE);
-
         LambdaQueryWrapper<StudioMember> wrapper = buildQueryWrapper(query);
         applySort(wrapper, query.getSortField(), query.getSortOrder());
 
-        Page<StudioMember> entityPage = this.page(new Page<>(current, pageSize), wrapper);
+        // 分页参数的兜底收敛与 C 端共用同一个方法，保证两边规则一致（页码 < 1 视为 1、pageSize 上限 50）
+        Page<StudioMember> entityPage = this.page(newPageWithDefaults(query), wrapper);
         return toMemberVOPage(entityPage);
     }
 
     // ==================== C 端：游客可访问 ====================
 
     /**
-     * C 端公开列表（游客可访问，接口契约见 StudioMemberService）
+     * C 端公开分页列表（游客可访问，接口契约见 StudioMemberService）
      *
-     * <p>与分页查询的三点不同，都是公开接口的必要约束：
-     * <ul>
-     *     <li><b>固定排序</b>：置顶权重倒序 + id 倒序，不接受 sortField 参数——
-     *     排序规则由产品定义，不能交给请求方决定；</li>
-     *     <li><b>强制上限</b>：游客流量不可控，无上限的 list 等于把整表拉回内存；</li>
-     *     <li><b>不查总数</b>：{@code searchCount=false} 省掉一次 COUNT 查询。</li>
-     * </ul>
+     * <p><b>与后台分页查询的差别</b>：只使用分页参数，<b>不使用</b>排序参数——
+     * 公开接口的排序规则由产品定义，不接受请求方指定（既缩小可被利用的输入面，
+     * 也避免前端随意排序破坏「置顶」这个产品能力）。
+     *
+     * <p><b>枚举校验必须前置</b>：{@code teamPosition / memberStatus} 是闭集取值，
+     * 非法值若只是「查不到」，用户会以为是搜索条件写错了（排查方向被带偏），
+     * 因此这里明确抛 40000 并在提示里列出全部合法取值。
+     * 反过来 {@code gradeYear} 不校验区间：年份是开集，「2026 年没有成员」就是正确答案。
      *
      * @param memberQueryRequest 查询条件，允许为 null
-     * @return 脱敏后的成员展示列表
+     * @return 分页结果，记录为脱敏后的 {@link MemberFrontVO}
      */
     @Override
-    public List<MemberFrontVO> listFrontMembers(MemberQueryRequest memberQueryRequest) {
+    public Page<MemberFrontVO> listFrontMembers(MemberQueryRequest memberQueryRequest) {
         MemberQueryRequest query = memberQueryRequest == null ? new MemberQueryRequest() : memberQueryRequest;
 
+        // 枚举校验前置：必须在构造查询条件之前拦住非法取值，
+        // 否则它会变成一个「永远匹配不到」的等值条件，静默返回空列表
+        if (StrUtil.isNotBlank(query.getTeamPosition())) {
+            ThrowUtils.throwIf(TeamPositionEnum.of(query.getTeamPosition()) == null,
+                    ErrorCode.PARAMS_ERROR, "团队职务不合法，仅支持 " + TeamPositionEnum.valuesText());
+        }
+        if (query.getMemberStatus() != null) {
+            ThrowUtils.throwIf(MemberStatusEnum.of(query.getMemberStatus()) == null,
+                    ErrorCode.PARAMS_ERROR, "成员状态不合法，仅支持 " + MemberStatusEnum.valuesText());
+        }
+
         LambdaQueryWrapper<StudioMember> wrapper = buildQueryWrapper(query);
-        // 公开接口固定排序：官方列表以置顶权重为准（数值越大越靠前），id 倒序兜底稳定次序。
+        // 固定排序：官方列表以置顶权重为准（数值越大越靠前），id 倒序兜底稳定次序。
         // 刻意不接 sortField/sortOrder 参数：排序规则由产品定义，不由请求方决定
         wrapper.orderByDesc(StudioMember::getSortOrder).orderByDesc(StudioMember::getId);
 
-        // searchCount=false：只取数据，不额外执行 COUNT 查询（这里用不到总数）
-        Page<StudioMember> page = this.page(new Page<>(1, FRONT_LIST_MAX_SIZE, false), wrapper);
-        return page.getRecords().stream().map(this::getMemberFrontVO).toList();
+        // 分页：与后台共用同一套收敛规则（页码 < 1 视为 1、pageSize 上限 50）。
+        //
+        // ⚠️ searchCount 必须保持默认的 true：证书模块 C 端用的是 new Page<>(1, N, false)
+        // （关掉 COUNT 查询），照抄过来 total 会恒为 0，前端分页组件拿不到总页数直接报废。
+        // 这里要的就是 total ——分页组件必须知道一共多少页
+        Page<StudioMember> page = this.page(newPageWithDefaults(query), wrapper);
+        return toFrontVOPage(page);
+    }
+
+    /**
+     * C 端成员详情：一次装配「基础档案 + 证书 + 项目」
+     *
+     * <p><b>一共只有 3 次数据库查询，绝无 N+1</b>：
+     * <ol>
+     *     <li>{@code getById(id)} —— 成员档案本身；</li>
+     *     <li>{@code memberCertificateService.listFrontCertificatesByMember(id)} ——
+     *     内部是「先从关联表取 ID 列表 + IN 查主表」的批量两步查询；</li>
+     *     <li>{@code memberProjectService.listFrontProjectsByMember(id)} —— 同样是批量两步查询。</li>
+     * </ol>
+     * 也就是说「一个成员有 N 张证书 / M 个项目」不会变成 N+M 次查询。
+     *
+     * <p><b>反面教材（将来做列表页聚合时必须避免）</b>：如果以后要在
+     * <b>成员列表</b>上显示「每人有多少张证书」，绝不能写成
+     * {@code for (成员 m : 列表) { countByMember(m.id) }} ——那是标准的 N+1，
+     * 一页 50 个成员就是 50 次查询。正确做法是一次
+     * {@code SELECT member_id, COUNT(*) FROM studio_member_certificate WHERE member_id IN (...)
+     * GROUP BY member_id}（{@code selectMaps} 即可），拿到 Map 后在内存里拼。
+     * 这里之所以能逐个查，是因为<b>只查一个人</b>。
+     *
+     * <p>三段数据全部是 Front 系列脱敏 VO：管理端的 {@code MemberVO / CertificateVO / ProjectVO}
+     * 含 userId / leaderId / sortOrder / content / 审计字段，一旦用在这里就是匿名接口泄露。
+     *
+     * @param id 成员 ID
+     * @return 成员详情（证书与项目为空时空列表，不是 null）
+     */
+    @Override
+    public MemberDetailFrontVO getFrontMemberDetail(long id) {
+        ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "成员 id 不合法");
+
+        // 档案：getById 会被 MP 自动追加 deleted_at = 0，已逻辑删除的成员查出来就是 null
+        StudioMember member = this.getById(id);
+        ThrowUtils.throwIf(member == null, ErrorCode.NOT_FOUND_ERROR, "成员不存在");
+
+        MemberDetailFrontVO detailVO = new MemberDetailFrontVO();
+        detailVO.setProfile(this.getMemberFrontVO(member));
+        // 证书与项目：各自模块内部的批量两步查询已经过滤了「主表已删除」的悬空关联
+        // （证书/项目被删后，IN 查主表时 MP 自动追加 deleted_at = 0 会把它们挡掉），
+        // 所以这里不需要再做一次过滤——但这是**回归点**，改动那两个方法时要留意
+        detailVO.setCertificates(memberCertificateService.listFrontCertificatesByMember(id));
+        detailVO.setProjects(memberProjectService.listFrontProjectsByMember(id));
+        return detailVO;
     }
 
     /**
@@ -497,6 +557,25 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
     }
 
     /**
+     * 构造分页对象：页码与每页条数做兜底纠正（而不是抛异常）
+     *
+     * <p>管理端与 C 端共用这一份规则，避免出现「后台一页 10 条、官网一页 20 条」的两套标准。
+     *
+     * @param query 查询条件
+     * @return 分页对象（searchCount 保持默认 true，即会执行 COUNT 查询）
+     */
+    private Page<StudioMember> newPageWithDefaults(MemberQueryRequest query) {
+        // 页码传错没必要让整个查询失败，收敛到合理区间继续查
+        long current = (query.getCurrent() == null || query.getCurrent() < 1) ? 1L : query.getCurrent();
+        long pageSize = (query.getPageSize() == null || query.getPageSize() < 1)
+                ? DEFAULT_PAGE_SIZE : query.getPageSize();
+        // 上限收敛：不设上限时，一个 pageSize=100000 就能把整表读进内存。
+        // 匿名接口尤其重要——它的调用方不可控
+        pageSize = Math.min(pageSize, MAX_PAGE_SIZE);
+        return new Page<>(current, pageSize);
+    }
+
+    /**
      * 实体分页结果转 VO 分页结果
      *
      * @param entityPage 实体分页
@@ -505,6 +584,21 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
     private Page<MemberVO> toMemberVOPage(Page<StudioMember> entityPage) {
         Page<MemberVO> voPage = new Page<>(entityPage.getCurrent(), entityPage.getSize(), entityPage.getTotal());
         voPage.setRecords(entityPage.getRecords().stream().map(this::getMemberVO).toList());
+        return voPage;
+    }
+
+    /**
+     * 实体分页结果转「C 端 VO」分页结果
+     *
+     * <p>与 {@link #toMemberVOPage} 的差别只在 VO 类型：这里转的是 {@link MemberFrontVO}（脱敏）。
+     * 保留 total / current / size 是必须的——前端分页组件靠它们渲染页码与总条数。
+     *
+     * @param entityPage 实体分页
+     * @return C 端 VO 分页
+     */
+    private Page<MemberFrontVO> toFrontVOPage(Page<StudioMember> entityPage) {
+        Page<MemberFrontVO> voPage = new Page<>(entityPage.getCurrent(), entityPage.getSize(), entityPage.getTotal());
+        voPage.setRecords(entityPage.getRecords().stream().map(this::getMemberFrontVO).toList());
         return voPage;
     }
 }

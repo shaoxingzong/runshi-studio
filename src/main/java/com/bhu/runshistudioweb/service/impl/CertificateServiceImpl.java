@@ -208,9 +208,14 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
                 ? new CertificateQueryRequest() : certificateQueryRequest;
 
         LambdaQueryWrapper<StudioCertificate> wrapper = buildQueryWrapper(query);
-        // 固定排序：置顶权重倒序 + 获奖日期倒序（与后台默认排序一致，保证官网与运营预期相同）。
+        // 固定排序：置顶权重倒序 + 获奖日期倒序 + id 倒序兜底
+        // （与后台默认排序一致，保证官网与运营预期相同）。
+        // 追加 id 作为最终排序键：前两个键都相同时（权重同为默认 0、同一天获奖都很常见），
+        // 缺少稳定次序的翻页会出现「同一行出现在两页 / 某行被跳过」。
         // 刻意不接 sortField/sortOrder：排序规则由产品定义，不由请求方决定
-        wrapper.orderByDesc(StudioCertificate::getSortOrder).orderByDesc(StudioCertificate::getAwardDate);
+        wrapper.orderByDesc(StudioCertificate::getSortOrder)
+                .orderByDesc(StudioCertificate::getAwardDate)
+                .orderByDesc(StudioCertificate::getId);
 
         // searchCount=false 省掉一次 COUNT 查询；pageSize 上限防止匿名接口被刷
         Page<StudioCertificate> page = this.page(new Page<>(1, FRONT_LIST_MAX_SIZE, false), wrapper);
@@ -337,9 +342,11 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
             case "awardType" -> wrapper.orderBy(true, isAsc, StudioCertificate::getAwardType);
             case "awardDate" -> wrapper.orderBy(true, isAsc, StudioCertificate::getAwardDate);
             case "sortOrder" -> wrapper.orderBy(true, isAsc, StudioCertificate::getSortOrder);
-            // 默认排序：置顶权重倒序 + 获奖日期倒序（考点④，与 idx_type_date / idx_level_date 同向）
+            // 默认排序：置顶权重倒序 + 获奖日期倒序 + id 倒序兜底
+            // （考点④，前两个键与 idx_type_date / idx_level_date 的 (维度列, award_date DESC) 同向）
             default -> wrapper.orderByDesc(StudioCertificate::getSortOrder)
-                    .orderByDesc(StudioCertificate::getAwardDate);
+                    .orderByDesc(StudioCertificate::getAwardDate)
+                    .orderByDesc(StudioCertificate::getId);
         }
     }
 

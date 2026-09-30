@@ -31,3 +31,7 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### 本地参考源码副本（保留在磁盘供查阅，但不参与版本管理）###
+# 根目录下的 ai-code-helper-master 是参考项目源码副本，只做本地参考，不应被提交
+/ai-code-helper-master/

@@ -6,10 +6,9 @@ import com.bhu.runshistudioweb.model.dto.member.MemberAddRequest;
 import com.bhu.runshistudioweb.model.dto.member.MemberQueryRequest;
 import com.bhu.runshistudioweb.model.dto.member.MemberUpdateRequest;
 import com.bhu.runshistudioweb.model.entity.StudioMember;
+import com.bhu.runshistudioweb.model.vo.MemberDetailFrontVO;
 import com.bhu.runshistudioweb.model.vo.MemberFrontVO;
 import com.bhu.runshistudioweb.model.vo.MemberVO;
-
-import java.util.List;
 
 /**
  * 工作室成员服务接口
@@ -97,19 +96,57 @@ public interface StudioMemberService extends IService<StudioMember> {
     // ==================== C 端：游客可访问 ====================
 
     /**
-     * C 端查询成员列表（官网展示，匿名可访问）
+     * C 端分页查询成员列表（官网「团队成员」页，匿名可访问）
      *
-     * <p>与 {@link #listMemberByPage} 的两点差别（安全边界）：
-     * <ul>
+     * <p>与 {@link #listMemberByPage} 的三点差别（前两点是安全边界）：
+     * <ol>
      *     <li>返回脱敏的 {@link MemberFrontVO}，不含 userId / sortOrder / 审计时间；</li>
-     *     <li>忽略请求里的分页与排序参数，固定按置顶权重倒序——
-     *     公开接口不接受任意排序字段，排序规则由产品定义而非请求方决定。</li>
+     *     <li>排序固定为 {@code sort_order} 倒序 + {@code id} 倒序，
+     *     <b>忽略</b>请求里的 sortField / sortOrder——公开接口不接受任意排序字段，
+     *     排序规则由产品定义而非请求方决定；</li>
+     *     <li>分页参数<b>使用</b>（current / pageSize），但收敛规则更严格：
+     *     页码 &lt; 1 视为 1，pageSize &lt; 1 视为 10、&gt; 50 收敛到 50——
+     *     匿名接口必须防「一次拉全表」。</li>
+     * </ol>
+     *
+     * <p><b>校验口径的分界</b>（自由文本与枚举的处理方式不同）：
+     * <ul>
+     *     <li>{@code name / direction} 是自由文本，开了就好，不校验；</li>
+     *     <li>{@code gradeYear} 是开集数值，不校验区间——搜索条件是开集，
+     *     「查不到」本身就是正确答案，不是错误；</li>
+     *     <li>{@code teamPosition / memberStatus} 是<b>闭集枚举</b>，必须校验：
+     *     传 {@code superman} 若返回空列表，会把排查方向带偏成「为什么搜不到」，
+     *     正确做法是明确抛 40000 并在提示里列出合法取值。</li>
      * </ul>
      *
-     * @param memberQueryRequest 查询条件（可选：id/姓名/届别/方向/职务/状态），允许为空
-     * @return 官网展示用的成员列表
+     * @param memberQueryRequest 查询条件（id/姓名/届别/方向/职务/状态 + 分页参数），允许为空
+     * @return 分页结果，记录为脱敏的 {@link MemberFrontVO}；total / current / size 必须保留，
+     *         前端分页组件依赖它们（响应里这三个值是字符串，见全局 Long → String 约定）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 职务或状态取值非法时抛出（40000）
      */
-    List<MemberFrontVO> listFrontMembers(MemberQueryRequest memberQueryRequest);
+    Page<MemberFrontVO> listFrontMembers(MemberQueryRequest memberQueryRequest);
+
+    /**
+     * C 端查询成员详情（官网「成员详情」页，匿名可访问）
+     *
+     * <p>返回「基础档案 + 证书 + 项目」的聚合结构，<b>一次请求装配完成</b>。
+     *
+     * <p><b>为什么聚合在这里做</b>：三段数据都以成员 id 为入口，
+     * 放在同一个方法里可以利用各模块已有的<b>批量两步查询</b>
+     * （{@code listFrontCertificatesByMember} / {@code listFrontProjectsByMember}
+     * 内部是一次 IN 查询，不是逐条查），因此总共只有 3 次数据库查询，绝无 N+1。
+     * 反面教材见实现类注释：若将来要做「成员列表页显示每人证书数」，
+     * 必须一次 {@code IN + GROUP BY} 拿回全部分组统计，<b>绝不能</b>在成员循环里逐个成员查证书。
+     *
+     * <p>三段数据全部是 Front 系列脱敏 VO（不含 userId / leaderId / sortOrder / content / 审计字段），
+     * 与管理端的聚合结构在类型上完全分开。
+     *
+     * @param id 成员 ID
+     * @return 成员详情；证书与项目为空时返回空列表（不是 null）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数非法（40000）、
+     *         成员不存在或已逻辑删除（40400）时抛出
+     */
+    MemberDetailFrontVO getFrontMemberDetail(long id);
 
     /**
      * 实体转「管理端」VO
