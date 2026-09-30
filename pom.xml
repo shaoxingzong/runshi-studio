@@ -28,6 +28,12 @@
     </scm>
     <properties>
         <java.version>21</java.version>
+        <!--
+            LangChain4j 版本：langchain4j 与 langchain4j-open-ai 必须同版本，故抽成属性避免漂移。
+            （langchain4j-open-ai 的 POM 里把 langchain4j-reactive-streaming 钉在 beta 版上，
+              升级时留意传递依赖的版本变化。）
+        -->
+        <langchain4j.version>1.20.2</langchain4j.version>
     </properties>
     <dependencies>
         <dependency>
@@ -152,6 +158,43 @@
             <groupId>cn.dev33</groupId>
             <artifactId>sa-token-redis-template</artifactId>
             <version>1.46.0</version>
+        </dependency>
+
+        <!--
+            ===== AI 咨询=====
+
+            LangChain4j：AI 应用的统一抽象层（ChatModel / ChatMemory / AiServices / RAG /
+            EmbeddingStore / Tools / MCP ...）。这里刻意引「主 artifact + OpenAI 集成」两个模块，
+            而不是只用裸 HTTP 手写协议，理由是**后续要扩展**：
+              - 需要流式输出        → 换 OpenAiStreamingChatModel，业务层不用动；
+              - 需要多轮记忆        → ChatMemory / MessageWindowChatMemory；
+              - 需要声明式接口      → @AiService 注解 + AiServices.builder()（接口即 AI 服务）；
+              - 需要 RAG            → DocumentSplitter / EmbeddingStore / ContentRetriever；
+              - 需要工具调用/联网    → @Tool + ToolSpecification；
+              - 需要换模型（通义/智谱等）→ 只换 open-ai 这一层依赖，上层 ChatModel 不动。
+            这些都是自写 HTTP 客户端做不到的「改一层就够」的位置。
+
+            为什么不用 langchain4j-spring-boot-starter / langchain4j-open-ai-spring-boot-starter：
+              - 它们面向 Boot 3，本项目是 Boot 4（Jackson 3 在 tools.jackson 下，
+                Boot 3 starter 的自动配置在 Boot 4 上可能直接报错或静默失效）；
+              - 本项目自己装配 Bean（见 config/AiProperties + manager/AiManager），
+                只用 `studio.ai.*` 一份配置，不依赖 starter 的 application.properties 键名约定。
+
+            它的传递依赖会带 Jackson 2（2.22.x）+ opennlp-tools + jtokkit：
+              Jackson 2 本项目 classpath 本来就有（knife4j → swagger-core-jakarta → jackson-databind），
+              只是版本会被抬到 2.22.x；opennlp 是文档切分（RAG）需要的，属预期内。
+              注意：这些是 com.fasterxml 的 Jackson 2，与 Boot 4 的 Jackson 3（tools.jackson）
+              互不干扰——本项目自己的序列化仍然全部走 Jackson 3。
+        -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j</artifactId>
+            <version>${langchain4j.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-open-ai</artifactId>
+            <version>${langchain4j.version}</version>
         </dependency>
 
         <dependency>
