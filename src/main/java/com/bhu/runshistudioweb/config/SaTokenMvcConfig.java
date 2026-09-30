@@ -77,6 +77,10 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
             // 两者必须分别登记——只登记前者会让历史接口返回 40100
             "/ai/chat",
             "/ai/chat/history",
+            // 删除会话：游客也要能删掉自己刚聊完的会话（凭不可枚举的雪花 ID）。
+            // 注意**只放行这一条**：/ai/session/list（我的会话列表）要求登录，
+            // 是「按登录用户维度聚合」的接口，匿名没有任何语义
+            "/ai/session/delete",
             // 上传后的图片访问路径：官网展示成员头像/证书图片时游客必须能看到。
             // 注意这是「读」的路径；「写」的路径 /file/upload 不在这里，仍然要求登录
             "/uploads/**",

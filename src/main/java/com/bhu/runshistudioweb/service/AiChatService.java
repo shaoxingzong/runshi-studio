@@ -1,8 +1,11 @@
 package com.bhu.runshistudioweb.service;
 
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bhu.runshistudioweb.model.dto.ai.AiChatRequest;
+import com.bhu.runshistudioweb.model.dto.ai.AiSessionQueryRequest;
 import com.bhu.runshistudioweb.model.vo.AiChatResponseVO;
 import com.bhu.runshistudioweb.model.vo.AiMessageVO;
+import com.bhu.runshistudioweb.model.vo.AiSessionVO;
 
 import java.util.List;
 
@@ -61,4 +64,40 @@ public interface AiChatService {
      *         会话不存在或无权访问（40400）时抛出
      */
     List<AiMessageVO> listHistory(String sessionId);
+
+    /**
+     * 查询当前登录用户的会话分页列表（<b>需登录</b>）
+     *
+     * <p>用户维度由服务端从登录态取，<b>不接受前端传 userId</b>——
+     * 否则就成了「可以翻别人会话列表」的功能。
+     *
+     * <p>排序固定为 {@code updated_at 倒序 → id 倒序}：
+     * 后者是稳定键，因为 {@code updated_at} 是秒级精度，同一秒内活跃过的会话会并列。
+     *
+     * <p>分页中的 {@code messageCount} 用<b>一次批量统计</b>得出
+     * （{@code WHERE session_id IN (本页) GROUP BY session_id}），
+     * 绝不是「循环里逐个 count」——那会让一页 20 条变成 21 次查询。
+     *
+     * @param request 分页参数（允许为 null，按第一页 10 条处理）
+     * @return 会话分页结果，记录为 {@link AiSessionVO}
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 未登录时抛出（40100）
+     */
+    Page<AiSessionVO> listSessions(AiSessionQueryRequest request);
+
+    /**
+     * 删除会话及其全部消息（<b>匿名可用</b>，归属规则与 {@link #chat} 完全一致）
+     *
+     * <p>删除方式是「<b>双逻辑删</b>」：父表（会话）与子表（消息）都执行
+     * {@code UPDATE ... SET deleted_at = 毫秒时间戳}，两者在<b>同一事务</b>内完成。
+     *
+     * <p>注意与/19 的关联表清理对比：那两张关联表是<b>物理删除</b>
+     * （关系解除即无业务意义），而这里父子两张表都是<b>逻辑删除</b>
+     * （对话是用户资产，误删需要可追溯）。两种机制的选择理由见 db/DESIGN.md 2.2。
+     *
+     * @param sessionId 会话 ID（必填）
+     * @return true 表示删除成功
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 会话 id 缺失或非法（40000）、
+     *         会话不存在或无权访问（40400）时抛出
+     */
+    boolean deleteSession(String sessionId);
 }

@@ -1,0 +1,124 @@
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/studio_db?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    # 密码不入库：本地默认 123456，生产强制由环境变量注入
+    password: ${MYSQL_PASSWORD:123456}
+  servlet:
+    multipart:
+      max-file-size: 10MB       # 框架层限制：单个文件最大 10MB
+      max-request-size: 10MB    # 框架层限制：整个请求最大 10MB
+
+  # Redis（Spring Boot 4 的前缀是 spring.data.redis，Boot 2 时代的 spring.redis 已废弃）
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      # 本地默认 123456，生产强制由环境变量注入（本机 Redis 已设置 requirepass）
+      password: ${REDIS_PASSWORD:123456}
+      database: 0
+      # 命令执行超时：Redis 卡住时让请求线程快速失败，而不是一直挂着
+      timeout: 3000ms
+      # TCP 建连超时：Redis 未启动时能立刻报错，不用等操作系统的默认重试
+      connect-timeout: 3000ms
+      lettuce:
+        # 应用关闭时等待未完成命令的时间
+        shutdown-timeout: 200ms
+        pool:
+          # 连接池开关，生效前提是 classpath 上有 commons-pool2（已加入 pom）
+          enabled: true
+          # 最大连接数
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+          # 池中无可用连接时，获取连接的最大等待时间，超过则抛异常（-1ms 表示无限等待，生产禁用）
+          max-wait: 2000ms
+# ===== 文件上传 =====
+studio:
+  file:
+    # 上传文件存储根目录：必须是**绝对路径**，且与 WebMvcConfig 的 /uploads/** 静态映射是同一个值。
+    # 不写相对路径（如 ./data/uploads）的原因：相对路径以「进程工作目录」为基准，
+    # 在 IDEA 里跑是项目根目录、打成 jar 后却是 jar 所在目录，同一份配置会存到两个不同地方，
+    # 表现为「本地测试能看图、部署后图片全 404」。
+    # 生产环境用环境变量 FILE_ROOT_DIR 覆盖（如 Linux 的 /data/runshi-studio-upload），不要改这里
+    root-dir: ${FILE_ROOT_DIR:D:/runshi-studio-upload}
+
+  # ===== AI 咨询（OpenAI 兼容协议，服务商可替换）=====
+  # 每一项都有默认值（见 AiProperties）：本地不配置时应用照常启动，
+  # 只有真正调用 AI 时返回 50001「AI 服务暂时不可用」，不会影响其它接口。
+  ai:
+    # 服务端地址，**不带** /chat/completions（由 AiManager 拼接），如 https://api.deepseek.com/v1
+    # 测试可以把它指向本地 Stub 服务——这正是「base-url 必须来自配置」的原因
+    base-url: ${AI_BASE_URL:}
+    # API Key：只从环境变量注入，绝不写进仓库。密钥一旦提交进 Git 等于永久泄露
+    api-key: ${AI_API_KEY:}
+    # 模型名
+    model: ${AI_MODEL:deepseek-chat}
+    # 系统提示词：约束 AI 的身份与语气。放配置是为了「调话术不用改代码」
+    system-prompt: 你是润石工作室官网的智能助手，请用简洁友好的中文回答，不确定时明确说明。
+    # 单用户提问次数上限（登录用户才计数，游客不计）；命中返回 42900
+    query-limit: 100
+
+knife4j:
+  # 开启接口文档增强 UI，入口 http://localhost:8080/api/doc.html
+  enable: true
+
+springdoc:
+  api-docs:
+    enabled: true
+
+# ===== Sa-Token 认证框架 =====
+# 键名与 cn.dev33.satoken.config.SaTokenConfig 的字段一一对应（中划线 ↔ 驼峰），
+# 写错的键不会报错、只会被静默忽略，改完务必确认登录行为符合预期
+sa-token:
+  # token 名称：前端携带 token 的 key 名（请求头为 satoken: xxx，同时用作 Cookie 名）。
+  # 这是前后端的对接契约，一旦改动，前端与所有已登录的客户端都要同步改
+  token-name: satoken
+
+  # token 有效期（单位：秒），604800 = 7 天，超时必须重新登录
+  timeout: 604800
+
+  # 闲置有效期（单位：秒），1800 = 30 分钟无任何操作即失效。
+  # 与 timeout 是「且」的关系，任一条件命中都会退出登录；
+  # 它是 token 一旦泄露后控制影响范围的关键配置，不需要这个策略就删掉本行
+  active-timeout: 1800
+
+  # 是否允许同一账号并发登录：true = 手机、电脑可同时在线；
+  # false = 新登录把旧登录挤下线（即单点登录效果）
+  is-concurrent: true
+
+  # 多人登录同一账号时是否共用一个 token：false = 每次登录都生成新 token，
+  # 便于按设备维度踢人（配合 is-concurrent: true 使用）
+  is-share: false
+
+  # token 风格：uuid（默认，带横杠的 36 位）、simple-uuid（去横杠）、
+  # random-32 / random-64 / random-128、tik（无规律短串）
+  token-style: uuid
+
+  # 是否写 Cookie：true 时登录成功会 Set-Cookie，并在后续请求中允许从 Cookie 读取 token。
+  # 注意 Sa-Token 没有单独的「写 Cookie」开关，读与写都由本配置控制；
+  # 若前端是前后端分离的 axios 方案，可改为 false，只走请求头
+  is-read-cookie: true
+
+  # Cookie 是否持久化：true = 按 timeout 设置 maxAge（关掉浏览器再打开仍保持登录）；
+  # false = 会话级 Cookie，浏览器关闭即失效
+  is-lasting-cookie: true
+
+  # 操作日志开关：开发环境打开，便于排查「为什么这个请求被判未登录」；
+  # 生产环境建议关闭（每次鉴权都打日志，量大且含登录信息）
+  is-log: true
+
+# 开发环境日志：打印 SQL，便于调试
+logging:
+  level:
+    com.bhu.runshistudioweb: debug
+
+mybatis-plus:
+  global-config:
+    db-config:
+      logic-delete-field: deletedAt
+      logic-not-delete-value: 0
+      # 删除值必须是「每次都不同」的毫秒时间戳表达式，而非固定值 1
+      # 否则同一账号第二次删除会与历史已删除行的 (account, deleted_at) 组合撞唯一索引 uk_account_deleted
+      logic-delete-value: "CAST(UNIX_TIMESTAMP(NOW(3))*1000 AS SIGNED)"

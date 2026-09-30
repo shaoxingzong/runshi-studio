@@ -1,12 +1,17 @@
 package com.bhu.runshistudioweb.controller;
 
+import cn.dev33.satoken.annotation.SaCheckLogin;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bhu.runshistudioweb.common.BaseResponse;
 import com.bhu.runshistudioweb.common.ResultUtils;
 import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.exception.ThrowUtils;
 import com.bhu.runshistudioweb.model.dto.ai.AiChatRequest;
+import com.bhu.runshistudioweb.model.dto.ai.AiSessionDeleteRequest;
+import com.bhu.runshistudioweb.model.dto.ai.AiSessionQueryRequest;
 import com.bhu.runshistudioweb.model.vo.AiChatResponseVO;
 import com.bhu.runshistudioweb.model.vo.AiMessageVO;
+import com.bhu.runshistudioweb.model.vo.AiSessionVO;
 import com.bhu.runshistudioweb.service.AiChatService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -86,5 +91,43 @@ public class AiChatController {
         // 40000「会话 id 不能为空」，而不是 Spring 抛 MissingServletRequestParameterException
         // 被全局处理器兜成 50000「系统错误」
         return ResultUtils.success(aiChatService.listHistory(sessionId));
+    }
+
+    // ==================== 会话管理 ====================
+
+    /**
+     * 我的会话列表（<b>需登录</b>，不进白名单）
+     *
+     * <p>用户维度由服务端从登录态取，请求里没有 userId 参数——
+     * 否则「看别人的会话列表」就成了一个功能。
+     *
+     * <p>这里额外标 {@code @SaCheckLogin} 是<b>纵深防御</b>：本路径未进白名单，
+     * 全局拦截器本来就会要求登录；一旦将来有人误把它加进白名单，
+     * 注解仍能兜住——而「翻别人会话列表」这类问题一旦漏出就是数据泄露。
+     *
+     * @param aiSessionQueryRequest 分页参数（current / pageSize），允许为空
+     * @return 会话分页结果（含 messageCount，按 updated_at 倒序）
+     */
+    @GetMapping("/session/list")
+    @SaCheckLogin
+    @Operation(summary = "我的 AI 会话列表", description = "需登录；按最近活跃倒序，含每个会话的消息条数，每页最多 50 条")
+    public BaseResponse<Page<AiSessionVO>> listSessions(AiSessionQueryRequest aiSessionQueryRequest) {
+        return ResultUtils.success(aiChatService.listSessions(aiSessionQueryRequest));
+    }
+
+    /**
+     * 删除会话及其全部消息（<b>匿名可用</b>，归属规则与提问完全一致）
+     *
+     * <p>删除方式是「双逻辑删」：会话与消息在同一事务内各自写 {@code deleted_at}，
+     * 数据可追溯。重复删除返回 40400（第二次查不到已删除的会话）。
+     *
+     * @param aiSessionDeleteRequest 删除请求（sessionId 必填）
+     * @return true 表示删除成功
+     */
+    @PostMapping("/session/delete")
+    @Operation(summary = "删除 AI 会话", description = "匿名可访问；同事务逻辑删除会话与全部消息，重复删除返回 40400")
+    public BaseResponse<Boolean> deleteSession(@RequestBody @Valid AiSessionDeleteRequest aiSessionDeleteRequest) {
+        ThrowUtils.throwIf(aiSessionDeleteRequest == null, ErrorCode.PARAMS_ERROR);
+        return ResultUtils.success(aiChatService.deleteSession(aiSessionDeleteRequest.getSessionId()));
     }
 }

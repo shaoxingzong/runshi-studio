@@ -4,6 +4,7 @@ import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.convert.Convert;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bhu.runshistudioweb.config.AiProperties;
@@ -15,12 +16,14 @@ import com.bhu.runshistudioweb.mapper.StudioAiMessageMapper;
 import com.bhu.runshistudioweb.mapper.StudioAiSessionMapper;
 import com.bhu.runshistudioweb.mapper.SysUserMapper;
 import com.bhu.runshistudioweb.model.dto.ai.AiChatRequest;
+import com.bhu.runshistudioweb.model.dto.ai.AiSessionQueryRequest;
 import com.bhu.runshistudioweb.model.entity.StudioAiMessage;
 import com.bhu.runshistudioweb.model.entity.StudioAiSession;
 import com.bhu.runshistudioweb.model.entity.SysUser;
 import com.bhu.runshistudioweb.model.enums.AiMessageRoleEnum;
 import com.bhu.runshistudioweb.model.vo.AiChatResponseVO;
 import com.bhu.runshistudioweb.model.vo.AiMessageVO;
+import com.bhu.runshistudioweb.model.vo.AiSessionVO;
 import com.bhu.runshistudioweb.service.AiChatService;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -31,7 +34,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -76,6 +81,19 @@ public class AiChatServiceImpl implements AiChatService {
      * MyBatis-Plus 表达「列 = 列 + 1」的标准方式（Lambda 写不了自引用表达式）。
      */
     private static final String SQL_INCREASE_QUERY_COUNT = "ai_query_count = ai_query_count + 1";
+
+    /** 会话列表的分页默认值与上限（上限防「一次拉全表」） */
+    private static final long DEFAULT_PAGE_SIZE = 10L;
+    private static final long MAX_PAGE_SIZE = 50L;
+
+    /**
+     * 批量统计里的列名与别名（硬编码常量，不是用户输入）
+     *
+     * <p>统一用常量：避免「这里写 session_id、那里写 sessionId」这种拼写漂移导致
+     * 取值恒为 null、再被兜底成 0——表现为「消息数永远是 0」且不报任何错。
+     */
+    private static final String SESSION_ID_COLUMN = "session_id";
+    private static final String COUNT_ALIAS = "cnt";
 
     @Resource
     private StudioAiSessionMapper studioAiSessionMapper;
@@ -156,6 +174,61 @@ public class AiChatServiceImpl implements AiChatService {
         Long userId = currentUserIdOrNull();
         assertSessionAccessible(parsedSessionId, userId);
         return recentMessages(parsedSessionId, AiChatConstant.HISTORY_MESSAGE_LIMIT);
+    }
+
+    @Override
+    public Page<AiSessionVO> listSessions(AiSessionQueryRequest request) {
+        Long userId = currentUserIdOrNull();
+        // 会话列表必须登录：它天然是「我的会话」，游客没有这个维度。
+        // 控制器上还有 @SaCheckLogin 双保险（见 AiChatController 的说明）
+        ThrowUtils.throwIf(userId == null, ErrorCode.NOT_LOGIN_ERROR, "未登录");
+
+        AiSessionQueryRequest query = request == null ? new AiSessionQueryRequest() : request;
+        long current = (query.getCurrent() == null || query.getCurrent() < 1) ? 1L : query.getCurrent();
+        long pageSize = (query.getPageSize() == null || query.getPageSize() < 1)
+                ? DEFAULT_PAGE_SIZE : query.getPageSize();
+        // 上限收敛：不设上限时一个 pageSize=100000 就能把整表读进内存
+        pageSize = Math.min(pageSize, MAX_PAGE_SIZE);
+
+        LambdaQueryWrapper<StudioAiSession> wrapper = new LambdaQueryWrapper<>();
+        // 按 user_id 等值 + updated_at 倒序，正好走 预留的 idx_user_updated
+        wrapper.eq(StudioAiSession::getUserId, userId);
+        // 次级排序键必须是 id：updated_at 是秒级精度，同一秒活跃过的会话会并列，
+        // 没有稳定键时翻页会出现「同一条会话在两页里都出现 / 都不出现」
+        wrapper.orderByDesc(StudioAiSession::getUpdatedAt).orderByDesc(StudioAiSession::getId);
+
+        // searchCount 保持默认 true —— 分页组件需要 total
+        Page<StudioAiSession> sessionPage = studioAiSessionMapper.selectPage(new Page<>(current, pageSize), wrapper);
+
+        Page<AiSessionVO> voPage = new Page<>(sessionPage.getCurrent(), sessionPage.getSize(),
+                sessionPage.getTotal());
+        voPage.setRecords(toSessionVOs(sessionPage.getRecords()));
+        return voPage;
+    }
+
+    @Override
+    public boolean deleteSession(String sessionId) {
+        long parsedSessionId = parseSessionId(sessionId, "会话 id 不能为空");
+
+        // 归属校验与提问、历史完全一致：不存在与无权统一 40400，不暴露存在性。
+        // 这一步顺带实现了「重复删除 → 40400」：第一次删除后会话已被逻辑删除，
+        // selectById 带 deleted_at = 0 条件查不到 → 与「不存在」走同一条路径
+        Long userId = currentUserIdOrNull();
+        assertSessionAccessible(parsedSessionId, userId);
+
+        // 双逻辑删：父表（会话）与子表（消息）各自 UPDATE deleted_at，必须在同一事务内。
+        // 与/19 的关联表清理对比：那两张关联表是**物理删除**（关系解除即无业务意义），
+        // 而对话属于「用户资产」，误删需要可追溯，所以父子两张表都用**逻辑删除**——
+        // 两种机制的取舍见 db/DESIGN.md 2.2
+        transactionTemplate.executeWithoutResult(status -> {
+            // 先子后父：与「先清关联、再删主表」的既有约定一致。
+            // 若反序，父表删成功而子表删除失败时，会留下「会话已删、消息却还在」的孤儿数据
+            studioAiMessageMapper.delete(new LambdaQueryWrapper<StudioAiMessage>()
+                    .eq(StudioAiMessage::getSessionId, parsedSessionId));
+            ThrowUtils.throwIf(studioAiSessionMapper.deleteById(parsedSessionId) != 1,
+                    ErrorCode.OPERATION_ERROR, "删除会话失败");
+        });
+        return true;
     }
 
     // ==================== 会话定位与归属 ====================
@@ -354,6 +427,75 @@ public class AiChatServiceImpl implements AiChatService {
         AiMessageVO messageVO = new AiMessageVO();
         BeanUtils.copyProperties(message, messageVO);
         return messageVO;
+    }
+
+    // ==================== 会话列表 ====================
+
+    /**
+     * 会话实体列表转 VO 列表，并批量补齐 {@code messageCount}
+     *
+     * @param sessions 本页会话实体
+     * @return 会话 VO 列表
+     */
+    private List<AiSessionVO> toSessionVOs(List<StudioAiSession> sessions) {
+        if (sessions == null || sessions.isEmpty()) {
+            // 空页必须提前返回：拿空集合去 IN () 是语法错误
+            return List.of();
+        }
+        // 一次批量统计拿走本页全部会话的消息数（绝不在循环里逐个 count）
+        Map<Long, Integer> messageCountMap =
+                countMessagesBySessionIds(sessions.stream().map(StudioAiSession::getId).toList());
+
+        return sessions.stream().map(session -> {
+            AiSessionVO sessionVO = new AiSessionVO();
+            sessionVO.setId(session.getId());
+            sessionVO.setTitle(session.getTitle());
+            sessionVO.setUpdatedAt(session.getUpdatedAt());
+            // 没有消息的会话补 0：GROUP BY 不会返回「0 条」的行
+            sessionVO.setMessageCount(messageCountMap.getOrDefault(session.getId(), 0));
+            return sessionVO;
+        }).toList();
+    }
+
+    /**
+     * 批量统计多个会话的消息条数（<b>一次查询解决整页</b>）
+     *
+     * <p>SQL 形如
+     * {@code SELECT session_id, COUNT(*) AS cnt FROM studio_ai_message
+     * WHERE session_id IN (...) AND deleted_at = 0 GROUP BY session_id}。
+     *
+     * <p><b>这是本任务最关键的一条</b>：绝不能写成
+     * {@code for (会话 s : 本页) { count(s.id) }} —— 那是最典型的 N+1，
+     * 一页 20 条会变成 21 次查询。验收时会数日志里的 SQL 条数，就是为了钉住这一点。
+     * 
+     *
+     * <p>{@code deleted_at = 0} 由 MyBatis-Plus 依 {@code @TableLogic} 自动追加，
+     * 因此「已被删除的消息」不会计入条数——与列表接口的可见性保持一致。
+     *
+     * @param sessionIds 本页会话 ID 列表（非空）
+     * @return 会话 ID → 消息条数
+     */
+    private Map<Long, Integer> countMessagesBySessionIds(List<Long> sessionIds) {
+        // LambdaQueryWrapper 表达不了 COUNT(*)：聚合与 GROUP BY 只能用字符串列名的 QueryWrapper。
+        // 列名是硬编码常量、不来自用户输入，因此不存在注入问题
+        QueryWrapper<StudioAiMessage> wrapper = new QueryWrapper<>();
+        wrapper.select(SESSION_ID_COLUMN, "COUNT(*) AS " + COUNT_ALIAS)
+                .in(SESSION_ID_COLUMN, sessionIds)
+                .groupBy(SESSION_ID_COLUMN);
+        List<Map<String, Object>> rows = studioAiMessageMapper.selectMaps(wrapper);
+
+        Map<Long, Integer> result = new HashMap<>();
+        for (Map<String, Object> row : rows) {
+            Object sessionId = row.get(SESSION_ID_COLUMN);
+            Object count = row.get(COUNT_ALIAS);
+            if (sessionId == null) {
+                continue;
+            }
+            // 绝不硬转 (Long)：COUNT(*) 在不同驱动 / 版本下可能是 Long 或 BigInteger，
+            // 硬转属于「本机测试通过、换环境 ClassCastException」的经典坑
+            result.put(Convert.toLong(sessionId), count instanceof Number number ? number.intValue() : 0);
+        }
+        return result;
     }
 
     /**
