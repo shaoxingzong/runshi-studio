@@ -154,3 +154,48 @@ CREATE TABLE `studio_ai_message` (
                                      PRIMARY KEY (`id`),
                                      KEY `idx_session_created` (`session_id`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 咨询消息表';
+
+-- 9. 知识库文档表（RAG 源文档的元数据与溯源）
+-- 关键设计：**向量本体不在库里**。本表只存「这份文档是什么、来自哪、切了几块」，
+-- 真正的向量存放在 LangChain4j 的 EmbeddingStore 中（本期内存实现，可平滑替换）。
+-- source_id 是 R2 的溯源字段：检索命中后能反查到「答案是依据哪条业务数据生成的」。
+-- 索引取舍：只为 (source_type, source_id) 建索引（增量同步时按来源定位文档）；
+--   刻意**不为 status 建索引**——取值只有 3 个、选择性极差，
+--   而「扫待处理文档」是后台批量任务，文档量级下全表扫描更快（见 DESIGN 3.3）。
+DROP TABLE IF EXISTS `studio_knowledge_doc`;
+CREATE TABLE `studio_knowledge_doc` (
+                                        `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
+                                        `title` varchar(128) NOT NULL COMMENT '文档标题（检索结果溯源展示用）',
+                                        `source_type` varchar(16) NOT NULL COMMENT '来源类型：manual-手工录入, project-项目案例, member-成员档案, certificate-荣誉证书',
+                                        `source_id` bigint DEFAULT NULL COMMENT '来源业务数据 ID（R2 溯源字段）：指向对应业务表主键；manual 来源为 NULL',
+                                        `content_hash` varchar(64) NOT NULL COMMENT '正文内容哈希（增量更新去重：内容未变则跳过重建向量）',
+                                        `status` tinyint NOT NULL DEFAULT '0' COMMENT '索引状态：0-待处理, 1-已索引, 2-失败',
+                                        `chunk_count` int NOT NULL DEFAULT '0' COMMENT '已切分块数（与 studio_knowledge_chunk 的实际行数对齐）',
+                                        `created_at` datetime NOT NULL COMMENT '创建时间',
+                                        `updated_at` datetime NOT NULL COMMENT '更新时间',
+                                        `created_by` bigint NOT NULL DEFAULT '0' COMMENT '创建人 ID',
+                                        `updated_by` bigint NOT NULL DEFAULT '0' COMMENT '修改人 ID',
+                                        `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT '逻辑删除毫秒时间戳',
+                                        PRIMARY KEY (`id`),
+                                        KEY `idx_source` (`source_type`, `source_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='知识库文档表（RAG 源文档元数据）';
+
+-- 10. 知识库切分块表（RAG 切分块元数据）
+-- 唯一索引带 deleted_at：整份文档重建时会先逻辑删除旧块再插新块，
+-- 不带 deleted_at 的唯一键会让「重新索引」在第二次直接撞重复。
+DROP TABLE IF EXISTS `studio_knowledge_chunk`;
+CREATE TABLE `studio_knowledge_chunk` (
+                                          `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
+                                          `doc_id` bigint NOT NULL COMMENT '所属文档 ID（关联 studio_knowledge_doc.id）',
+                                          `chunk_index` int NOT NULL COMMENT '块序号（同一文档内从 0 开始递增，决定拼接顺序）',
+                                          `content` text NOT NULL COMMENT '块正文（检索命中后拼上下文与溯源展示用）',
+                                          `embedding_id` varchar(128) DEFAULT NULL COMMENT '向量库条目 ID（LangChain4j EmbeddingStore 的条目标识，用于按向量反查文本）',
+                                          `created_at` datetime NOT NULL COMMENT '创建时间',
+                                          `updated_at` datetime NOT NULL COMMENT '更新时间',
+                                          `created_by` bigint NOT NULL DEFAULT '0' COMMENT '创建人 ID',
+                                          `updated_by` bigint NOT NULL DEFAULT '0' COMMENT '修改人 ID',
+                                          `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT '逻辑删除毫秒时间戳',
+                                          PRIMARY KEY (`id`),
+                                          UNIQUE KEY `uk_doc_chunk` (`doc_id`, `chunk_index`, `deleted_at`),
+                                          KEY `idx_embedding` (`embedding_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='知识库切分块表';

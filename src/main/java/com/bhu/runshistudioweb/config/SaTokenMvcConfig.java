@@ -77,6 +77,9 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
             // 两者必须分别登记——只登记前者会让历史接口返回 40100
             "/ai/chat",
             "/ai/chat/history",
+            // SSE 流式提问：与 /ai/chat 同源同规则，同样匿名可访问。
+            // 注意它是独立路径、必须单独登记——只登记 /ai/chat 不会匹配到 /ai/chat/stream
+            "/ai/chat/stream",
             // 删除会话：游客也要能删掉自己刚聊完的会话（凭不可枚举的雪花 ID）。
             // 注意**只放行这一条**：/ai/session/list（我的会话列表）要求登录，
             // 是「按登录用户维度聚合」的接口，匿名没有任何语义

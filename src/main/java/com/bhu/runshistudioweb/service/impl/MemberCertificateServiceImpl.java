@@ -69,6 +69,17 @@ public class MemberCertificateServiceImpl extends ServiceImpl<StudioMemberCertif
 
     // ==================== 写操作 ====================
 
+    /**
+     * 绑定成员与证书（管理员显式动作）
+     *
+     * <p><b>两次防御缺一不可</b>：
+     * <ul>
+     *     <li>先 {@code count} 查重 → 命中就给「该成员已绑定此证书」这种可读提示；
+     *     单靠唯一索引的话，报错是英文的 SQLException，不能直接给前端；</li>
+     *     <li>再 {@code catch DuplicateKeyException} → 兜住<b>并发竞态</b>
+     *     （两个请求同时通过上面的查重，后到的会被唯一索引拦下）。</li>
+     * </ul>
+     */
     @Override
     public boolean bind(long memberId, long certificateId) {
         // 两个 id 都必须是正数：雪花 ID 恒为正，0 / 负数一定是调用方传错或探测请求
@@ -98,6 +109,12 @@ public class MemberCertificateServiceImpl extends ServiceImpl<StudioMemberCertif
         }
     }
 
+    /**
+     * 解绑成员与证书（<b>物理删除</b>：本实体没有 {@code @TableLogic}）
+     *
+     * <p>先查关系是否存在再删：不存在要明确返回 40400「该成员未绑定此证书」，
+     * 而不是返回 false 让前端去猜「是没删掉还是本来就没有」。
+     */
     @Override
     public boolean unbind(long memberId, long certificateId) {
         ThrowUtils.throwIf(memberId <= 0, ErrorCode.PARAMS_ERROR, "成员 id 不合法");
@@ -113,6 +130,13 @@ public class MemberCertificateServiceImpl extends ServiceImpl<StudioMemberCertif
 
     // ==================== 读操作 ====================
 
+    /**
+     * 查某成员持有的全部证书（管理端视图）
+     *
+     * <p>采用<b>两步查询</b>而非 JOIN：先从关联表取 ID 列表（覆盖索引、不回表），
+     * 再 {@code IN} 查主表——主表查询时 MyBatis-Plus 会<b>自动</b>追加
+     * {@code deleted_at = 0}，于是「证书已被删」的悬空关联被天然过滤（查询侧防御）。
+     */
     @Override
     public List<CertificateVO> listCertificatesByMember(long memberId) {
         ThrowUtils.throwIf(memberId <= 0, ErrorCode.PARAMS_ERROR, "成员 id 不合法");
@@ -122,6 +146,12 @@ public class MemberCertificateServiceImpl extends ServiceImpl<StudioMemberCertif
         return certificates.stream().map(this::toCertificateVO).toList();
     }
 
+    /**
+     * 查某证书关联的全部成员（反向查询，走 {@code idx_cert_member}）
+     *
+     * <p>与正向查询是同一套实现思路，只是换了索引方向；
+     * 空集合必须提前返回——拿空集合拼 {@code IN ()} 是<b>语法错误</b>，MySQL 会直接报错。
+     */
     @Override
     public List<MemberVO> listMembersByCertificate(long certificateId) {
         ThrowUtils.throwIf(certificateId <= 0, ErrorCode.PARAMS_ERROR, "证书 id 不合法");
@@ -148,6 +178,13 @@ public class MemberCertificateServiceImpl extends ServiceImpl<StudioMemberCertif
         return studioMemberMapper.selectList(wrapper).stream().map(this::toMemberVO).toList();
     }
 
+    /**
+     * 查某成员持有的全部证书（<b>C 端脱敏视图</b>）
+     *
+     * <p>与管理端查询共用同一条取数逻辑（{@code selectCertificatesOfMember}），
+     * 只是换成了 {@code CertificateFrontVO}——这样两端的筛选与排序规则天然一致，
+     * 不会出现「后台看到 3 张、官网只显示 2 张」。
+     */
     @Override
     public List<CertificateFrontVO> listFrontCertificatesByMember(long memberId) {
         ThrowUtils.throwIf(memberId <= 0, ErrorCode.PARAMS_ERROR, "成员 id 不合法");
@@ -158,6 +195,15 @@ public class MemberCertificateServiceImpl extends ServiceImpl<StudioMemberCertif
 
     // ==================== 级联清理 ====================
 
+    /**
+     * 清理某成员的全部证书关联（供 {@code deleteMember} 在同一事务内调用）
+     *
+     * <p>用 {@code baseMapper.delete()} 而不是 Service 的 {@code remove()}：
+     * 前者返回<b>被删除的行数</b>（便于日志核对），后者只返回 boolean。
+     *
+     * <p>物理删除：关联表没有 {@code deleted_at}，也不该有——成员都被删了，
+     * 保留他的绑定关系没有意义。
+     */
     @Override
     public long removeByMemberId(long memberId) {
         ThrowUtils.throwIf(memberId <= 0, ErrorCode.PARAMS_ERROR, "成员 id 不合法");
@@ -168,6 +214,12 @@ public class MemberCertificateServiceImpl extends ServiceImpl<StudioMemberCertif
                 .eq(StudioMemberCertificate::getMemberId, memberId));
     }
 
+    /**
+     * 清理某证书的全部关联关系（供 {@code deleteCertificate} 在同一事务内调用）
+     *
+     * <p>与 {@code removeByMemberId} 对称：删证书时也要把「谁持有它」的关系一次性清掉，
+     * 否则会留下指向已删除证书的悬空关联。
+     */
     @Override
     public long removeByCertificateId(long certificateId) {
         ThrowUtils.throwIf(certificateId <= 0, ErrorCode.PARAMS_ERROR, "证书 id 不合法");

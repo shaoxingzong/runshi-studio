@@ -6,6 +6,7 @@ import com.bhu.runshistudioweb.model.dto.ai.AiSessionQueryRequest;
 import com.bhu.runshistudioweb.model.vo.AiChatResponseVO;
 import com.bhu.runshistudioweb.model.vo.AiMessageVO;
 import com.bhu.runshistudioweb.model.vo.AiSessionVO;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 
@@ -100,4 +101,29 @@ public interface AiChatService {
      *         会话不存在或无权访问（40400）时抛出
      */
     boolean deleteSession(String sessionId);
+
+    /**
+     * SSE 流式提问（<b>匿名可用</b>，鉴权与归属规则与 {@link #chat} 完全一致）
+     *
+     * <p><b>契约例外</b>：本方法对应的接口<b>不返回 {@code BaseResponse}</b>——
+     * SSE 响应体是事件流，不是一次性 JSON，套上 {@code {code,data,message}} 会让前端无法边收边渲染。
+     * 代价是所有失败（含参数错误、会话不存在、配额超限、AI 失败）都以 {@code error} <b>事件</b>返回，
+     * HTTP 状态码恒为 200，业务码在事件负载里。
+     *
+     * <p><b>事件序列</b>：{@code meta(sessionId)} → {@code delta}* → {@code done} / {@code error}
+     * <ul>
+     *     <li>{@code meta}：{@code {"sessionId":"<会话ID>"}}，新建会话时前端只能从这里拿到 ID；</li>
+     *     <li>{@code delta}：{@code {"delta":"<增量文本>"}}，可能多次；</li>
+     *     <li>{@code done}：{@code {"messageId":"<回答消息ID>"}}，表示回答已<b>落库提交</b>；</li>
+     *     <li>{@code error}：{@code {"code":<业务码>,"message":"<提示>"}}，替代 done 结束序列。</li>
+     * </ul>
+     *
+     * <p><b>落库与计数</b>：用户消息在开始推流前先落库；回答在<b>流结束后</b>与
+     * 「会话 updated_at + 配额计数」在同一事务内一次写入（与 {@link #chat} 共用实现）。
+     * 失败或客户端中断时<b>只保留用户消息</b>，不写回答、不计数。
+     *
+     * @param request 提问请求（message 必填；sessionId 可空表示新建会话）
+     * @return SSE 发射器（方法立即返回，推流在虚拟线程中进行）
+     */
+    SseEmitter chatStream(AiChatRequest request);
 }

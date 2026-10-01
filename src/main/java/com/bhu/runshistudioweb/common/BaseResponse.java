@@ -30,6 +30,22 @@ import java.io.Serializable;
 @Data
 public class BaseResponse<T> implements Serializable {
 
+    /**
+     * 序列化版本号：实现了 {@link Serializable} 就必须固定写死一个值
+     *
+     * <p><b>不写会怎样</b>：JVM 会按类的结构（字段名、方法签名……）自动算一个 UID。
+     * 一旦以后给本类加一个字段，算出来的 UID 就变了——此时再去反序列化"旧版本"的数据，
+     * 会直接抛 {@code InvalidClassException}，而且这种错误只在「读旧数据」时才暴露，
+     * 平时测试根本发现不了。
+     *
+     * <p><b>什么时候会真的踩到</b>：响应对象被缓存在 Redis、或被另一个服务接收时，
+     * 走的都是 Java 序列化。本项目目前直接返回 JSON，看似用不到，
+     * 但只要哪天有人把 {@code BaseResponse} 塞进 Redis，这就是一颗定时炸弹。
+     *
+     * <p>写死 {@code 1L} 的含义是「告诉 JVM：这些版本结构兼容，可以互相读」。
+     */
+    private static final long serialVersionUID = 1L;
+
     /** 业务状态码：0-成功，非 0-失败 */
     private int code;
 

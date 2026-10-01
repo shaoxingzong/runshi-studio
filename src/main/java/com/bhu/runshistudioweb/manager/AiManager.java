@@ -11,9 +11,12 @@ import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.model.chat.StreamingChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
 import dev.langchain4j.model.openai.OpenAiChatModel;
+import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +25,10 @@ import org.springframework.stereotype.Component;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 /**
  * AI 服务调用管理器（Manager 层）—— 基于 <b>LangChain4j</b>
@@ -106,6 +113,15 @@ public class AiManager {
     private ChatModel chatModel;
 
     /**
+     * 流式模型（SSE 接口用），同样只依赖 LangChain4j 的 {@link StreamingChatModel} 接口
+     *
+     * <p>{@code OpenAiStreamingChatModel} 与 {@code OpenAiChatModel} 是两个独立的 Builder——
+     * 这不是我们的选择，而是 LangChain4j 的设计（同步与流式是两条实现路径）。
+     * 因此本类同时持有两个模型实例，配置项（base-url / api-key / model / timeout）完全一致。
+     */
+    private StreamingChatModel streamingChatModel;
+
+    /**
      * 初始化模型客户端（{@code @PostConstruct} 保证配置已绑定完成）
      *
      * <p>未配置 base-url / api-key 时<b>不构建、也不抛异常</b>：
@@ -130,6 +146,16 @@ public class AiManager {
                 .maxRetries(MAX_RETRIES)
                 // 刻意不开 logRequests / logResponses：前者会打出 Authorization 头（密钥），
                 // 后者会打出用户对话内容。排查协议问题时应临时开启并在本地使用，不要带进提交
+                .build();
+
+        // 流式模型：与同步模型用同一套配置。
+        // 注意 OpenAiStreamingChatModel 的 builder **没有 maxRetries**（流式下重试语义不同：
+        // 已经开始推流后重试会重复输出），所以流式路径最坏情况就是一次 60s 的等待
+        this.streamingChatModel = OpenAiStreamingChatModel.builder()
+                .baseUrl(aiProperties.getBaseUrl())
+                .apiKey(aiProperties.getApiKey())
+                .modelName(aiProperties.getModel())
+                .timeout(REQUEST_TIMEOUT)
                 .build();
 
         log.info("AI 客户端初始化完成 | baseUrl={} | model={} | timeout={}s | maxRetries={}",
@@ -170,6 +196,96 @@ public class AiManager {
         }
 
         return extractAnswer(chatResponse);
+    }
+
+    /**
+     * 带上下文<b>流式</b>调用 AI（SSE 接口用）
+     *
+     * <p>与 {@link #chat} 的关系：入参、消息组装、错误收敛完全一致，
+     * 区别只在「回答是边生成边推送」还是「一次性返回」。
+     * 两者共用 {@link #buildMessages}，因此上下文窗口的口径不会漂移。
+     *
+     * <p><b>回调线程</b>：{@code onDelta} 由 LangChain4j 的流式线程调用，
+     * 实现里做的是「拼接字符串 + 写 SSE」，都必须轻量；重活（落库）在流结束后由调用方处理。
+     *
+     * <p><b>为什么不传播取消</b>：客户端断开后，本方法仍会把模型的流读完
+     * （LangChain4j 的流式接口没有暴露「按需中断」的句柄）。
+     * 代价是断连后仍消耗一次模型调用；收益是代码简单、且不会出现「半截流已被计费但没落库」。
+     * 调用方通过「不再累积、不再落库、不计数」来表达中断语义（见 AiChatServiceImpl）。
+     *
+     * @param systemPrompt 系统提示词
+     * @param history      上下文消息（时间正序），可为空
+     * @param userMessage  本次提问
+     * @param onDelta      每收到一段增量时的回调（可为 null，表示只关心最终结果）
+     * @return 完整回答（取自模型的最终响应，而不是自己拼接的增量——两者理论上一致，
+     *         但以模型为准可以避免「增量丢失导致落库内容缺字」）
+     * @throws BusinessException 未配置、调用失败或回答为空时抛出（50001）
+     */
+    public String chatStream(String systemPrompt, List<AiMessageVO> history, String userMessage,
+                             Consumer<String> onDelta) {
+        if (streamingChatModel == null) {
+            log.warn("调用 AI 失败：studio.ai.base-url 或 api-key 未配置（本地不配置不影响其它接口）");
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, AI_UNAVAILABLE_MESSAGE);
+        }
+
+        ChatRequest chatRequest = ChatRequest.builder()
+                .messages(buildMessages(systemPrompt, history, userMessage))
+                .build();
+
+        AtomicReference<ChatResponse> responseRef = new AtomicReference<>();
+        AtomicReference<Throwable> errorRef = new AtomicReference<>();
+        // 闩锁兜底：OpenAiStreamingChatModel 的 chat(...) 目前是「阻塞到流结束」，
+        // 但 LangChain4j 的接口是回调式的，将来若改为异步实现，这里靠闩锁仍然正确
+        CountDownLatch latch = new CountDownLatch(1);
+
+        try {
+            streamingChatModel.chat(chatRequest, new StreamingChatResponseHandler() {
+                @Override
+                public void onPartialResponse(String partialResponse) {
+                    if (onDelta != null && StrUtil.isNotBlank(partialResponse)) {
+                        onDelta.accept(partialResponse);
+                    }
+                }
+
+                @Override
+                public void onCompleteResponse(ChatResponse completeResponse) {
+                    responseRef.set(completeResponse);
+                    latch.countDown();
+                }
+
+                @Override
+                public void onError(Throwable error) {
+                    errorRef.set(error);
+                    latch.countDown();
+                }
+            });
+            // 等待回调收尾。超时给模型 timeout 再加 5s 余量：真超时了也必须有结论，
+            // 否则线程会一直挂在闩锁上（它比「多等 5s」危险得多）
+            if (!latch.await(REQUEST_TIMEOUT.plusSeconds(5).toMillis(), TimeUnit.MILLISECONDS)) {
+                log.error("等待 AI 流式响应超时 | baseUrl={} | model={}",
+                        aiProperties.getBaseUrl(), aiProperties.getModel());
+                throw new BusinessException(ErrorCode.OPERATION_ERROR, AI_UNAVAILABLE_MESSAGE);
+            }
+        } catch (BusinessException e) {
+            throw e;
+        } catch (InterruptedException e) {
+            // 恢复中断标记：吞掉中断会让上层（例如应用关闭）失去感知
+            Thread.currentThread().interrupt();
+            log.error("AI 流式调用被中断", e);
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, AI_UNAVAILABLE_MESSAGE);
+        } catch (Exception e) {
+            log.error("调用 AI 流式服务失败 | baseUrl={} | model={}", aiProperties.getBaseUrl(),
+                    aiProperties.getModel(), e);
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, AI_UNAVAILABLE_MESSAGE);
+        }
+
+        if (errorRef.get() != null) {
+            // 流中途报错（连接断了、服务商限流）也走同一个出口
+            log.error("AI 流式响应出错 | baseUrl={} | model={}", aiProperties.getBaseUrl(),
+                    aiProperties.getModel(), errorRef.get());
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, AI_UNAVAILABLE_MESSAGE);
+        }
+        return extractAnswer(responseRef.get());
     }
 
     /**

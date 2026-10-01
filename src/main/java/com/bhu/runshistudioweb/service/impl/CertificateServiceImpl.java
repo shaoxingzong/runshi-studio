@@ -73,6 +73,16 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
 
     // ==================== 管理端 ====================
 
+    /**
+     * 新增证书（契约见 {@link CertificateService}）
+     *
+     * <p>实现要点：四个必填项其实对应四种「不拦住就会出事」的情况——
+     * 其中 {@code imageUrl} 非空校验是为了把<b>数据库报错</b>提前成<b>参数提示</b>：
+     * DDL 里该列是 NOT NULL，不校验的话用户只会看到 50000「系统错误」。
+     *
+     * <p>{@code sortOrder} 不传时显式置 0 而不是留 null：显示赋值比依赖 DDL 默认值更直观，
+     * 将来 DDL 改默认值时行为也不会漂移。
+     */
     @Override
     public long addCertificate(CertificateAddRequest certificateAddRequest) {
         // 请求体整体为 null 时 @Valid 不会触发，这里兜一层避免后面 getXxx() 抛 NPE 变成 500
@@ -106,6 +116,17 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
         return certificate.getId();
     }
 
+    /**
+     * 更新证书（部分更新：字段为 null 表示不修改）
+     *
+     * <p>两个刻意的处理：
+     * <ul>
+     *     <li><b>先查存在再更新</b>：{@code updateById} 失败时只返回 false，
+     *     前端只能看到「更新失败」；先查一次才能给出 40400「证书不存在」；</li>
+     *     <li><b>传了才校验</b>（包括"传空串要拦住"）：不传表示不改，
+     *     传了空串是想清空——NOT NULL 列不允许，必须在这里拦成 40000。</li>
+     * </ul>
+     */
     @Override
     public boolean updateCertificate(CertificateUpdateRequest certificateUpdateRequest) {
         ThrowUtils.throwIf(certificateUpdateRequest == null || certificateUpdateRequest.getId() == null,
@@ -158,6 +179,15 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
      * @param id 证书 ID
      * @return true 表示删除成功
      */
+    /**
+     * 删除证书（逻辑删除 + <b>同一事务内</b>清理成员-证书关联）
+     *
+     * <p>顺序是「先清关联、再删主表」：反过来一旦主表删成功而清理失败，
+     * 就会留下指向已删除证书的悬空关联（DESIGN.md 2.2）。
+     *
+     * <p>{@code rollbackFor = Exception.class} 必须写：Spring 默认只回滚
+     * RuntimeException，漏了它等于「事务声明了一半」。
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean deleteCertificate(long id) {
@@ -173,6 +203,12 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
         return this.removeById(id);
     }
 
+    /**
+     * 按 id 查证书（管理端视图）
+     *
+     * <p>查不到要抛 40400 而不是返回 null：返回 null 会让前端收到
+     * 「code=0 但 data 为空」——它分不清这是"没有数据"还是"出错了"。
+     */
     @Override
     public CertificateVO getCertificateById(long id) {
         ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "证书 id 不合法");
@@ -182,6 +218,15 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
         return this.getCertificateVO(certificate);
     }
 
+    /**
+     * 管理端分页查询
+     *
+     * <p>分页参数在这里做<b>兜底纠正</b>而不是抛异常（页码 &lt;1 视为 1、pageSize 收敛到 50）：
+     * 传错页码没必要让整个查询失败，收敛到合理区间继续查体验更好。
+     *
+     * <p>排序字段走白名单 switch：ORDER BY 位置<b>无法用占位符参数化</b>，
+     * 把前端字符串直接拼进去就是最典型的 SQL 注入入口，只能靠白名单。
+     */
     @Override
     public Page<CertificateVO> listCertificateByPage(CertificateQueryRequest certificateQueryRequest) {
         CertificateQueryRequest query = certificateQueryRequest == null
@@ -202,6 +247,16 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
 
     // ==================== C 端 ====================
 
+    /**
+     * C 端公开列表（游客可访问）
+     *
+     * <p>与管理端分页的三点不同，都是公开接口的必要约束：
+     * <ul>
+     *     <li>返回<b>脱敏 VO</b>（不含 sortOrder 与审计字段）；</li>
+     *     <li><b>固定排序</b>，忽略请求里的 sortField/sortOrder——排序由产品定义，不由请求方决定；</li>
+     *     <li><b>强制上限</b>：游客流量不可控，无上限的 list 等于把整表拉回内存。</li>
+     * </ul>
+     */
     @Override
     public List<CertificateFrontVO> listFrontCertificates(CertificateQueryRequest certificateQueryRequest) {
         CertificateQueryRequest query = certificateQueryRequest == null
@@ -224,6 +279,14 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
 
     // ==================== VO 转换 ====================
 
+    /**
+     * 实体转管理端 VO
+     *
+     * <p>用 {@code BeanUtils.copyProperties} 而不是手写一长串 setXxx：
+     * 漏一个字段就是线上 bug，而字段新增时还要记得回来补。
+     * 代价是<b>类型不一致的属性会被静默跳过</b>——所以两边字段名与类型必须严格对应
+     * （例如 {@code awardDate} 都用 {@code LocalDate}，用错类型会表现为"日期永远是 null"且不报错）。
+     */
     @Override
     public CertificateVO getCertificateVO(StudioCertificate certificate) {
         if (certificate == null) {
@@ -235,6 +298,13 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
         return certificateVO;
     }
 
+    /**
+     * 实体转 C 端 VO
+     *
+     * <p>脱敏靠「<b>目标 VO 没有这些字段</b>」实现：sortOrder 与审计字段在
+     * {@code CertificateFrontVO} 里根本不存在，copyProperties 也就拷不过去。
+     * 比"拷完再手动置空"可靠——以后实体新增敏感字段时，只要不加进 VO 就自动被挡住。
+     */
     @Override
     public CertificateFrontVO getCertificateFrontVO(StudioCertificate certificate) {
         if (certificate == null) {

@@ -17,12 +17,14 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 
@@ -91,6 +93,34 @@ public class AiChatController {
         // 40000「会话 id 不能为空」，而不是 Spring 抛 MissingServletRequestParameterException
         // 被全局处理器兜成 50000「系统错误」
         return ResultUtils.success(aiChatService.listHistory(sessionId));
+    }
+
+    /**
+     * AI 提问（<b>SSE 流式</b>，匿名可用）
+     *
+     * <p><b>契约例外：本接口不返回 {@code BaseResponse}</b>。SSE 的响应体是事件流，
+     * 套上 {@code {code,data,message}} 会让前端无法边收边渲染。
+     * 由此带来两个必须知道的后果：
+     * <ol>
+     *     <li><b>HTTP 状态码恒为 200</b>，包括参数错误、会话不存在、配额超限、AI 失败——
+     *     它们都以 {@code error} 事件返回（负载含业务码），前端必须监听 error 事件，
+     *     不能再依赖「非 0 code 就报错」那套统一拦截逻辑；</li>
+     *     <li>因此这里<b>不加 {@code @Valid}</b>：加了之后 Spring 会抛
+     *     MethodArgumentNotValidException，被全局异常处理器包成 application/json 的 40000 响应，
+     *     与 text/event-stream 的内容类型混在一起。校验交给 Service，
+     *     失败时同样以 error 事件返回（见 AiChatService#chatStream）。</li>
+     * </ol>
+     *
+     * <p>事件序列：{@code meta(sessionId)} → {@code delta}* → {@code done} / {@code error}。
+     *
+     * @param aiChatRequest 提问请求（message 必填；sessionId 可空表示新建会话）
+     * @return SSE 发射器（异步推流）
+     */
+    @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @Operation(summary = "AI 提问（SSE 流式）",
+            description = "匿名可访问；事件序列 meta → delta* → done/error，失败以 error 事件返回（HTTP 恒 200）")
+    public SseEmitter chatStream(@RequestBody AiChatRequest aiChatRequest) {
+        return aiChatService.chatStream(aiChatRequest);
     }
 
     // ==================== 会话管理 ====================
