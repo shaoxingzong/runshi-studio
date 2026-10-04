@@ -1,0 +1,56 @@
+# ============================================================================
+# 本地私有配置【模板】—— 复制为同目录下的 application-local.yml 后填入自己的值
+#
+#   Windows (PowerShell):
+#     Copy-Item src/main/resources/application-local.yml.example `
+#              src/main/resources/application-local.yml
+#   Linux / macOS:
+#     cp src/main/resources/application-local.yml.example \
+#        src/main/resources/application-local.yml
+#
+# application-local.yml 已被 .gitignore 忽略，**永远不会进 Git**；
+# 因此仓库里只有这个 .example 模板，模板内不含任何真实密钥，可以安全公开。
+#
+# 加载方式（application.yml）：
+#   spring.config.import: optional:classpath:application-local.yml
+# optional = 文件不存在也不报错；但下面这些口令没有默认值，
+#            所以「文件不存在 + 环境变量也没设」的结果是**启动失败**。
+#
+# 为什么需要它：application.yml 里 datasource.password / redis.password
+# 刻意**不给默认值**（公开仓库里出现弱口令会被安全扫描告警，也等于公开本机默认口令），
+# 所以本机必须自己提供。两种方式二选一：
+#   ① 填这个文件（推荐，最简单）
+#   ② 设环境变量 MYSQL_PASSWORD / REDIS_PASSWORD
+# ============================================================================
+
+spring:
+  datasource:
+    # 本机 MySQL 口令（默认库名 studio_db，用户名默认 root，见 application.yml）
+    password: 改成你的MySQL口令
+  data:
+    redis:
+      # 本机 Redis 口令；如果 Redis 根本没设口令，把这一整行删掉即可
+      password: 改成你的Redis口令
+
+# ===== 以下只有要用「AI 助手 / RAG 知识库」时才需要 =====
+# 不填也能启动：应用照常运行，只是调用 AI 时返回 50001「AI 服务暂时不可用」
+studio:
+  ai:
+    # OpenAI 兼容地址（不带 /chat/completions，由 AiManager 拼接）。
+    # 例如阿里云百炼：https://dashscope.aliyuncs.com/compatible-mode/v1
+    # ⚠️ 必须是 compatible-mode 这一条路径——它同时支持 /chat/completions 与 /embeddings
+    base-url: https://你的服务商地址/v1
+
+    # 服务商控制台申请。⚠️ 真实值只写进 application-local.yml，绝不提交
+    api-key: sk-你的密钥
+
+    # 对话模型完整标识。
+    # ⚠️ 想要「打字机效果」就别选推理模型：推理模型会先吐几千 token 的思考过程，
+    #    前端表现为「憋半天然后一次性给全」。需要推理质量就得改代码把
+    #    reasoning_content 也作为事件推给前端（见 DEPLOY.md 第 12 章）
+    model: deepseek-chat
+
+    # 向量模型（RAG 入库与检索都用它）
+    # ⚠️ 一经选定不要更换：换模型 = 新旧向量不在同一语义空间 = 全库重建，
+    #    见 DEPLOY.md 第 10 章
+    embedding-model: text-embedding-3-small

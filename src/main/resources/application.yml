@@ -29,8 +29,12 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: ${MYSQL_URL:jdbc:mysql://localhost:3306/studio_db?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
     username: ${MYSQL_USERNAME:root}
-    # 本地默认口令；生产被 application-prod.yml 覆盖为**必填**（无默认值）
-    password: ${MYSQL_PASSWORD:123456}
+    # ⚠️ 刻意**不给默认值**：口令属于私密信息。写死在仓库里（哪怕只是本地开发用的弱口令）
+    #    既会被安全扫描工具告警，也等于把「本机数据库的默认口令」公开出去。
+    #  → 本地：写在 application-local.yml（不进 Git），或用环境变量 MYSQL_PASSWORD 提供；
+    #  → 生产：由 application-prod.yml 的 ${MYSQL_PASSWORD} 从 app.env 注入。
+    # 没有默认值意味着「忘记配置 = 启动即失败」，而不是「侥幸连上」——这是有意的。
+    password: ${MYSQL_PASSWORD}
 
   servlet:
     multipart:
@@ -42,7 +46,9 @@ spring:
     redis:
       host: ${REDIS_HOST:127.0.0.1}
       port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:123456}   # 生产覆盖为必填
+      # 同 datasource.password：刻意不给默认值，本地由 application-local.yml 或
+      # 环境变量 REDIS_PASSWORD 提供（理由见上方注释）
+      password: ${REDIS_PASSWORD}
       database: 0
       timeout: 3000ms                # Redis 卡住时快速失败，而不是一直挂着
       connect-timeout: 3000ms        # Redis 未启动立刻报错，不用等系统默认重试
