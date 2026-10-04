@@ -1,38 +1,147 @@
+# ============================================================================
+# 全局默认 + 各环境公共配置
+#
+# <b>为什么不全塞进 dev / prod 两份文件里</b>：
+#   - 这里放「所有环境都一样」的配置，以及「安全默认值」；
+#   - application-dev.yml / application-prod.yml 只写**真正不同**的几项；
+#   - application-local.yml（不进 Git）放个人本机的真实密钥。
+#   这样两个环境文件的差异一眼可见，而不是两份长文件逐行对比。
+#
+# <b>安全默认值原则</b>：凡是「开了有风险」的开关（接口文档、鉴权日志、调试日志），
+# 一律在这里写成**关闭**，再由 dev profile 显式打开。
+# 这样将来新增任何 profile 而忘了配置时，结果是「安全」而不是「侥幸」。
+# ============================================================================
+
 spring:
   application:
     # 应用名：日志、链路追踪、注册中心都会用它标识服务
     name: runshi-studio-web
   profiles:
-    # 激活的环境：决定加载 application-dev.yml / application-prod.yml。
-    # 部署时可用 --spring.profiles.active=prod 覆盖，不要改这里的值
+    # 激活的环境；部署时用 --spring.profiles.active=prod 覆盖，不要改这里的值
     active: dev
 
+  # 本地私有配置（不进 Git）：个人本机的真实密钥写在这里。
+  # optional: 文件不存在也不报错——别人拉下代码无需创建即可启动
+  config:
+    import: optional:classpath:application-local.yml
+
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${MYSQL_URL:jdbc:mysql://localhost:3306/studio_db?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${MYSQL_USERNAME:root}
+    # 本地默认口令；生产被 application-prod.yml 覆盖为**必填**（无默认值）
+    password: ${MYSQL_PASSWORD:123456}
+
+  servlet:
+    multipart:
+      max-file-size: 10MB       # 框架层限制：单个文件最大 10MB
+      max-request-size: 10MB    # 框架层限制：整个请求最大 10MB
+
+  # Redis（Spring Boot 4 的前缀是 spring.data.redis；Boot 2 的 spring.redis 已废弃）
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:123456}   # 生产覆盖为必填
+      database: 0
+      timeout: 3000ms                # Redis 卡住时快速失败，而不是一直挂着
+      connect-timeout: 3000ms        # Redis 未启动立刻报错，不用等系统默认重试
+      lettuce:
+        shutdown-timeout: 200ms
+        pool:
+          enabled: true              # 生效前提：classpath 上有 commons-pool2（已加入 pom）
+          max-active: 16
+          max-idle: 8
+          min-idle: 2
+          max-wait: 2000ms           # 不用 -1（无限等待）
+
 server:
-  # 服务端口
   port: 8080
   servlet:
-    # 统一前缀，所有接口都挂在 /api 下（如 http://localhost:8080/api/user/login），
-    # 便于 Nginx 按前缀转发、与前端静态资源区分
+    # 统一前缀：所有接口挂在 /api 下，便于 Nginx 按前缀转发、与前端静态资源区分
     context-path: /api
 
+studio:
+  file:
+    # 上传根目录：必须是**绝对路径**，且与 WebMvcConfig 的 /uploads/** 映射是同一个值。
+    # 不写相对路径：相对路径以「进程工作目录」为基准，本地跑与打成 jar 后指向不同位置，
+    # 表现为「本地能看到图、部署后图片全 404」。生产由 prod profile 覆盖为 Linux 路径
+    root-dir: ${FILE_ROOT_DIR:D:/runshi-studio-upload}
+
+  # ===== AI 咨询（OpenAI 兼容协议，服务商可替换）=====
+  ai:
+    # 以下四项在生产被覆盖为「必填」；本地留空时应用照常启动，
+    # 只有真正调用 AI 时返回 50001「AI 服务暂时不可用」
+    base-url: ${AI_BASE_URL:}                       # 不带 /chat/completions，由 AiManager 拼接
+    api-key: ${AI_API_KEY:}
+    model: ${AI_MODEL:deepseek-chat}
+    embedding-model: ${AI_EMBEDDING_MODEL:text-embedding-3-small}
+    # 想不改包换话术：设为 file:/opt/.../system-prompt.txt
+    system-prompt-location: ${AI_SYSTEM_PROMPT_LOCATION:classpath:prompts/system-prompt.txt}
+
+    # 单用户提问次数上限（登录用户才计数，游客不计）；命中返回 42900
+    query-limit: 100
+    # RAG 检索：最多取回多少条资料块（越多越全，但 token 与噪声同步上升）
+    rag-top-k: 5
+    # RAG 相似度下限：⚠️ 它是 relevance=(1+cos)/2 而**不是**余弦本身，
+    #   0.5 = 正交（毫不相关）、0.75 ≈ 余弦 0.5；**越高越严格**，换向量模型后必须重新校准
+    rag-min-score: 0.75
+    # 配额增量回刷周期（毫秒）：Redis 若重启，最多丢这么多增量——所以 AOF 必须开
+    query-count-flush-delay-ms: 60000
+    # ===== 游客 IP 限流 =====
+    # 游客没有身份、配额无从谈起，只能按 IP 兜底；登录用户不受此限（走用户配额）。
+    # 开关：测试环境由 surefire 统一置 false（避免既有匿名用例被误杀），
+    #       限流专项测试类用 @DynamicPropertySource 覆盖为 true
+    guest-ip-minute-limit: 5
+    guest-ip-daily-limit: 50
+    guest-ip-limits-enabled: ${AI_GUEST_IP_LIMITS_ENABLED:true}
+
+  web:
+    # 跨域来源白名单：逗号分隔，端口通配用 *；必须走 allowedOriginPatterns（见 CorsConfig）
+    allowed-origins: ${WEB_ALLOWED_ORIGINS:http://localhost:*,http://127.0.0.1:*}
+
 # ===== Actuator 端点暴露范围（这是「安全边界」，不是调试开关）=====
-# 框架默认值恰好只有 health，但这里显式写出来，避免"依赖默认值"的侥幸：
-#   - 一旦有人为了排查方便改成 "*"，/actuator/env（配置项）、/actuator/heapdump（堆转储，
-#     可能含密码与 token）、/actuator/mappings（全部内部接口）会**零鉴权对外开放**；
-#   - 已实测：actuator 端点由独立的 WebMvcEndpointHandlerMapping 处理，
-#     Sa-Token 注册的 MVC 拦截器对它**完全无效**，所以不能指望鉴权框架兜住它。
-#   需要更多端点时，请用 management.server.port 挪到独立端口并限制内网访问，而不是放宽这里。
+# 改成 "*" 会让 /actuator/env（配置项）、/actuator/heapdump（堆转储，可能含密码与 token）
+# 零鉴权对外开放。且这些端点由独立的 WebMvcEndpointHandlerMapping 处理，
+# Sa-Token 的 MVC 拦截器对它**完全无效**——不能指望鉴权框架兜住它。
 management:
   endpoints:
     web:
       exposure:
         include: health
 
-# ===== Knife4j 接口文档：默认**关闭**，只在 dev 打开 =====
-# 放在全局默认里关闭是刻意的（安全默认值原则）：
-#   - 文档 UI 会暴露全部接口路径、参数与示例，不该对公网开放；
-#   - 以前只有 application-dev.yml 写了 enable: true，于是「生产没有显式配置」时
-#     用的是框架默认值（开启）——属于典型的安全靠侥幸；
-#   - 现在改成「默认关、dev 开」：即使将来新增 prod 配置忘了写这一项，也不会误开。
+# ===== 接口文档：默认关闭，dev 打开 =====
 knife4j:
   enable: false
+springdoc:
+  api-docs:
+    enabled: false
+
+# ===== Sa-Token 认证框架 =====
+# 键名与 cn.dev33.satoken.config.SaTokenConfig 字段一一对应（中划线 ↔ 驼峰）；
+# 写错的键不会报错、只会被静默忽略，改完务必确认登录行为符合预期
+sa-token:
+  # 前后端契约：请求头与 Cookie 都叫 satoken，改动需前端与所有已登录客户端同步
+  token-name: satoken
+  timeout: 604800              # 7 天
+  active-timeout: 1800         # 30 分钟无操作失效（与 timeout 是「且」的关系）
+  is-concurrent: true          # 允许多端同时在线
+  is-share: false              # 每次登录生成新 token，便于按设备维度踢人
+  token-style: uuid
+  is-read-cookie: true
+  is-lasting-cookie: true
+  is-log: false                # 鉴权日志：dev 打开，生产关闭（量大且含登录信息）
+
+logging:
+  level:
+    root: info
+    com.bhu.runshistudioweb: info    # dev 覆盖为 debug
+
+mybatis-plus:
+  global-config:
+    db-config:
+      logic-delete-field: deletedAt
+      logic-not-delete-value: 0
+      # 删除值必须是「每次都不同」的毫秒时间戳表达式，而非固定值 1——
+      # 否则同一账号第二次删除会与历史已删除行的 (account, deleted_at) 撞唯一索引 uk_account_deleted
+      logic-delete-value: "CAST(UNIX_TIMESTAMP(NOW(3))*1000 AS SIGNED)"

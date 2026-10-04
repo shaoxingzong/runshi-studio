@@ -1,0 +1,46 @@
+# ============================================================================
+# 生产环境 —— 只写「与全局默认不同」的几项
+#
+# 两类差异：
+#   ① <b>密钥类</b>：写成 ${XXX} **不带默认值**——缺了就启动失败。
+#      这比「带着空值启动、运行时才 50001」好排查得多。
+#   ② <b>路径 / 日志类</b>：改成 Linux 下的绝对路径、日志写文件。
+#
+# 公共配置（大部分 AI 参数 / Sa-Token / MyBatis-Plus / 接口文档默认关闭等）
+# 都在 application.yml，这里不重复。
+# ============================================================================
+
+spring:
+  datasource:
+    url: ${MYSQL_URL:jdbc:mysql://127.0.0.1:3306/studio_db?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${MYSQL_USERNAME:runshi}
+    # 必填：覆盖全局的本地默认口令，未注入则启动失败
+    password: ${MYSQL_PASSWORD}
+
+  data:
+    redis:
+      # 必填：覆盖全局的本地默认口令
+      password: ${REDIS_PASSWORD}
+
+studio:
+  file:
+    # Linux 下的上传根目录（覆盖全局的 Windows 默认值）
+    root-dir: ${FILE_ROOT_DIR:/data/runshi-studio-upload}
+
+  ai:
+    # 四项必填：缺一即启动失败（全局里它们带默认值、留空也能跑，那是为本地开发准备的）
+    base-url: ${AI_BASE_URL}
+    api-key: ${AI_API_KEY}
+    model: ${AI_MODEL}
+    embedding-model: ${AI_EMBEDDING_MODEL}
+
+  web:
+    # 同域部署（Nginx 代理 /api）无需跨域；跨域时填真实域名
+    allowed-origins: ${WEB_ALLOWED_ORIGINS:https://你的域名}
+
+logging:
+  level:
+    root: info
+    com.bhu.runshistudioweb: info
+  file:
+    name: /data/logs/runshi-studio/app.log

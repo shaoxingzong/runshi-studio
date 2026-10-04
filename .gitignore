@@ -37,8 +37,24 @@ build/
 /ai-code-helper-master/
 
 ### 本地私有配置：含密钥/服务商地址，绝不提交 ###
-# application-dev.yml 用 spring.config.import 引入它；文件不存在也能正常启动
+# application-dev.yml 用 spring.config.import 引入本地私有配置；文件不存在也能正常启动
 application-local.yml
 **/application-local.yml
+
+# 环境变量文件：只忽略「本地私有」的那几种
+# ⚠️ 不能简单写 `.env*` —— 那样会把 web/.env.production 一起忽略，
+#    而它只含前端 API 地址（不含密钥），构建时必须存在，所以要提交（下方用 ! 取反保留）
+.env
+.env.local
+.env.*.local
 *.env
-.env*
+!web/.env.development
+!web/.env.production
+
+### 日志与系统垃圾 ###
+*.log
+logs/
+.DS_Store
+Thumbs.db
+*.swp
+*~

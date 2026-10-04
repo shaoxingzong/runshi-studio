@@ -1,0 +1,165 @@
+/**
+ * 全局样式与设计变量
+ *
+ * 这里只放「跨页面复用」的基础层：设计 token、排版、卡片、Markdown 正文。
+ * 组件级样式一律写在 .vue 的 scoped 块里——全局样式一旦滥用，
+ * 改一个按钮就会牵连全站，那是维护噩梦。
+ */
+
+:root {
+    /* 主色：蓝（科技/稳重），与 Element Plus 的 primary 对齐 */
+    --brand: #2563eb;
+    --brand-dark: #1d4ed8;
+    --brand-soft: #eff6ff;
+
+    --text: #1f2937;
+    --text-secondary: #4b5563;
+    --muted: #6b7280;
+    --border: #e5e7eb;
+    --bg: #f8fafc;
+    --surface: #ffffff;
+
+    --success: #059669;
+    --warning: #d97706;
+    --danger: #dc2626;
+
+    --radius: 12px;
+    --radius-sm: 8px;
+    --shadow: 0 1px 3px rgb(0 0 0 / 6%), 0 1px 2px rgb(0 0 0 / 4%);
+    --shadow-md: 0 4px 12px rgb(0 0 0 / 8%);
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+}
+
+a {
+    color: var(--brand);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+/* ===== 通用容器 ===== */
+.page {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 28px 20px 60px;
+}
+
+.page-head {
+    margin-bottom: 20px;
+}
+
+.page-head h1 {
+    margin: 0 0 6px;
+    font-size: 26px;
+    font-weight: 700;
+}
+
+.page-head p {
+    margin: 0;
+    color: var(--muted);
+}
+
+.card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 22px;
+}
+
+.grid {
+    display: grid;
+    gap: 18px;
+}
+
+.grid.cards-3 {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+.grid.cards-4 {
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+}
+
+@media (max-width: 640px) {
+    .grid.cards-3,
+    .grid.cards-4 {
+        grid-template-columns: 1fr;
+    }
+}
+
+.muted {
+    color: var(--muted);
+}
+
+.tag {
+    display: inline-block;
+    padding: 2px 10px;
+    margin: 0 6px 6px 0;
+    border-radius: 999px;
+    font-size: 12px;
+    background: var(--brand-soft);
+    color: var(--brand-dark);
+}
+
+.tag.gray {
+    background: #f3f4f6;
+    color: var(--muted);
+}
+
+.tag.green {
+    background: #ecfdf5;
+    color: var(--success);
+}
+
+/* ===== Markdown 正文（项目详情）===== */
+.markdown-body {
+    font-size: 15px;
+    color: var(--text-secondary);
+}
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3 {
+    color: var(--text);
+    margin: 18px 0 10px;
+}
+
+.markdown-body p {
+    margin: 0 0 12px;
+}
+
+.markdown-body code {
+    background: #f3f4f6;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+.markdown-body ul {
+    padding-left: 22px;
+}
+
+.markdown-body img {
+    max-width: 100%;
+}
