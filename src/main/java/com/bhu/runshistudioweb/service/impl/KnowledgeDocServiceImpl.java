@@ -65,7 +65,7 @@ import static com.bhu.runshistudioweb.service.KnowledgeDocService.RetrievalResul
  *
  * <p><b>完整流程图（改代码前先读这一张）</b>：
  * <pre>
- * ① 读源 → 拼正文 → SHA-256 hash                  （无事务；源不存在 → 40400 + 已有文档标 status=2）
+ * ① 读源 → 拼正文 → SHA-256 hash                  （无事务；源不存在 → A0402 + 已有文档标 status=2）
  * ② 幂等判定：查 (sourceType, sourceId)
  *      hash 相同 → 直接返回 skipped=true          （零 Embedding 调用、零写库）
  * ③ 切分：DocumentSplitters.recursive(500, 50)     （纯内存）
@@ -201,7 +201,7 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
         long sourceId = request.getSourceId() == null ? 0L : request.getSourceId();
         ThrowUtils.throwIf(sourceId <= 0, ErrorCode.PARAMS_ERROR, "来源 ID 不合法");
 
-        // ② 读源并拼正文：源不存在 → 40400，同时把已有文档标记为 status=2（收口 R2 的"源已删除"）
+        // ② 读源并拼正文：源不存在 → A0402，同时把已有文档标记为 status=2（收口 R2 的"源已删除"）
         SourceContent source = readSource(sourceType, sourceId);
 
         // ③ 幂等判定：内容没变<b>且已索引</b>才零成本返回
@@ -679,7 +679,7 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
     // ==================== 读源与拼装 ====================
 
     /**
-     * 读取业务数据并拼成正文（源不存在时抛 40400，并把已有文档标记 status=2）
+     * 读取业务数据并拼成正文（源不存在时抛 A0402，并把已有文档标记 status=2）
      *
      * <p>拼装规则：<b>null / 空字段整行省略</b>，不写「专业：」这种空行——
      * 空行也会被切进块里，白白消耗 token，还可能让模型以为"这一项就是空的"。
@@ -882,10 +882,10 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
     }
 
     /**
-     * 统一把异常收敛成 50001（与对话接口同一文案）
+     * 统一把异常收敛成 C0200（与对话接口同一文案）
      *
      * <p>已经是我们自己的 BusinessException（例如参数错误）时原样抛出，
-     * 不要把 40000 误改成 50001。
+     * 不要把 A0401 误改成 C0200。
      *
      * @param e 原始异常
      * @return 待抛出的业务异常
@@ -894,7 +894,8 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
         if (e instanceof BusinessException businessException) {
             return businessException;
         }
-        return new BusinessException(ErrorCode.OPERATION_ERROR, EMBEDDING_UNAVAILABLE_MESSAGE);
+        // 向量化走的是外部 AI 服务，属 C 类（第三方服务），不是本系统 bug
+        return new BusinessException(ErrorCode.AI_SERVICE_ERROR, EMBEDDING_UNAVAILABLE_MESSAGE);
     }
 
     /**

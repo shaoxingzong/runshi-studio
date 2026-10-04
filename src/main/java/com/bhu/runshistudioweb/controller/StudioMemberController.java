@@ -135,7 +135,7 @@ public class StudioMemberController {
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】查询成员详情")
     public BaseResponse<MemberVO> getMemberById(@RequestParam("id") long id) {
-        // 用 long 接参：非数字字符串会由全局异常处理器兜成 40000；这里再挡一次明显的非法值
+        // 用 long 接参：非数字字符串会由全局异常处理器兜成 A0401；这里再挡一次明显的非法值
         ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "id 不合法");
         return ResultUtils.success(studioMemberService.getMemberById(id));
     }

@@ -41,7 +41,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *
  * <p><b>为什么本类要用 {@code @DynamicPropertySource} 把开关覆盖为 {@code true}</b>：
  * pom 的 surefire 里已经把 {@code studio.ai.guest-ip-limits-enabled} 置为 {@code false}
- * （否则既有匿名用例会在跑到第 6 个时集体 42900——那是假失败）。
+ * （否则既有匿名用例会在跑到第 6 个时集体 A0501——那是假失败）。
  * 而 {@code @DynamicPropertySource} 注册的属性源优先级<b>高于</b>系统属性，
  * 因此本类可以在不影响其它测试类的前提下单独打开限流。
  *
@@ -124,15 +124,15 @@ class AiRateLimitTest {
     void minuteWindowBlocksAfterLimitAndRecovers() throws Exception {
         // 分钟上限 5：前 5 次放行
         for (int i = 0; i < 5; i++) {
-            assertEquals(0, code(askAnonymous("T30-min-" + i)), "第 " + (i + 1) + " 次应放行");
+            assertEquals("00000", code(askAnonymous("T30-min-" + i)), "第 " + (i + 1) + " 次应放行");
         }
         String blocked = askAnonymous("T30-min-第6次");
-        assertEquals(42900, code(blocked), "超过分钟上限应 42900：" + blocked);
+        assertEquals("A0501", code(blocked), "超过分钟上限应 A0501：" + blocked);
         assertTrue(message(blocked).contains("登录"), "提示应引导登录：" + blocked);
 
         // 模拟窗口翻页：删掉当前分钟的键
         clearRateKeys();
-        assertEquals(0, code(askAnonymous("T30-min-翻页后")), "窗口翻页后应恢复");
+        assertEquals("00000", code(askAnonymous("T30-min-翻页后")), "窗口翻页后应恢复");
     }
 
     @Test
@@ -144,7 +144,7 @@ class AiRateLimitTest {
                 AiRateLimitConstant.dayKey(TEST_IP, AiRateLimitConstant.currentDay()), "50");
 
         String blocked = askAnonymous("T30-day-超限");
-        assertEquals(42900, code(blocked), "当日累计达上限应 42900：" + blocked);
+        assertEquals("A0501", code(blocked), "当日累计达上限应 A0501：" + blocked);
         assertTrue(message(blocked).contains("每天"), "提示应说明是哪个窗口超限：" + blocked);
     }
 
@@ -154,11 +154,11 @@ class AiRateLimitTest {
         // 先把日键压到远超上限：同一 IP 的游客此刻必然被限
         stringRedisTemplate.opsForValue().set(
                 AiRateLimitConstant.dayKey(TEST_IP, AiRateLimitConstant.currentDay()), "999");
-        assertEquals(42900, code(askAnonymous("T30-游客被限")), "游客此时应超限");
+        assertEquals("A0501", code(askAnonymous("T30-游客被限")), "游客此时应超限");
 
         long userId = createUser();
         String token = login(userId);
-        assertEquals(0, code(postJson("/ai/chat", "{\"message\":\"T30-登录用户\"}", token)),
+        assertEquals("00000", code(postJson("/ai/chat", "{\"message\":\"T30-登录用户\"}", token)),
                 "登录用户走用户配额，不应被 IP 限流");
     }
 
@@ -177,8 +177,8 @@ class AiRateLimitTest {
                 .getContentAsString(StandardCharsets.UTF_8);
     }
 
-    private int code(String body) throws Exception {
-        return jsonMapper.readTree(body).get("code").asInt();
+    private String code(String body) throws Exception {
+        return jsonMapper.readTree(body).get("code").asText();
     }
 
     private String message(String body) throws Exception {

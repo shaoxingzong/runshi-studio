@@ -54,18 +54,18 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *     <li>Stub 固定返回 OpenAI 兼容响应 {@code {"choices":[{"message":{"content":"stub-回答"}}]}}，
  *     并记录最近一次请求体，供「system 角色在首、上下文只取最近 N 条」断言取证；</li>
  *     <li>请求正文包含 {@code TRIGGER_FAIL} 时 Stub 返回 500，用于验证失败分支
- *     （50001 + 保留用户消息 + 配额不加）。</li>
+ *     （C0200 + 保留用户消息 + 配额不加）。</li>
  * </ul>
  *
  * <p>覆盖十条线：
  * <ol>
- *     <li>匿名放行 + 精确白名单（既有公开接口回归、管理端接口仍 40100）；</li>
+ *     <li>匿名放行 + 精确白名单（既有公开接口回归、管理端接口仍 A0201）；</li>
  *     <li>首轮自动建会话 + 落 user/assistant 两条消息（SQL 取证）；</li>
  *     <li>续聊追加同会话、history 时间正序、上限 50；</li>
- *     <li>登录用户配额逐次原子 +1（SQL 对齐）、超限 42900；</li>
- *     <li>参数非法 40000、会话不存在 40400；</li>
- *     <li>会话归属：他人会话 40400、匿名会话凭 ID 可续；</li>
- *     <li>AI 失败 → 50001 且无 assistant 消息、配额不加（SQL 取证）；</li>
+ *     <li>登录用户配额逐次原子 +1（SQL 对齐）、超限 A0501；</li>
+ *     <li>参数非法 A0401、会话不存在 A0402；</li>
+ *     <li>会话归属：他人会话 A0402、匿名会话凭 ID 可续；</li>
+ *     <li>AI 失败 → C0200 且无 assistant 消息、配额不加（SQL 取证）；</li>
  *     <li>返回体 Long 全字符串；</li>
  *     <li>上下文窗口：Stub 收到的 messages = system + 最近 10 条 + 本次提问；</li>
  *     <li>全量基线 111 用例保持全绿。</li>
@@ -139,7 +139,7 @@ class AiChatCrudTest {
         // 断言仍校验模型收到的首条消息是「你是测试助手」——于是这条用例从「配置透传」
         // 升级成「文件 → 模型」全链路验证，且与线上真实话术文本解耦
         registry.add("studio.ai.system-prompt-location", () -> "classpath:prompts/test-system-prompt.txt");
-        // 配额上限调小：让「超限 42900」用例不必真的问 100 次
+        // 配额上限调小：让「超限 A0501」用例不必真的问 100 次
         registry.add("studio.ai.query-limit", () -> 3);
     }
 
@@ -166,9 +166,9 @@ class AiChatCrudTest {
         return mockMvc.perform(request).andReturn().getResponse().getContentAsString();
     }
 
-    private int code(String body) {
-        int start = body.indexOf("\"code\":") + 7;
-        return Integer.parseInt(body.substring(start, body.indexOf(',', start)));
+    private String code(String body) {
+        int start = body.indexOf("\"code\":\"") + 8;
+        return body.substring(start, body.indexOf('"', start));
     }
 
     private String message(String body) {
@@ -247,23 +247,23 @@ class AiChatCrudTest {
     void whitelistPrecision() throws Exception {
         // 匿名提问成功（stub 返回 200）
         String chat = chatAnon(null, "你好");
-        assertEquals(0, code(chat), "匿名提问应放行：" + chat);
+        assertEquals("00000", code(chat), "匿名提问应放行：" + chat);
         String sessionId = sessionIdOf(chat);
 
         // 匿名查历史放行（会话存在）
-        assertEquals(0, code(getBody("/ai/chat/history?sessionId=" + sessionId, null)));
+        assertEquals("00000", code(getBody("/ai/chat/history?sessionId=" + sessionId, null)));
 
-        // 缺参：40000 而不是 50000（Controller 用 required=false 兜底）
-        assertEquals(40000, code(getBody("/ai/chat/history", null)), "缺 sessionId 应 40000");
+        // 缺参：A0401 而不是 B0001（Controller 用 required=false 兜底）
+        assertEquals("A0401", code(getBody("/ai/chat/history", null)), "缺 sessionId 应 A0401");
 
         // 管理端接口回归：新增白名单条目不得顺带放行
-        assertEquals(40100, code(getBody("/member/list/page", null)));
-        assertEquals(40100, code(postJson("/member/add", "{}", null)));
+        assertEquals("A0201", code(getBody("/member/list/page", null)));
+        assertEquals("A0201", code(postJson("/member/add", "{}", null)));
 
         // 既有公开接口回归：仍匿名可用
         // （成员接口已按「团队成员不对外展示」整体删除，访问得到 404 且响应体为空，
         //   相关断言集中放在 StudioMemberCrudTest#anonymousCanBrowseFrontListButNotAdmin，）
-        assertEquals(0, code(getBody("/project/list", null)));
+        assertEquals("00000", code(getBody("/project/list", null)));
     }
 
     // ==================== ② 首轮建会话 + 落两条消息 ====================
@@ -274,7 +274,7 @@ class AiChatCrudTest {
         String longQuestion = "你好，请问润石工作室是做什么的？请给我详细介绍下我们的业务范围和技术方向" +
                 "，以及我们工作室的成立背景和历史沿革，这些内容可能会超过三十个字的长度";
         String chat = chatAnon(null, longQuestion);
-        assertEquals(0, code(chat));
+        assertEquals("00000", code(chat));
         String sessionId = sessionIdOf(chat);
         assertEquals("stub-回答", answerOf(chat), "回答应来自 Stub 成功分支");
 
@@ -307,7 +307,7 @@ class AiChatCrudTest {
         assertEquals(6, countMessages(Long.parseLong(sessionId)), "三轮应落 6 条消息");
 
         String history = getBody("/ai/chat/history?sessionId=" + sessionId, null);
-        assertEquals(0, code(history));
+        assertEquals("00000", code(history));
         // 正序：user/assistant 交替，第一轮 user 在最前
         int firstUser = history.indexOf("第一问");
         int lastAssistant = history.indexOf("stub-回答", history.indexOf("第三问"));
@@ -325,7 +325,7 @@ class AiChatCrudTest {
             aiMessageMapper.insert(m);
         }
         String big = getBody("/ai/chat/history?sessionId=" + sessionId, null);
-        assertEquals(0, code(big));
+        assertEquals("00000", code(big));
         assertEquals(50, countOf(big, "\"role\":"), "history 应只返回最近 50 条");
         // 只保留最近 50 条 → 最早的 bulk-0 不在
         assertFalse(big.contains("bulk-0"), "最早的批量消息不应出现在最近 50 条里");
@@ -343,50 +343,50 @@ class AiChatCrudTest {
     // ==================== ④ 配额 ====================
 
     @Test
-    @DisplayName("配额：登录用户每次成功提问原子 +1（SQL 对齐）；达上限 42900")
+    @DisplayName("配额：登录用户每次成功提问原子 +1（SQL 对齐）；达上限 A0501")
     void quotaIncrementAndLimit() throws Exception {
         String token = loginUser();
         long userId = lastUserId;
         assertEquals(0, queryCountOf(userId));
 
         String r1 = chatLogged(null, "第一次提问", token);
-        assertEquals(0, code(r1));
+        assertEquals("00000", code(r1));
         assertEquals(1, queryCountOf(userId), "第一次成功后计数应为 1");
 
         String r2 = chatLogged(sessionIdOf(r1), "第二次提问", token);
-        assertEquals(0, code(r2));
+        assertEquals("00000", code(r2));
         assertEquals(2, queryCountOf(userId), "第二次成功后计数应为 2（原子 +1，SQL 对齐）");
 
-        // 直接把计数顶到上限（避免真问 3 次），下一次提问必须 42900
+        // 直接把计数顶到上限（避免真问 3 次），下一次提问必须 A0501
         // 注意：本用例此前没有对这位用户做过 ORM select，这里首次读发生在 UPDATE 之后，
         // 不会撞 MyBatis 一级缓存
         jdbcTemplate.update("UPDATE sys_user SET ai_query_count=3 WHERE id=?", userId);
         String blocked = chatLogged(sessionIdOf(r1), "第三次提问", token);
-        assertEquals(42900, code(blocked), "超限应 42900：" + blocked);
+        assertEquals("A0501", code(blocked), "超限应 A0501：" + blocked);
         assertTrue(message(blocked).contains("上限"), "提示应说明上限：" + message(blocked));
     }
 
     // ==================== ⑤ 参数与不存在 ====================
 
     @Test
-    @DisplayName("错误码：message 空/超长 40000；会话不存在 40400 统一提示")
+    @DisplayName("错误码：message 空/超长 A0401；会话不存在 A0402 统一提示")
     void invalidParamsAndMissingSession() throws Exception {
-        assertEquals(40000, code(chatAnon(null, "  ")), "纯空格提问应 40000");
+        assertEquals("A0401", code(chatAnon(null, "  ")), "纯空格提问应 A0401");
         String overlong = "长".repeat(501);
-        assertEquals(40000, code(chatAnon(null, overlong)), "超长提问应 40000");
+        assertEquals("A0401", code(chatAnon(null, overlong)), "超长提问应 A0401");
 
         String missing = chatAnon("999999999999999999", "在吗");
-        assertEquals(40400, code(missing));
+        assertEquals("A0402", code(missing));
         assertEquals("会话不存在", message(missing));
 
-        assertEquals(40400, code(getBody("/ai/chat/history?sessionId=999999999999999999", null)));
-        assertEquals(40000, code(getBody("/ai/chat/history?sessionId=abc", null)), "脏 sessionId 应 40000");
+        assertEquals("A0402", code(getBody("/ai/chat/history?sessionId=999999999999999999", null)));
+        assertEquals("A0401", code(getBody("/ai/chat/history?sessionId=abc", null)), "脏 sessionId 应 A0401");
     }
 
     // ==================== ⑥ 会话归属 ====================
 
     @Test
-    @DisplayName("归属：他人会话 40400；匿名会话凭 ID 任何人可续")
+    @DisplayName("归属：他人会话 A0402；匿名会话凭 ID 任何人可续")
     void sessionOwnership() throws Exception {
         String tokenA = loginUser();
         String tokenB = loginUser();
@@ -394,30 +394,30 @@ class AiChatCrudTest {
 
         // B 访问 A 的会话：与「不存在」同码同提示
         String cross = chatLogged(sessionA, "B 想插话", tokenB);
-        assertEquals(40400, code(cross));
+        assertEquals("A0402", code(cross));
         assertEquals("会话不存在", message(cross));
-        assertEquals(40400, code(getBody("/ai/chat/history?sessionId=" + sessionA, tokenB)));
+        assertEquals("A0402", code(getBody("/ai/chat/history?sessionId=" + sessionA, tokenB)));
 
         // 游客创建匿名会话 → 另一个游客可以凭 ID 续聊
         String anonSession = sessionIdOf(chatAnon(null, "游客首问"));
         String anonFollow = chatAnon(anonSession, "游客追问");
-        assertEquals(0, code(anonFollow), "匿名会话凭 ID 应可续聊");
+        assertEquals("00000", code(anonFollow), "匿名会话凭 ID 应可续聊");
         assertEquals(4, countMessages(Long.parseLong(anonSession)), "匿名两轮 = 4 条消息");
     }
 
     // ==================== ⑦ AI 失败分支 ====================
 
     @Test
-    @DisplayName("AI 失败：50001、保留用户消息、无 assistant、配额不加")
+    @DisplayName("AI 失败：C0200、保留用户消息、无 assistant、配额不加")
     void aiFailureKeepsUserMessage() throws Exception {
         String token = loginUser();
         long userId = lastUserId;
         String sessionId = sessionIdOf(chatLogged(null, "正常提问", token));
         assertEquals(1, queryCountOf(userId));
 
-        // TRIGGER_FAIL → Stub 返回 500 → 必须 50001
+        // TRIGGER_FAIL → Stub 返回 500 → 必须 C0200（AI 服务属第三方，不是本系统 bug）
         String fail = chatLogged(sessionId, "TRIGGER_FAIL 这次会失败", token);
-        assertEquals(50001, code(fail));
+        assertEquals("C0200", code(fail));
         assertTrue(message(fail).contains("暂时不可用"), "提示应友好：" + message(fail));
 
         // 失败时：user 消息保留、无 assistant、配额不加

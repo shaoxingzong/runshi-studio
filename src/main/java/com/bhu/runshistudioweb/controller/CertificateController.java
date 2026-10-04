@@ -42,7 +42,7 @@ import java.util.List;
  *     {@code /get}、{@code /list/page} —— 全部要求 {@code @SaCheckRole} 为 admin；</li>
  *     <li><b>C 端</b>：{@code /certificate/list} —— 匿名可访问，
  *     已在 {@code SaTokenMvcConfig} 的白名单中登记，
- *     <b>新增/改名这个路径时必须同步改白名单</b>，否则官网游客会拿到 40100。</li>
+ *     <b>新增/改名这个路径时必须同步改白名单</b>，否则官网游客会拿到 A0201。</li>
  * </ul>
  *
  * <p>返回的 VO 也分两套：管理端拿 {@link CertificateVO}（含置顶权重与审计时间），
@@ -114,7 +114,7 @@ public class CertificateController {
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】查询证书详情")
     public BaseResponse<CertificateVO> getCertificateById(@RequestParam("id") long id) {
-        // 用 long 接参：传非数字时 Spring 抛类型转换异常，由全局异常处理器兜成 40000 而不是 500
+        // 用 long 接参：传非数字时 Spring 抛类型转换异常，由全局异常处理器兜成 A0401 而不是 500
         ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "id 不合法");
         return ResultUtils.success(certificateService.getCertificateById(id));
     }

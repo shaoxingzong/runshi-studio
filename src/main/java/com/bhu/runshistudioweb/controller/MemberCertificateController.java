@@ -57,7 +57,7 @@ public class MemberCertificateController {
      */
     @PostMapping("/bind")
     @SaCheckRole(UserRoleConstant.ADMIN)
-    @Operation(summary = "【管理员】绑定成员与证书", description = "重复绑定返回 40000；并发下由唯一索引兜底")
+    @Operation(summary = "【管理员】绑定成员与证书", description = "重复绑定返回 A0401；并发下由唯一索引兜底")
     public BaseResponse<Boolean> bind(@RequestBody @Valid MemberCertificateBindRequest bindRequest) {
         ThrowUtils.throwIf(bindRequest == null, ErrorCode.PARAMS_ERROR);
         return ResultUtils.success(
@@ -72,7 +72,7 @@ public class MemberCertificateController {
      */
     @PostMapping("/unbind")
     @SaCheckRole(UserRoleConstant.ADMIN)
-    @Operation(summary = "【管理员】解绑成员与证书", description = "关系不存在返回 40400「该成员未绑定此证书」")
+    @Operation(summary = "【管理员】解绑成员与证书", description = "关系不存在返回 A0402「该成员未绑定此证书」")
     public BaseResponse<Boolean> unbind(@RequestBody @Valid MemberCertificateBindRequest bindRequest) {
         ThrowUtils.throwIf(bindRequest == null, ErrorCode.PARAMS_ERROR);
         return ResultUtils.success(
@@ -84,15 +84,15 @@ public class MemberCertificateController {
      *
      * <p>用 DTO 接参而不是 {@code @RequestParam long memberId}：
      * 基本类型接参时「忘了传 memberId」会抛 MissingServletRequestParameterException，
-     * 全局处理器没接它 → 变成 50000「系统错误」；用包装类型 + 这里显式判空，
-     * 才能给出「成员 id 不能为空」这种准确的 40000。
+     * 全局处理器没接它 → 变成 B0001「系统错误」；用包装类型 + 这里显式判空，
+     * 才能给出「成员 id 不能为空」这种准确的 A0401。
      *
      * @param query 查询条件（memberId 必填）
      * @return 证书列表（含图片 / 置顶权重 / 审计时间），按 sort_order → award_date → id 倒序
      */
     @GetMapping("/certificate/list")
     @SaCheckRole(UserRoleConstant.ADMIN)
-    @Operation(summary = "【管理员】查成员的证书", description = "成员不存在返回 40400")
+    @Operation(summary = "【管理员】查成员的证书", description = "成员不存在返回 A0402")
     public BaseResponse<List<CertificateVO>> listCertificatesByMember(MemberCertificateQueryRequest query) {
         ThrowUtils.throwIf(query == null || query.getMemberId() == null,
                 ErrorCode.PARAMS_ERROR, "成员 id 不能为空");
@@ -107,7 +107,7 @@ public class MemberCertificateController {
      */
     @GetMapping("/member/list")
     @SaCheckRole(UserRoleConstant.ADMIN)
-    @Operation(summary = "【管理员】查证书的成员", description = "证书不存在返回 40400")
+    @Operation(summary = "【管理员】查证书的成员", description = "证书不存在返回 A0402")
     public BaseResponse<List<MemberVO>> listMembersByCertificate(MemberCertificateQueryRequest query) {
         ThrowUtils.throwIf(query == null || query.getCertificateId() == null,
                 ErrorCode.PARAMS_ERROR, "证书 id 不能为空");

@@ -36,14 +36,14 @@ import java.util.List;
  * <ol>
  *     <li><b>队长同步用 ensure，不用 bind</b>：{@link #addProject} 与 {@link #updateProject}
  *     调的是幂等的 {@code ensureMemberInProject}——「已存在」直接返回、并发撞唯一索引静默成功。
- *     若误用 {@code bindMember}（重复报 40000），管理员每次重复保存项目都会收到
+ *     若误用 {@code bindMember}（重复报 A0401），管理员每次重复保存项目都会收到
  *     「该成员已参与此项目」，而这一切看起来像 bug 实则是设计错误；</li>
  *     <li><b>事务边界</b>：新增 / 更新（换队长）/ 删除都是「主表写 + 关联表写」两次写，
  *     统一加 {@code @Transactional(rollbackFor = Exception.class)}。
  *     分属两个事务的话，会出现「有项目没队长」或「项目已删、关联还在」的悬空状态；
  *     {@code rollbackFor} 必须写 Exception：Spring 默认只回滚 RuntimeException；</li>
  *     <li><b>tech_stack 的 JSON 边界</b>：库里是 varchar(256) 快照，接口层是 List。
- *     写：序列化后超长抛 40000（否则撞数据库截断错误）；
+ *     写：序列化后超长抛 A0401（否则撞数据库截断错误）；
  *     读：解析失败返回空列表（一条脏数据不能让整个列表 500）。</li>
  * </ol>
  *
@@ -65,7 +65,7 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
     /**
      * tech_stack 序列化后的长度上限，与 DDL 的 {@code varchar(256)} 对齐。
      * 不改数据库类型而是先在这里拦住，是因为「标签太多」是入参问题，
-     * 应该返回 40000 让前端提示，而不是让数据库抛截断 / 报错
+     * 应该返回 A0401 让前端提示，而不是让数据库抛截断 / 报错
      */
     private static final int TECH_STACK_MAX_LENGTH = 256;
 
@@ -117,7 +117,7 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
         project.setDescription(projectAddRequest.getDescription().trim());
         project.setCoverImage(projectAddRequest.getCoverImage());
         project.setContent(projectAddRequest.getContent());
-        // 序列化 + 长度校验（超长抛 40000）都在这里完成
+        // 序列化 + 长度校验（超长抛 A0401）都在这里完成
         project.setTechStack(serializeTechStack(projectAddRequest.getTechStack()));
         project.setDemoUrl(projectAddRequest.getDemoUrl());
         project.setGithubUrl(projectAddRequest.getGithubUrl());
@@ -221,7 +221,7 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
     public ProjectVO getProjectById(long id) {
         ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "项目 id 不合法");
         StudioProject project = this.getById(id);
-        // 查不到给明确的 40400，而不是返回 null 让前端收到「成功但 data 为空」
+        // 查不到给明确的 A0402，而不是返回 null 让前端收到「成功但 data 为空」
         ThrowUtils.throwIf(project == null, ErrorCode.NOT_FOUND_ERROR, "项目不存在");
         return this.getProjectVO(project);
     }
@@ -230,7 +230,7 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
     public Page<ProjectVO> listProjectByPage(ProjectQueryRequest projectQueryRequest) {
         ProjectQueryRequest query = projectQueryRequest == null ? new ProjectQueryRequest() : projectQueryRequest;
 
-        // 状态是闭集：非法取值必须报 40000，而不是静默返回空列表把排查方向带偏
+        // 状态是闭集：非法取值必须报 A0401，而不是静默返回空列表把排查方向带偏
         resolveStatus(query.getStatus(), null);
 
         LambdaQueryWrapper<StudioProject> wrapper = buildQueryWrapper(query);
@@ -246,7 +246,7 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
     public Page<ProjectFrontVO> listFrontProjects(ProjectQueryRequest projectQueryRequest) {
         ProjectQueryRequest query = projectQueryRequest == null ? new ProjectQueryRequest() : projectQueryRequest;
 
-        // 与后台同一条口径：状态非法 → 40000（闭集不静默）
+        // 与后台同一条口径：状态非法 → A0401（闭集不静默）
         resolveStatus(query.getStatus(), null);
 
         LambdaQueryWrapper<StudioProject> wrapper = buildQueryWrapper(query);
@@ -407,7 +407,7 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
      * 校验队长存在（含「已逻辑删除视为不存在」）
      *
      * @param leaderId 队长（成员）ID
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 成员不存在时抛出（40400）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 成员不存在时抛出（A0402）
      */
     private void assertLeaderExists(Long leaderId) {
         // selectById 会被 MP 自动追加 deleted_at = 0：已注销/已删除的成员同样视为不存在。
@@ -423,7 +423,7 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
      * @return JSON 字符串；入参为 null 时返回 null（表示不修改 / 无标签），
      *         空列表返回 {@code "[]"}（表示「清空」——必须是非 null 值，
      *         否则 updateById 会跳过该字段，等于清不掉）
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 序列化后长度超过 256 时抛出（40000）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 序列化后长度超过 256 时抛出（A0401）
      */
     private String serializeTechStack(List<String> techStack) {
         if (techStack == null) {

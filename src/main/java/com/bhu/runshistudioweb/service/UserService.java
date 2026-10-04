@@ -68,7 +68,7 @@ public interface UserService extends IService<SysUser> {
      * <p>注意：未登录时**抛异常**而不是返回 null，避免每个调用方都写判空。
      *
      * @return 当前登录用户实体（含密码哈希串，仅供服务端内部使用，切勿直接返回给前端）
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 未登录、或 token 有效但用户已不存在时抛出（40100）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 未登录、或 token 有效但用户已不存在时抛出（A0201）
      */
     SysUser getLoginUser();
 
@@ -84,7 +84,7 @@ public interface UserService extends IService<SysUser> {
      * 用户退出登录
      *
      * @return true 表示注销成功
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 未登录时抛出（40100）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 未登录时抛出（A0201）
      */
     boolean userLogout();
 
@@ -123,7 +123,7 @@ public interface UserService extends IService<SysUser> {
      *
      * @param id 用户 ID
      * @return 脱敏后的用户信息
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 用户不存在时抛出（40400）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 用户不存在时抛出（A0402）
      */
     UserVO getUserById(long id);
 

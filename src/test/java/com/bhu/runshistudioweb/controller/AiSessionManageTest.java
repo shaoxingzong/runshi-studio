@@ -43,7 +43,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *
  * <p>覆盖十条线（与施工图 AC 一一对应）：
  * <ol>
- *     <li><b>鉴权边界</b>：{@code /ai/session/list} 未登录 40100（不进白名单）；
+ *     <li><b>鉴权边界</b>：{@code /ai/session/list} 未登录 A0201（不进白名单）；
  *     {@code /ai/session/delete} 匿名放行（白名单精确路径）；既有公开接口回归；</li>
  *     <li><b>列表隔离</b>：只返回本人的会话，看不到别人的；</li>
  *     <li><b>排序与分页</b>：{@code updated_at 倒序 → id 倒序}（同秒活跃的稳定次序），
@@ -51,9 +51,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *     <li><b>messageCount 批量统计</b>：与 SQL 逐行对齐，空会话补 0；</li>
  *     <li><b>删除=双逻辑删</b>：会话与消息在同一事务内写 {@code deleted_at}，
  *     物理行保留（可追溯），与/19 的物理删关联表形成对照；</li>
- *     <li><b>删除后行为</b>：chat / history / 重复删除 统一 40400「会话不存在」；</li>
- *     <li><b>归属规则</b>：他人会话 40400（同码同提示）；匿名会话凭 ID 可删；</li>
- *     <li><b>参数校验</b>：缺参 / 空白 / 脏值 40000；不存在 40400；</li>
+ *     <li><b>删除后行为</b>：chat / history / 重复删除 统一 A0402「会话不存在」；</li>
+ *     <li><b>归属规则</b>：他人会话 A0402（同码同提示）；匿名会话凭 ID 可删；</li>
+ *     <li><b>参数校验</b>：缺参 / 空白 / 脏值 A0401；不存在 A0402；</li>
  *     <li><b>脱敏与序列化</b>：无 userId / 审计字段；id 出字符串、messageCount 出数字；</li>
  *     <li><b>全量基线 120 用例保持全绿。</b></li>
  * </ol>
@@ -134,9 +134,9 @@ class AiSessionManageTest {
         return mockMvc.perform(request).andReturn().getResponse().getContentAsString();
     }
 
-    private int code(String body) {
-        int start = body.indexOf("\"code\":") + 7;
-        return Integer.parseInt(body.substring(start, body.indexOf(',', start)));
+    private String code(String body) {
+        int start = body.indexOf("\"code\":\"") + 8;
+        return body.substring(start, body.indexOf('"', start));
     }
 
     private String message(String body) {
@@ -182,7 +182,7 @@ class AiSessionManageTest {
     /** 通过提问创建会话，返回 sessionId */
     private String newSession(String token, String firstMessage) throws Exception {
         String body = chat(token, null, firstMessage);
-        assertEquals(0, code(body), "创建会话失败：" + body);
+        assertEquals("00000", code(body), "创建会话失败：" + body);
         return sessionIdOf(body);
     }
 
@@ -205,13 +205,13 @@ class AiSessionManageTest {
     // ==================== ① 鉴权边界与列表隔离 ====================
 
     @Test
-    @DisplayName("鉴权：列表未登录 40100；只返回本人会话；删除接口匿名可达")
+    @DisplayName("鉴权：列表未登录 A0201；只返回本人会话；删除接口匿名可达")
     void authBoundaryAndIsolation() throws Exception {
-        // 未登录访问列表：40100（该路径不进白名单）
-        assertEquals(40100, code(getBody("/ai/session/list", null)), "会话列表必须登录");
+        // 未登录访问列表：A0201（该路径不进白名单）
+        assertEquals("A0201", code(getBody("/ai/session/list", null)), "会话列表必须登录");
 
-        // 游客访问删除接口：能被拦截器放行（白名单），只是会话不存在 → 40400 而非 40100
-        assertEquals(40400, code(postJson("/ai/session/delete",
+        // 游客访问删除接口：能被拦截器放行（白名单），只是会话不存在 → A0402 而非 A0201
+        assertEquals("A0402", code(postJson("/ai/session/delete",
                 "{\"sessionId\":\"999999999999999999\"}", null)), "删除接口应匿名放行");
 
         // 隔离：A 两个会话，B 一个会话；A 的列表看不到 B 的
@@ -222,7 +222,7 @@ class AiSessionManageTest {
         newSession(tokenB, "T22-b-only");
 
         String listA = getBody("/ai/session/list?pageSize=50", tokenA);
-        assertEquals(0, code(listA));
+        assertEquals("00000", code(listA));
         assertEquals(2, countOf(listA, "\"title\":"), "A 应恰好看到自己的 2 个会话：" + listA);
         assertTrue(listA.contains("T22-a-first") && listA.contains("T22-a-second"));
         assertFalse(listA.contains("T22-b-only"), "不能看到别人的会话：" + listA);
@@ -278,7 +278,7 @@ class AiSessionManageTest {
         aiSessionMapper.insert(empty);
 
         String list = getBody("/ai/session/list?pageSize=50", token);
-        assertEquals(0, code(list));
+        assertEquals("00000", code(list));
         assertTrue(Pattern.compile("\"messageCount\":4[,}]").matcher(list).find(),
                 "s1 的消息数应为 4：" + list);
         assertTrue(Pattern.compile("\"messageCount\":2[,}]").matcher(list).find(),
@@ -293,7 +293,7 @@ class AiSessionManageTest {
     // ==================== ⑤⑥ 删除 = 双逻辑删 + 删后行为 ====================
 
     @Test
-    @DisplayName("删除：会话与消息同事务逻辑删（物理行保留）；删后 chat/history/重复删除 40400")
+    @DisplayName("删除：会话与消息同事务逻辑删（物理行保留）；删后 chat/history/重复删除 A0402")
     void deleteCascadesLogicalAndLocksOut() throws Exception {
         String token = loginUser();
         String sid = newSession(token, "T22-d-first");
@@ -302,7 +302,7 @@ class AiSessionManageTest {
         assertEquals(4, countMessages(id), "删除前应有 4 条可见消息");
 
         // 本人删除
-        assertEquals(0, code(postJson("/ai/session/delete", "{\"sessionId\":\"" + sid + "\"}", token)));
+        assertEquals("00000", code(postJson("/ai/session/delete", "{\"sessionId\":\"" + sid + "\"}", token)));
 
         // 双逻辑删：两表物理行都还在，但 deleted_at 全部非 0
         assertEquals(1, (int) jdbcTemplate.queryForObject(
@@ -318,20 +318,20 @@ class AiSessionManageTest {
 
         // 删后：chat / history 都走「不存在」路径，同码同提示
         String chatAfter = chat(token, sid, "T22-d-after");
-        assertEquals(40400, code(chatAfter));
+        assertEquals("A0402", code(chatAfter));
         assertEquals("会话不存在", message(chatAfter));
-        assertEquals(40400, code(getBody("/ai/chat/history?sessionId=" + sid, token)));
+        assertEquals("A0402", code(getBody("/ai/chat/history?sessionId=" + sid, token)));
 
-        // 重复删除 → 40400
+        // 重复删除 → A0402
         String again = postJson("/ai/session/delete", "{\"sessionId\":\"" + sid + "\"}", token);
-        assertEquals(40400, code(again));
+        assertEquals("A0402", code(again));
         assertEquals("会话不存在", message(again));
     }
 
     // ==================== ⑦ 归属规则 ====================
 
     @Test
-    @DisplayName("归属：他人会话 40400（同码同提示）；匿名会话凭 ID 可删")
+    @DisplayName("归属：他人会话 A0402（同码同提示）；匿名会话凭 ID 可删")
     void ownershipRules() throws Exception {
         String tokenA = loginUser();
         String tokenB = loginUser();
@@ -339,34 +339,34 @@ class AiSessionManageTest {
 
         // B 删 A 的会话：与「不存在」完全相同的响应
         String cross = postJson("/ai/session/delete", "{\"sessionId\":\"" + aSid + "\"}", tokenB);
-        assertEquals(40400, code(cross));
+        assertEquals("A0402", code(cross));
         assertEquals("会话不存在", message(cross));
-        // 游客删 A 的会话：同样 40400
-        assertEquals(40400, code(postJson("/ai/session/delete",
+        // 游客删 A 的会话：同样 A0402
+        assertEquals("A0402", code(postJson("/ai/session/delete",
                 "{\"sessionId\":\"" + aSid + "\"}", null)));
         // A 本人可以删（没有被上面的越权尝试影响）
-        assertEquals(0, code(postJson("/ai/session/delete", "{\"sessionId\":\"" + aSid + "\"}", tokenA)));
+        assertEquals("00000", code(postJson("/ai/session/delete", "{\"sessionId\":\"" + aSid + "\"}", tokenA)));
 
         // 匿名会话：游客创建、任何持 ID 者（这里是匿名请求）可删
         String anonSid = newSession(null, "T22-e-游客会话");
-        assertEquals(0, code(postJson("/ai/session/delete",
+        assertEquals("00000", code(postJson("/ai/session/delete",
                 "{\"sessionId\":\"" + anonSid + "\"}", null)), "匿名会话凭 ID 可删");
-        assertEquals(40400, code(postJson("/ai/session/delete",
-                "{\"sessionId\":\"" + anonSid + "\"}", null)), "重复删除 40400");
+        assertEquals("A0402", code(postJson("/ai/session/delete",
+                "{\"sessionId\":\"" + anonSid + "\"}", null)), "重复删除 A0402");
     }
 
     // ==================== ⑧ 参数校验 ====================
 
     @Test
-    @DisplayName("参数：缺 sessionId / 空白 / 脏值 40000；不存在 40400")
+    @DisplayName("参数：缺 sessionId / 空白 / 脏值 A0401；不存在 A0402")
     void paramValidation() throws Exception {
-        assertEquals(40000, code(postJson("/ai/session/delete", "{}", null)), "缺参应 40000");
-        assertEquals(40000, code(postJson("/ai/session/delete", "{\"sessionId\":\"   \"}", null)),
-                "空白应 40000");
-        assertEquals(40000, code(postJson("/ai/session/delete", "{\"sessionId\":\"abc\"}", null)),
-                "脏值应 40000 而不是 50000");
-        assertEquals(40400, code(postJson("/ai/session/delete",
-                "{\"sessionId\":\"999999999999999999\"}", null)), "不存在应 40400");
+        assertEquals("A0401", code(postJson("/ai/session/delete", "{}", null)), "缺参应 A0401");
+        assertEquals("A0401", code(postJson("/ai/session/delete", "{\"sessionId\":\"   \"}", null)),
+                "空白应 A0401");
+        assertEquals("A0401", code(postJson("/ai/session/delete", "{\"sessionId\":\"abc\"}", null)),
+                "脏值应 A0401 而不是 B0001");
+        assertEquals("A0402", code(postJson("/ai/session/delete",
+                "{\"sessionId\":\"999999999999999999\"}", null)), "不存在应 A0402");
     }
 
     // ==================== ⑨ 脱敏与序列化 ====================
@@ -398,17 +398,17 @@ class AiSessionManageTest {
     void emptyListAndRegression() throws Exception {
         String token = loginUser();
         String empty = getBody("/ai/session/list", token);
-        assertEquals(0, code(empty));
+        assertEquals("00000", code(empty));
         assertTrue(empty.contains("\"records\":[]"), "新用户应返回空记录：" + empty);
         // Page 元数据是 long → 全局 Long→字符串约定下出字符串（与 records / messageCount 的数字形态不同）
         assertTrue(empty.contains("\"total\":\"0\""), "新用户 total 应为 0：" + empty);
 
-        // 回归：匿名提问 / 历史仍正常；管理端接口仍 40100
+        // 回归：匿名提问 / 历史仍正常；管理端接口仍 A0201
         String anonChat = chat(null, null, "T22-h 回归提问");
-        assertEquals(0, code(anonChat));
+        assertEquals("00000", code(anonChat));
         String anonSid = sessionIdOf(anonChat);
-        assertEquals(0, code(getBody("/ai/chat/history?sessionId=" + anonSid, null)));
-        assertEquals(40100, code(getBody("/member/list/page", null)));
+        assertEquals("00000", code(getBody("/ai/chat/history?sessionId=" + anonSid, null)));
+        assertEquals("A0201", code(getBody("/member/list/page", null)));
         // 原「/member/list 仍可匿名访问」的断言已随「团队成员不对外展示」删除——
         // 该接口现已整体移除，访问得到 404 且响应体为空，断言集中在 StudioMemberCrudTest。
     }

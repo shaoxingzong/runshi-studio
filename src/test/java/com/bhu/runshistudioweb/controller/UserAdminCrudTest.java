@@ -27,7 +27,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *
  * <p>这组用例守两条线：
  * <ol>
- *     <li><b>越权</b>：普通用户、未登录用户访问管理端接口必须分别拿到 40101 / 40100
+ *     <li><b>越权</b>：普通用户、未登录用户访问管理端接口必须分别拿到 A0301 / A0201
  *     ——这是「权限」功能唯一真正重要的断言；</li>
  *     <li><b>可用性</b>：管理员走完 增 → 查 → 改 → 删 全流程，且每一步的数据落库结果正确
  *     （密码必须是 BCrypt 哈希、昵称要有兜底值、删除必须是逻辑删除）。</li>
@@ -89,9 +89,9 @@ class UserAdminCrudTest {
     }
 
     /** 从响应 JSON 中取出 data.code */
-    private int code(String body) {
-        int start = body.indexOf("\"code\":") + 7;
-        return Integer.parseInt(body.substring(start, body.indexOf(',', start)));
+    private String code(String body) {
+        int start = body.indexOf("\"code\":\"") + 8;
+        return body.substring(start, body.indexOf('"', start));
     }
 
     /** 从响应 JSON 中取出 data.xxx 的字符串值 */
@@ -112,21 +112,21 @@ class UserAdminCrudTest {
     // ==================== 鉴权边界 ====================
 
     @Test
-    @DisplayName("鉴权：未登录访问管理端接口返回 40100")
+    @DisplayName("鉴权：未登录访问管理端接口返回 A0201")
     void anonymousIsRejected() throws Exception {
-        assertEquals(40100, code(getBody("/user/list/page", null)));
-        assertEquals(40100, code(postJson("/user/delete", "{\"id\":1}", null)));
+        assertEquals("A0201", code(getBody("/user/list/page", null)));
+        assertEquals("A0201", code(postJson("/user/delete", "{\"id\":1}", null)));
     }
 
     @Test
-    @DisplayName("鉴权：普通用户访问管理端接口返回 40101（有登录态但角色不够）")
+    @DisplayName("鉴权：普通用户访问管理端接口返回 A0301（有登录态但角色不够）")
     void normalUserIsForbidden() throws Exception {
         String account = "normal" + (System.nanoTime() % 100000);
         insertUser(account, UserRoleConstant.USER);
         String token = login(account);
 
-        assertEquals(40101, code(getBody("/user/list/page", token)), "普通用户不应能查看用户列表");
-        assertEquals(40101, code(getBody("/user/get?id=1", token)), "普通用户不应能查看用户详情");
+        assertEquals("A0301", code(getBody("/user/list/page", token)), "普通用户不应能查看用户列表");
+        assertEquals("A0301", code(getBody("/user/get?id=1", token)), "普通用户不应能查看用户详情");
     }
 
     // ==================== 增删改查全流程 ====================
@@ -142,7 +142,7 @@ class UserAdminCrudTest {
         String newAccount = "crud" + (System.nanoTime() % 100000);
         String addBody = postJson("/user/add",
                 "{\"userAccount\":\"" + newAccount + "\",\"userRole\":\"" + UserRoleConstant.ADMIN + "\"}", token);
-        assertEquals(0, code(addBody), "新增失败：" + addBody);
+        assertEquals("00000", code(addBody), "新增失败：" + addBody);
         long newId = Long.parseLong(dataValue(addBody));
 
         SysUser created = sysUserMapper.selectById(newId);
@@ -154,14 +154,14 @@ class UserAdminCrudTest {
 
         // ---------- 详情：返回 VO，且绝不能带出密码字段 ----------
         String getBody = getBody("/user/get?id=" + newId, token);
-        assertEquals(0, code(getBody));
+        assertEquals("00000", code(getBody));
         assertEquals(newAccount, data(getBody, "userAccount"));
         assertFalse(getBody.contains("userPassword"), "详情的响应体里出现了密码字段：" + getBody);
 
         // ---------- 更新：改昵称 + 重置密码（部分更新，未传的字段不动） ----------
         String updateBody = postJson("/user/update",
                 "{\"id\":" + newId + ",\"userName\":\"新昵称\",\"userPassword\":\"NewPass@2026\"}", token);
-        assertEquals(0, code(updateBody));
+        assertEquals("00000", code(updateBody));
         SysUser updated = sysUserMapper.selectById(newId);
         assertEquals("新昵称", updated.getUserName());
         assertTrue(PasswordUtils.matches("NewPass@2026", updated.getUserPassword()), "密码没有被重置");
@@ -170,15 +170,15 @@ class UserAdminCrudTest {
 
         // ---------- 分页查询：条件生效且返回 VO ----------
         String listBody = getBody("/user/list/page?current=1&pageSize=10&userAccount=" + newAccount, token);
-        assertEquals(0, code(listBody));
+        assertEquals("00000", code(listBody));
         assertTrue(listBody.contains("\"total\":"), "分页结果必须带 total：" + listBody);
         assertTrue(listBody.contains(newAccount), "按账号模糊查询没查到刚创建的用户：" + listBody);
         assertFalse(listBody.contains("userPassword"), "列表里出现了密码字段");
 
         // ---------- 删除：逻辑删除，删完查不到 ----------
         String deleteBody = postJson("/user/delete", "{\"id\":" + newId + "}", token);
-        assertEquals(0, code(deleteBody));
-        assertEquals(40400, code(getBody("/user/get?id=" + newId, token)), "删除后应查不到该用户");
+        assertEquals("00000", code(deleteBody));
+        assertEquals("A0402", code(getBody("/user/get?id=" + newId, token)), "删除后应查不到该用户");
 
         // 必须是「逻辑删除」而不是物理删除：行还在、deleted_at 是 13 位毫秒时间戳。
         // 这一条决定了数据可追溯，也决定了账号名能被重新注册
@@ -188,7 +188,7 @@ class UserAdminCrudTest {
                 "删除后 deleted_at 应为 13 位毫秒时间戳，实际：" + deletedAt);
 
         // 管理员自己没被误删
-        assertEquals(0, code(getBody("/user/get?id=" + adminId, token)));
+        assertEquals("00000", code(getBody("/user/get?id=" + adminId, token)));
     }
 
     // ==================== 防锁死守卫 ====================
@@ -200,16 +200,16 @@ class UserAdminCrudTest {
         long adminId = insertUser(adminAccount, UserRoleConstant.ADMIN);
         String token = login(adminAccount);
 
-        assertEquals(40000, code(postJson("/user/delete", "{\"id\":" + adminId + "}", token)),
+        assertEquals("A0401", code(postJson("/user/delete", "{\"id\":" + adminId + "}", token)),
                 "删除自己应被拒绝，否则会立刻失去管理端权限");
-        assertEquals(40000, code(postJson("/user/update",
+        assertEquals("A0401", code(postJson("/user/update",
                 "{\"id\":" + adminId + ",\"userStatus\":1}", token)), "封禁自己应被拒绝");
-        assertEquals(40000, code(postJson("/user/update",
+        assertEquals("A0401", code(postJson("/user/update",
                 "{\"id\":" + adminId + ",\"userRole\":\"" + UserRoleConstant.USER + "\"}", token)),
                 "把自己降级应被拒绝");
 
         // 守卫只拦「自己」，改自己其它字段仍然允许
-        assertEquals(0, code(postJson("/user/update",
+        assertEquals("00000", code(postJson("/user/update",
                 "{\"id\":" + adminId + ",\"userName\":\"管理员本人\"}", token)));
     }
 
@@ -221,15 +221,15 @@ class UserAdminCrudTest {
         String token = login(adminAccount);
 
         // 角色不在枚举内：一旦入库，权限判定会静默失效
-        assertEquals(40000, code(postJson("/user/add",
+        assertEquals("A0401", code(postJson("/user/add",
                 "{\"userAccount\":\"role_bad\",\"userRole\":\"superman\"}", token)));
 
         // 账号已存在
-        assertEquals(40000, code(postJson("/user/add",
+        assertEquals("A0401", code(postJson("/user/add",
                 "{\"userAccount\":\"" + adminAccount + "\"}", token)));
 
-        // 昵称超长（DTO 上的 @Size 生效 → 40000 而不是 50000）
-        assertEquals(40000, code(postJson("/user/add",
+        // 昵称超长（DTO 上的 @Size 生效 → A0401 而不是 B0001）
+        assertEquals("A0401", code(postJson("/user/add",
                 "{\"userAccount\":\"nick_bad\",\"userName\":\"" + "长".repeat(65) + "\"}", token)));
     }
 }

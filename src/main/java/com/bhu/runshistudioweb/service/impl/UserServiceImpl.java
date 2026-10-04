@@ -331,12 +331,12 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
      * 管理员按 id 查用户详情（返回脱敏 VO，接口契约见 UserService）
      *
      * @param id 用户 ID
-     * @return 用户信息；不存在时抛 40400，不返回 null
+     * @return 用户信息；不存在时抛 A0402，不返回 null
      */
     @Override
     public UserVO getUserById(long id) {
         SysUser user = this.getById(id);
-        // 查不到要给出明确的 40400，而不是返回 null 让前端收到「成功但 data 为空」
+        // 查不到要给出明确的 A0402，而不是返回 null 让前端收到「成功但 data 为空」
         ThrowUtils.throwIf(user == null, ErrorCode.NOT_FOUND_ERROR, "用户不存在");
         return this.getUserVO(user);
     }
@@ -368,7 +368,7 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
      *
      * <p>分页与排序参数在这里做兜底纠正：页码 < 1 视为 1、每页条数收敛到 50、
      * 排序字段走 {@code applySort} 的白名单（防 ORDER BY 注入）。
-     * 刻意不做"参数非法就报错"，避免把"页码传错"变成 50000 系统错误。
+     * 刻意不做"参数非法就报错"，避免把"页码传错"变成 B0001 系统错误。
      *
      * @param userQueryRequest 查询条件，允许为 null（无条件查第一页）
      * @return 分页结果，记录为管理端 VO

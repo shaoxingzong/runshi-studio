@@ -43,7 +43,7 @@ public class ProjectQueryRequest implements Serializable {
 
     /**
      * 项目状态（精确匹配）：0-研发中，1-已上线，2-已结题
-     * <p>走 idx_status_sort_time 的最左前缀；非法取值返回 40000（闭集，不能静默返回空列表）
+     * <p>走 idx_status_sort_time 的最左前缀；非法取值返回 A0401（闭集，不能静默返回空列表）
      */
     private Integer status;
 

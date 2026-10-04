@@ -4,7 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { adminApi } from '@/api/admin';
 import type { Certificate, PageResult } from '@/api/types';
 
-/** 证书管理（等级与类型是闭集枚举，后端会校验非法值 → 40000） */
+/** 证书管理（等级与类型是闭集枚举，后端会校验非法值 → A0401） */
 const page = reactive({ current: 1, pageSize: 10 });
 const result = ref<PageResult<Certificate> | null>(null);
 const loading = ref(false);

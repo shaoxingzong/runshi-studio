@@ -9,7 +9,7 @@ import type { ApiResponse } from './types';
  * 1. 自动带上登录态（satoken 请求头）；
  * 2. 统一响应解包：后端恒返回 {code, data, message}，
  *    非 0 直接提示并抛错，调用方拿到的就是 data（不用每层判断 code）；
- * 3. 40100（未登录/登录失效）时清理本地令牌，避免带着过期 token 反复撞墙。
+ * 3. A0201（未登录/登录失效）时清理本地令牌，避免带着过期 token 反复撞墙。
  */
 
 const TOKEN_KEY = 'satoken';
@@ -43,11 +43,12 @@ instance.interceptors.request.use((config) => {
 async function unwrap<T>(promise: Promise<AxiosResponse<ApiResponse<T>>>): Promise<T> {
     const response = await promise;
     const body = response.data;
-    if (body.code === 0) {
+    // 成功码是 5 个零（字符串），不要写 if (!body.code) 之类的假值判断
+    if (body.code === '00000') {
         return body.data;
     }
-    if (body.code === 40100) {
-        // 登录失效：清掉本地令牌，后续请求会以游客身份访问公开接口
+    if (body.code === 'A0201') {
+        // 未登录（A 类：用户端错误 → 登录异常）：清掉本地令牌，后续请求会以游客身份访问公开接口
         tokenStore.clear();
     }
     ElMessage.error(body.message || `请求失败（${body.code}）`);

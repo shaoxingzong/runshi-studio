@@ -94,7 +94,7 @@ class AiPromptFallbackTest {
                         .content("{\"message\":\"T25-降级提问\"}"))
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
 
-        assertTrue(body.contains("\"code\":0"), "聊天应照常成功：" + body);
+        assertTrue(body.contains("\"code\":\"00000\""), "聊天应照常成功：" + body);
         assertTrue(body.contains("降级-回答"), "应返回 Stub 的回答：" + body);
 
         assertNotNull(lastRequestBody, "Stub 应收到请求");

@@ -34,10 +34,10 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *
  * <p>覆盖五条线：
  * <ol>
- *     <li><b>鉴权边界</b>：C 端列表/详情匿名可用；后台接口 40100 / 40101；</li>
+ *     <li><b>鉴权边界</b>：C 端列表/详情匿名可用；后台接口 A0201 / A0301；</li>
  *     <li><b>队长不变量（本任务核心）</b>：新增即同步进关联表、换队长幂等、旧队长保留、
  *     当前队长不可解绑；</li>
- *     <li><b>关联管理</b>：显式绑定冲突报错、解绑物理删除、重复解绑 40400；</li>
+ *     <li><b>关联管理</b>：显式绑定冲突报错、解绑物理删除、重复解绑 A0402；</li>
  *     <li><b>级联清理</b>：删项目清项目关联；删成员清「成员-项目 + 成员-证书」两张表；</li>
  *     <li><b>tech_stack 的 JSON 边界</b>：List ↔ JSON 往返、超长拦截、脏数据不炸接口。</li>
  * </ol>
@@ -98,9 +98,9 @@ class ProjectCrudTest {
         return mockMvc.perform(request).andReturn().getResponse().getContentAsString();
     }
 
-    private int code(String body) {
-        int start = body.indexOf("\"code\":") + 7;
-        return Integer.parseInt(body.substring(start, body.indexOf(',', start)));
+    private String code(String body) {
+        int start = body.indexOf("\"code\":\"") + 8;
+        return body.substring(start, body.indexOf('"', start));
     }
 
     private String dataValue(String body) {
@@ -123,7 +123,7 @@ class ProjectCrudTest {
         String body = postJson("/project/add",
                 "{\"title\":\"" + title + "\",\"description\":\"desc\",\"leaderId\":" + leaderId + "}",
                 token());
-        assertEquals(0, code(body), "新增项目失败：" + body);
+        assertEquals("00000", code(body), "新增项目失败：" + body);
         return Long.parseLong(dataValue(body));
     }
 
@@ -151,16 +151,16 @@ class ProjectCrudTest {
     // ==================== 鉴权边界 ====================
 
     @Test
-    @DisplayName("鉴权：C 端匿名可访问；后台接口 40100 / 40101")
+    @DisplayName("鉴权：C 端匿名可访问；后台接口 A0201 / A0301")
     void accessControl() throws Exception {
-        assertEquals(0, code(getBody("/project/list", null)), "C 端项目列表应匿名可访问（白名单）");
+        assertEquals("00000", code(getBody("/project/list", null)), "C 端项目列表应匿名可访问（白名单）");
         long leaderId = insertMember("p-anon-leader");
         long projectId = addProject("p-anon-project", leaderId);
-        assertEquals(0, code(getBody("/project/detail?id=" + projectId, null)), "C 端详情应匿名可访问");
+        assertEquals("00000", code(getBody("/project/detail?id=" + projectId, null)), "C 端详情应匿名可访问");
 
-        assertEquals(40100, code(getBody("/project/list/page", null)), "后台列表匿名应 40100");
-        assertEquals(40100, code(postJson("/project/add", "{}", null)));
-        assertEquals(40100, code(postJson("/member-project/bind", "{}", null)));
+        assertEquals("A0201", code(getBody("/project/list/page", null)), "后台列表匿名应 A0201");
+        assertEquals("A0201", code(postJson("/project/add", "{}", null)));
+        assertEquals("A0201", code(postJson("/member-project/bind", "{}", null)));
 
         String account = "p_nor_" + (System.nanoTime() % 100000);
         SysUser normal = new SysUser();
@@ -174,7 +174,7 @@ class ProjectCrudTest {
                 "{\"userAccount\":\"" + account + "\",\"userPassword\":\"Studio@2026\"}", null);
         normalToken = normalToken.substring(normalToken.indexOf("\"token\":\"") + 9);
         normalToken = normalToken.substring(0, normalToken.indexOf('"'));
-        assertEquals(40101, code(getBody("/project/list/page", normalToken)), "普通用户应 40101");
+        assertEquals("A0301", code(getBody("/project/list/page", normalToken)), "普通用户应 A0301");
     }
 
     // ==================== 队长不变量 ====================
@@ -188,13 +188,13 @@ class ProjectCrudTest {
         // 新增后关联表里必须已有队长（DESIGN 2.3：队长必然出现在参与成员列表）
         assertEquals(1, countRelations(projectId, leaderId), "队长没有被同步进关联表");
         String members = getBody("/member-project/member/list?projectId=" + projectId, token());
-        assertEquals(0, code(members));
+        assertEquals("00000", code(members));
         assertTrue(members.contains("p-leader-1"), "参与成员列表里应有队长：" + members);
 
-        // 幂等：把 leaderId 重复提交为同一个值，不应 40000、也不应重复插入
+        // 幂等：把 leaderId 重复提交为同一个值，不应 A0401、也不应重复插入
         String update = postJson("/project/update",
                 "{\"id\":" + projectId + ",\"leaderId\":" + leaderId + "}", token());
-        assertEquals(0, code(update), "重复提交同一队长不应报错（ensure 必须幂等）：" + update);
+        assertEquals("00000", code(update), "重复提交同一队长不应报错（ensure 必须幂等）：" + update);
         assertEquals(1, countRelations(projectId, leaderId), "幂等同步后关联行不应重复");
     }
 
@@ -207,7 +207,7 @@ class ProjectCrudTest {
 
         String update = postJson("/project/update",
                 "{\"id\":" + projectId + ",\"leaderId\":" + newLeader + "}", token());
-        assertEquals(0, code(update), "换队长失败：" + update);
+        assertEquals("00000", code(update), "换队长失败：" + update);
         assertEquals(1, countRelations(projectId, newLeader), "新队长没有被同步进关联表");
 
         String members = getBody("/member-project/member/list?projectId=" + projectId, token());
@@ -216,7 +216,7 @@ class ProjectCrudTest {
     }
 
     @Test
-    @DisplayName("关联管理：重复绑定 40000；解绑物理删除归零；队长不可解绑；重复解绑 40400")
+    @DisplayName("关联管理：重复绑定 A0401；解绑物理删除归零；队长不可解绑；重复解绑 A0402")
     void bindUnbindRules() throws Exception {
         long leaderId = insertMember("p-bind-leader");
         long memberId = insertMember("p-bind-member");
@@ -225,29 +225,29 @@ class ProjectCrudTest {
         // 队长不可解绑（守卫）——先于普通成员校验
         String unbindLeader = postJson("/member-project/unbind",
                 "{\"projectId\":" + projectId + ",\"memberId\":" + leaderId + "}", token());
-        assertEquals(40000, code(unbindLeader), "队长不应能被解绑：" + unbindLeader);
+        assertEquals("A0401", code(unbindLeader), "队长不应能被解绑：" + unbindLeader);
         assertTrue(unbindLeader.contains("请先更换队长"), "提示应给出下一步动作：" + unbindLeader);
 
         // 显式绑定普通成员
-        assertEquals(0, code(postJson("/member-project/bind",
+        assertEquals("00000", code(postJson("/member-project/bind",
                 "{\"projectId\":" + projectId + ",\"memberId\":" + memberId + "}", token())));
         assertEquals(1, countRelations(projectId, memberId));
 
         // 重复绑定：冲突必须被看见
         String dup = postJson("/member-project/bind",
                 "{\"projectId\":" + projectId + ",\"memberId\":" + memberId + "}", token());
-        assertEquals(40000, code(dup), "重复绑定应 40000：" + dup);
+        assertEquals("A0401", code(dup), "重复绑定应 A0401：" + dup);
         assertTrue(dup.contains("已参与"), dup);
 
         // 解绑：物理删除（行数归零）
-        assertEquals(0, code(postJson("/member-project/unbind",
+        assertEquals("00000", code(postJson("/member-project/unbind",
                 "{\"projectId\":" + projectId + ",\"memberId\":" + memberId + "}", token())));
         assertEquals(0, countRelations(projectId, memberId), "解绑应是物理删除（行消失）");
 
-        // 重复解绑 → 40400
+        // 重复解绑 → A0402
         String again = postJson("/member-project/unbind",
                 "{\"projectId\":" + projectId + ",\"memberId\":" + memberId + "}", token());
-        assertEquals(40400, code(again), "重复解绑应 40400：" + again);
+        assertEquals("A0402", code(again), "重复解绑应 A0402：" + again);
     }
 
     // ==================== 级联清理 ====================
@@ -265,40 +265,40 @@ class ProjectCrudTest {
         assertEquals(2, countRelationsOfProject(projectId), "前置：队长+成员应共 2 行");
 
         // 删项目：其关联行物理清空
-        assertEquals(0, code(postJson("/project/delete", "{\"id\":" + projectId + "}", token())));
+        assertEquals("00000", code(postJson("/project/delete", "{\"id\":" + projectId + "}", token())));
         assertEquals(0, countRelationsOfProject(projectId), "删项目后关联行应清空");
-        assertEquals(40400, code(getBody("/project/get?id=" + projectId, token())), "删项目后详情应 40400");
+        assertEquals("A0402", code(getBody("/project/get?id=" + projectId, token())), "删项目后详情应 A0402");
 
         // 删成员：该成员在其它项目的关联行也要清
         assertEquals(1, countRelations(otherProject, memberId), "前置：另一项目应有该成员");
-        assertEquals(0, code(postJson("/member/delete", "{\"id\":" + memberId + "}", token())));
+        assertEquals("00000", code(postJson("/member/delete", "{\"id\":" + memberId + "}", token())));
         assertEquals(0, countRelations(otherProject, memberId), "删成员后项目关联应被级联清理");
     }
 
     // ==================== 校验与脱敏 ====================
 
     @Test
-    @DisplayName("状态枚举：非法值 40000；筛选生效；C 端脱敏、详情含正文")
+    @DisplayName("状态枚举：非法值 A0401；筛选生效；C 端脱敏、详情含正文")
     void statusValidationAndFrontView() throws Exception {
         long leaderId = insertMember("p-view-leader");
         long onlineId = addProject("p-view-online", leaderId);
         String badStatus = postJson("/project/update", "{\"id\":" + onlineId + ",\"status\":9}", token());
-        assertEquals(40000, code(badStatus), "非法状态应 40000：" + badStatus);
-        assertEquals(40000, code(getBody("/project/list?status=9", null)), "C 端非法状态也应 40000");
+        assertEquals("A0401", code(badStatus), "非法状态应 A0401：" + badStatus);
+        assertEquals("A0401", code(getBody("/project/list?status=9", null)), "C 端非法状态也应 A0401");
 
         long draftId = addProject("p-view-draft", leaderId);
         postJson("/project/update", "{\"id\":" + draftId + ",\"status\":0,\"content\":\"## 正文内容\"}", token());
 
         // C 端列表脱敏：无 content / leaderId / sortOrder
         String front = getBody("/project/list?title=p-view-", null);
-        assertEquals(0, code(front));
+        assertEquals("00000", code(front));
         assertFalse(front.contains("\"content\""), "C 端列表不应返回 content：" + front);
         assertFalse(front.contains("\"leaderId\""), "C 端列表不应返回 leaderId：" + front);
         assertFalse(front.contains("\"sortOrder\""), "C 端列表不应返回 sortOrder：" + front);
 
         // 详情含正文
         String detail = getBody("/project/detail?id=" + draftId, null);
-        assertEquals(0, code(detail));
+        assertEquals("00000", code(detail));
         assertTrue(detail.contains("\"content\":\"## 正文内容\""), "详情应返回 content：" + detail);
     }
 
@@ -309,7 +309,7 @@ class ProjectCrudTest {
         long projectId = addProject("p-tech-project", leaderId);
         String update = postJson("/project/update",
                 "{\"id\":" + projectId + ",\"techStack\":[\"Java\",\"Spring Boot\"]}", token());
-        assertEquals(0, code(update), "techStack 更新失败：" + update);
+        assertEquals("00000", code(update), "techStack 更新失败：" + update);
 
         // 库里存的是 JSON 字符串
         String stored = jdbcTemplate.queryForObject(
@@ -334,12 +334,12 @@ class ProjectCrudTest {
         jdbcTemplate.update("UPDATE studio_project SET tech_stack = 'not-a-json' WHERE id = ?", projectId);
 
         String dirty = getBody("/project/detail?id=" + projectId, null);
-        assertEquals(0, code(dirty), "脏数据不应让接口 500：" + dirty);
+        assertEquals("00000", code(dirty), "脏数据不应让接口 500：" + dirty);
         assertTrue(dirty.contains("\"techStack\":[]"), "解析失败应兜底为空数组：" + dirty);
     }
 
     @Test
-    @DisplayName("tech_stack 序列化超长（>256）：拒绝 40000")
+    @DisplayName("tech_stack 序列化超长（>256）：拒绝 A0401")
     void techStackTooLongRejected() throws Exception {
         long leaderId = insertMember("p-long-leader");
         StringBuilder tags = new StringBuilder();
@@ -352,7 +352,7 @@ class ProjectCrudTest {
         String body = postJson("/project/add",
                 "{\"title\":\"p-long-project\",\"description\":\"d\",\"leaderId\":" + leaderId
                         + ",\"techStack\":[" + tags + "]}", token());
-        assertEquals(40000, code(body), "超长 techStack 应 40000：" + body);
+        assertEquals("A0401", code(body), "超长 techStack 应 A0401：" + body);
         assertTrue(body.contains("技术栈"), body);
     }
 }

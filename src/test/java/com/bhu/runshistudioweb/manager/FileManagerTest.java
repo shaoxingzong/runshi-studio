@@ -121,7 +121,7 @@ class FileManagerTest {
         BusinessException ex = assertThrows(BusinessException.class, () -> upload(
                 new MockMultipartFile("file", "evil.png", "image/png", text)));
 
-        assertEquals(40000, ex.getCode());
+        assertEquals("A0401", ex.getCode());
         assertTrue(ex.getMessage().contains("不支持的文件格式"), "提示语应说明是格式问题：" + ex.getMessage());
     }
 

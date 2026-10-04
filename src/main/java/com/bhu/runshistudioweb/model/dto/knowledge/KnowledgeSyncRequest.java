@@ -17,7 +17,7 @@ import java.io.Serializable;
  * 再比对 {@code content_hash} 决定「跳过」还是「重建」——
  * 所以业务数据没变时重复调用是零成本的（不调 Embedding、不写库）。
  *
- * <p><b>{@code manual} 在这里会被拒绝（40000）</b>：
+ * <p><b>{@code manual} 在这里会被拒绝（A0401）</b>：
  * 手工录入没有业务主键，拿什么做幂等？要录手工内容请走
  * {@code /knowledge/doc/manual}。这条校验由 Service 完成，
  * 而不是写在 DTO 的 {@code @Pattern} 里——合法取值属于「闭集」，

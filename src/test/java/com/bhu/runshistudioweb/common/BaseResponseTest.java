@@ -31,11 +31,11 @@ class BaseResponseTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    @DisplayName("成功响应：data 为 null 时 code 仍为 0，不应抛异常")
+    @DisplayName("成功响应：data 为 null 时 code 仍为 00000，不应抛异常")
     void successWithNullData() {
         // 明确允许 data 为 null：查不到列表时返回空集合、无需返回数据时返回 null 都是合法用法
         BaseResponse<String> response = ResultUtils.success(null);
-        assertEquals(0, response.getCode());
+        assertEquals("00000", response.getCode());
         assertNull(response.getData());
     }
 
@@ -45,7 +45,8 @@ class BaseResponseTest {
         // 失败时前端只看 code 与 message，data 必须为 null，
         // 否则出现「有数据但 code 非 0」会让前端不知道该信哪个
         assertNull(ResultUtils.error(ErrorCode.PARAMS_ERROR).getData());
-        assertNull(ResultUtils.error(40400, "自定义错误").getData());
+        // 自定义状态码路径：现在传的是 5 位字符串（这里用 NOT_FOUND 的码验证「不走枚举也 OK」）
+        assertNull(ResultUtils.error("A0402", "自定义错误").getData());
     }
 
     @Test
@@ -55,16 +56,36 @@ class BaseResponseTest {
         // 若全局配置了 NON_NULL（或等价策略），data 字段会从 JSON 中消失，
         // 前端写 res.data.xxx 就会报 undefined —— 这里把该行为钉死
         assertTrue(json.contains("\"data\""), "序列化结果必须包含 data 字段：" + json);
-        assertTrue(json.contains("40000"), "序列化结果必须包含错误码：" + json);
+        assertTrue(json.contains("A0401"), "序列化结果必须包含错误码：" + json);
     }
 
     @Test
-    @DisplayName("错误码号段：成功为 0，客户端错误为 4xxxx，服务端错误为 5xxxx")
+    @DisplayName("错误码规范（阿里手册）：成功为 00000，其余 5 位且首位标明来源 A/B/C")
     void errorCodeSegments() {
-        // 号段是前后端的契约：前端依据首位数字判断「该提示用户」还是「该重试/上报」
-        assertEquals(0, ErrorCode.SUCCESS.getCode());
-        assertEquals(4, String.valueOf(ErrorCode.PARAMS_ERROR.getCode()).charAt(0) - '0');
-        assertEquals(5, String.valueOf(ErrorCode.SYSTEM_ERROR.getCode()).charAt(0) - '0');
+        // 这是与前端的契约，也是规范本身的守门人。三条硬性要求：
+        // ① 成功码是 5 个零；② 错误码一律 5 位（来源 1 位 + 编号 4 位）；
+        // ③ 首位标明错误产生来源——前端据此决定「提示用户 / 上报后端 / 等服务商恢复」
+        assertEquals("00000", ErrorCode.SUCCESS.getCode());
+
+        // A 类：错误来源于用户（原样重试无意义，前端应提示用户）
+        assertEquals('A', ErrorCode.PARAMS_ERROR.getCode().charAt(0));
+        assertEquals('A', ErrorCode.NOT_LOGIN_ERROR.getCode().charAt(0));
+        assertEquals('A', ErrorCode.NO_AUTH_ERROR.getCode().charAt(0));
+        assertEquals('A', ErrorCode.FORBIDDEN_ERROR.getCode().charAt(0));
+        assertEquals('A', ErrorCode.NOT_FOUND_ERROR.getCode().charAt(0));
+        assertEquals('A', ErrorCode.TOO_MANY_REQUESTS_ERROR.getCode().charAt(0));
+
+        // B 类：错误来源于当前系统（查后端日志，重试可能成功）
+        assertEquals('B', ErrorCode.SYSTEM_ERROR.getCode().charAt(0));
+        assertEquals('B', ErrorCode.OPERATION_ERROR.getCode().charAt(0));
+
+        // C 类：错误来源于第三方服务（等服务商恢复，不是本系统 bug）
+        assertEquals('C', ErrorCode.AI_SERVICE_ERROR.getCode().charAt(0));
+
+        // 全部取值都必须是 5 位——以后有人加了一个 4 位或 6 位的码，这里立刻红
+        for (ErrorCode ec : ErrorCode.values()) {
+            assertEquals(5, ec.getCode().length(), "错误码必须是 5 位：" + ec.name());
+        }
     }
 
     @Test
@@ -73,7 +94,7 @@ class BaseResponseTest {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> ThrowUtils.throwIf(true, ErrorCode.NOT_LOGIN_ERROR));
         // code 与 message 都必须来自枚举，保证「抛异常」与「返回错误码」两条路径的对外表现一致
-        assertEquals(40100, ex.getCode());
+        assertEquals("A0201", ex.getCode());
         assertEquals("未登录", ex.getMessage());
     }
 
@@ -90,7 +111,7 @@ class BaseResponseTest {
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> ThrowUtils.throwIf(true, ErrorCode.NO_AUTH_ERROR, "仅管理员可操作"));
         // code 仍取枚举（前端逻辑不变），只有给人看的 message 被替换
-        assertEquals(40101, ex.getCode());
+        assertEquals("A0301", ex.getCode());
         assertEquals("仅管理员可操作", ex.getMessage());
     }
 }

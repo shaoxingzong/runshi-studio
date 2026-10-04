@@ -118,9 +118,9 @@ public class UserController {
      * @return 当前登录用户的脱敏信息（不含 token）
      */
     @GetMapping("/current")
-    @Operation(summary = "获取当前登录用户", description = "未登录时由全局异常处理器返回 40100")
+    @Operation(summary = "获取当前登录用户", description = "未登录时由全局异常处理器返回 A0201")
     public BaseResponse<LoginUserVO> getLoginUser() {
-        // 未登录 / token 过期都会在这里抛异常，交给全局异常处理器转成 40100
+        // 未登录 / token 过期都会在这里抛异常，交给全局异常处理器转成 A0201
         SysUser loginUser = userService.getLoginUser();
         // 返回 VO 而不是 entity：entity 里有 userPassword 哈希串，直接返回等于把密码送到前端
         return ResultUtils.success(userService.getLoginUserVO(loginUser));
@@ -130,7 +130,7 @@ public class UserController {
      * 用户注销（退出登录）
      *
      * <p>注销是幂等语义层面的「清理动作」：Service 里会先判断是否登录，
-     * 未登录时返回 40100，避免前端在 token 已过期的情况下调用本接口拿到令人困惑的结果。
+     * 未登录时返回 A0201，避免前端在 token 已过期的情况下调用本接口拿到令人困惑的结果。
      *
      * @return true 表示注销成功
      */
@@ -197,7 +197,7 @@ public class UserController {
     @Operation(summary = "【管理员】查询用户详情")
     public BaseResponse<UserVO> getUserById(@RequestParam("id") long id) {
         // 用 long 接参：如果传的是非数字字符串，Spring 会抛类型转换异常，
-        // 由全局异常处理器兜成 40000 而不是 500；这里再挡一次明显的非法值
+        // 由全局异常处理器兜成 A0401 而不是 500；这里再挡一次明显的非法值
         ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "id 不合法");
         return ResultUtils.success(userService.getUserById(id));
     }

@@ -9,7 +9,14 @@
 
 /** 统一响应体 */
 export interface ApiResponse<T> {
-    code: number;
+    /**
+     * 业务状态码（5 位字符串，遵循阿里开发手册）
+     * - "00000" = 成功
+     * - "Axxxx" = 用户端错误（参数/登录/权限/限流）
+     * - "Bxxxx" = 当前系统错误
+     * - "Cxxxx" = 第三方服务错误（如 AI 服务不可用）
+     */
+    code: string;
     data: T;
     message: string;
 }

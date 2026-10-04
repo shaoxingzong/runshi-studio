@@ -58,11 +58,11 @@ import java.util.concurrent.Executors;
  * <p><b>本类的四道关键约束（改代码前先读）</b>：
  * <ol>
  *     <li><b>会话归属</b>：绑定用户的会话仅本人可续；匿名会话凭不可枚举雪花 ID 可续。
- *     不存在与无权<b>统一返回 40400 同一句提示</b>，不暴露存在性；</li>
+ *     不存在与无权<b>统一返回 A0402 同一句提示</b>，不暴露存在性；</li>
  *     <li><b>配额自增必须原子</b>：{@code SET ai_query_count = ai_query_count + 1}，
  *     绝不「读出来 +1 再写回去」（并发下互相覆盖，计数偏小＝白送额度）；</li>
  *     <li><b>HTTP 在事务之外</b>：AI 调用可能几十秒，包进事务会长时间占用数据库连接。
- *     失败时保留用户消息，返回 50001；成功后才用 {@code TransactionTemplate}
+ *     失败时保留用户消息，返回 C0200；成功后才用 {@code TransactionTemplate}
  *     把「assistant 消息 + 会话 updated_at + 计数」包成一步写；</li>
  *     <li><b>排序必须带 id</b>：{@code created_at} 只有秒级精度，同一秒的
  *     user / assistant 两条消息时间相同，只按时间排序会出现对话记录偶发颠倒。</li>
@@ -322,8 +322,8 @@ public class AiChatServiceImpl implements AiChatService {
     public boolean deleteSession(String sessionId) {
         long parsedSessionId = parseSessionId(sessionId, "会话 id 不能为空");
 
-        // 归属校验与提问、历史完全一致：不存在与无权统一 40400，不暴露存在性。
-        // 这一步顺带实现了「重复删除 → 40400」：第一次删除后会话已被逻辑删除，
+        // 归属校验与提问、历史完全一致：不存在与无权统一 A0402，不暴露存在性。
+        // 这一步顺带实现了「重复删除 → A0402」：第一次删除后会话已被逻辑删除，
         // selectById 带 deleted_at = 0 条件查不到 → 与「不存在」走同一条路径
         Long userId = currentUserIdOrNull();
         assertSessionAccessible(parsedSessionId, userId);
@@ -658,8 +658,8 @@ public class AiChatServiceImpl implements AiChatService {
             // 匿名会话：19 位雪花 ID 无法被枚举，「知道 ID」即等价于持有凭据
             return;
         }
-        // 越权与不存在返回**完全相同**的 40400 与提示：
-        // 否则攻击者可以用「40400 提示是否有差异」来判断会话是否存在
+        // 越权与不存在返回**完全相同**的 A0402 与提示：
+        // 否则攻击者可以用「A0402 提示是否有差异」来判断会话是否存在
         ThrowUtils.throwIf(!Objects.equals(session.getUserId(), userId),
                 ErrorCode.NOT_FOUND_ERROR, SESSION_NOT_FOUND_MESSAGE);
     }
@@ -673,7 +673,7 @@ public class AiChatServiceImpl implements AiChatService {
      */
     private long parseSessionId(String sessionIdText, String blankMessage) {
         ThrowUtils.throwIf(StrUtil.isBlank(sessionIdText), ErrorCode.PARAMS_ERROR, blankMessage);
-        // 用 Convert 而不是 Long.valueOf：脏值（如 "abc"）会得到 null 走 40000，
+        // 用 Convert 而不是 Long.valueOf：脏值（如 "abc"）会得到 null 走 A0401，
         // 而不是抛 NumberFormatException 变成 500
         Long sessionId = Convert.toLong(sessionIdText, null);
         ThrowUtils.throwIf(sessionId == null || sessionId <= 0, ErrorCode.PARAMS_ERROR, "会话 id 不合法");
@@ -695,7 +695,7 @@ public class AiChatServiceImpl implements AiChatService {
     // ==================== 配额 ====================
 
     /**
-     * 配额预检：已达上限则返回 42900
+     * 配额预检：已达上限则返回 A0501
      *
      * <p>这里读的是「当前值」，并发下两个请求可能同时通过预检，
      * 最终略微超出上限——这是刻意接受的：配额是「防护性上限」而不是计费依据，

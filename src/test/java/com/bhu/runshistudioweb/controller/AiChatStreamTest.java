@@ -341,7 +341,7 @@ class AiChatStreamTest {
     // ==================== ⑥ 失败也是事件（HTTP 恒 200） ====================
 
     @Test
-    @DisplayName("参数错误以 error 事件返回：HTTP 200、无 meta、code=40000")
+    @DisplayName("参数错误以 error 事件返回：HTTP 200、无 meta、code=A0401")
     void paramsErrorBecomesErrorEvent() throws Exception {
         MvcResult result = streamRaw("{\"message\":\"   \"}", null);
         String frames = result.getResponse().getContentAsString(StandardCharsets.UTF_8);
@@ -349,17 +349,17 @@ class AiChatStreamTest {
         assertEquals(200, result.getResponse().getStatus(), "SSE 失败也应 HTTP 200");
         assertFalse(frames.contains("event:meta"), "参数错误不应发出 meta：" + frames);
         String error = dataOf(frames, "error");
-        assertTrue(error.contains("\"code\":40000"), "应为 40000：" + error);
+        assertTrue(error.contains("\"code\":\"A0401\""), "应为 A0401：" + error);
     }
 
     @Test
-    @DisplayName("会话不存在 / 他人会话：error 40400 统一提示（与同步接口同规则）")
+    @DisplayName("会话不存在 / 他人会话：error A0402 统一提示（与同步接口同规则）")
     void sessionNotFoundAndOwnership() throws Exception {
         // 不存在
         String missing = streamFrames(
                 "{\"sessionId\":\"999999999999999999\",\"message\":\"T23-在吗\"}", null);
         String error = dataOf(missing, "error");
-        assertTrue(error.contains("\"code\":40400") && error.contains("会话不存在"), "应 40400：" + error);
+        assertTrue(error.contains("\"code\":\"A0402\"") && error.contains("会话不存在"), "应 A0402：" + error);
 
         // 登录用户 A 建会话，匿名尝试续聊 → 与不存在同码同提示
         String token = login();
@@ -368,18 +368,18 @@ class AiChatStreamTest {
         String cross = streamFrames(
                 "{\"sessionId\":\"" + sessionId + "\",\"message\":\"T23-越权续聊\"}", null);
         String crossError = dataOf(cross, "error");
-        assertTrue(crossError.contains("\"code\":40400") && crossError.contains("会话不存在"),
-                "越权应 40400 且不暴露存在性：" + crossError);
+        assertTrue(crossError.contains("\"code\":\"A0402\"") && crossError.contains("会话不存在"),
+                "越权应 A0402 且不暴露存在性：" + crossError);
     }
 
     @Test
-    @DisplayName("AI 失败：error 50001；保留用户消息、无 assistant、不计数")
+    @DisplayName("AI 失败：error C0200；保留用户消息、无 assistant、不计数")
     void aiFailureKeepsUserMessageAndSkipsCount() throws Exception {
         String token = login();
         String frames = streamFrames("{\"message\":\"T23-TRIGGER_FAIL 故障注入\"}", token);
 
         String error = dataOf(frames, "error");
-        assertTrue(error.contains("\"code\":50001") && error.contains("暂时不可用"), "应 50001：" + error);
+        assertTrue(error.contains("\"code\":\"C0200\"") && error.contains("暂时不可用"), "应 C0200：" + error);
 
         String sessionId = jsonField(dataOf(frames, "meta"), "sessionId");
         long sid = Long.parseLong(sessionId);
@@ -406,10 +406,10 @@ class AiChatStreamTest {
         // 「匿名可用」的取样改用仍公开的项目列表（成员接口的 404 断言见 StudioMemberCrudTest）
         String body = mockMvc.perform(get("/project/list")).andReturn()
                 .getResponse().getContentAsString(StandardCharsets.UTF_8);
-        assertTrue(body.contains("\"code\":0"), "既有公开接口应匿名可用：" + body);
+        assertTrue(body.contains("\"code\":\"00000\""), "既有公开接口应匿名可用：" + body);
 
         String admin = mockMvc.perform(get("/member/list/page")).andReturn()
                 .getResponse().getContentAsString(StandardCharsets.UTF_8);
-        assertTrue(admin.contains("\"code\":40100"), "管理端接口应仍拦截匿名：" + admin);
+        assertTrue(admin.contains("\"code\":\"A0201\""), "管理端接口应仍拦截匿名：" + admin);
     }
 }

@@ -31,7 +31,7 @@ import org.springframework.web.servlet.resource.ResourceHttpRequestHandler;
  * 而不是「所有人可访问」。反之（默认放行 + 逐个加注解）一旦漏加就是越权漏洞。
  *
  * <p><b>代价与纪律</b>：新写一个「本来就要给游客看」的接口时，
- * 必须把它加进 {@link #EXCLUDE_PATHS}，否则前端会拿到 40100。
+ * 必须把它加进 {@link #EXCLUDE_PATHS}，否则前端会拿到 A0201。
  * 因此新增公开接口时，请顺手更新这里的清单（并写清注释），别只加在 Controller 上。
  */
 @Configuration
@@ -74,7 +74,7 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
             "/project/detail",
             // 官网「AI 咨询」：提问与历史。两条都精确登记，禁止 /ai/**（见 AiChatController 注释）。
             // 注意路径里带有 chat 段：/ai/chat 是提问（POST），/ai/chat/history 是历史（GET），
-            // 两者必须分别登记——只登记前者会让历史接口返回 40100
+            // 两者必须分别登记——只登记前者会让历史接口返回 A0201
             "/ai/chat",
             "/ai/chat/history",
             // SSE 流式提问：与 /ai/chat 同源同规则，同样匿名可访问。
@@ -135,7 +135,7 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
                     //
                     // 不存在的路径（以及静态资源）会落到静态资源处理器 ResourceHttpRequestHandler，
                     // 它同样挂在 /** 上、同样会被本拦截器命中。若无条件 checkLogin()，
-                    // 所有 404 都会被伪装成 40100：前端 URL 写错时看到"未登录"，排查方向被带偏，
+                    // 所有 404 都会被伪装成 A0201：前端 URL 写错时看到"未登录"，排查方向被带偏，
                     // 监控里也统计不到 404。
                     // 因此这里跳过鉴权，让静态资源处理器正常走完 → 返回真正的 404。
                     // 这不产生越权风险：该处理器只能读静态文件，读不到任何业务接口。
@@ -149,6 +149,6 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
                 .addPathPatterns("/**")
                 .excludePathPatterns(EXCLUDE_PATHS);
         // 未登录时 StpUtil.checkLogin() 抛 NotLoginException，
-        // 由 GlobalExceptionHandler 统一转成 40100，前端拦截器据此跳登录页
+        // 由 GlobalExceptionHandler 统一转成 A0201，前端拦截器据此跳登录页
     }
 }

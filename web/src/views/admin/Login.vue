@@ -31,7 +31,7 @@ async function submit() {
         const redirect = (route.query.redirect as string) || '/admin';
         await router.push(redirect);
     } catch (e) {
-        // 40101（角色不足）等错误已在请求层统一提示，这里不重复弹窗
+        // A0301（角色不足）等错误已在请求层统一提示，这里不重复弹窗
         console.warn('登录失败', e);
     } finally {
         loading.value = false;

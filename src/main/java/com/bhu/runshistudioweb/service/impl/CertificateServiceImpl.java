@@ -78,7 +78,7 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
      *
      * <p>实现要点：四个必填项其实对应四种「不拦住就会出事」的情况——
      * 其中 {@code imageUrl} 非空校验是为了把<b>数据库报错</b>提前成<b>参数提示</b>：
-     * DDL 里该列是 NOT NULL，不校验的话用户只会看到 50000「系统错误」。
+     * DDL 里该列是 NOT NULL，不校验的话用户只会看到 B0001「系统错误」。
      *
      * <p>{@code sortOrder} 不传时显式置 0 而不是留 null：显示赋值比依赖 DDL 默认值更直观，
      * 将来 DDL 改默认值时行为也不会漂移。
@@ -122,9 +122,9 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
      * <p>两个刻意的处理：
      * <ul>
      *     <li><b>先查存在再更新</b>：{@code updateById} 失败时只返回 false，
-     *     前端只能看到「更新失败」；先查一次才能给出 40400「证书不存在」；</li>
+     *     前端只能看到「更新失败」；先查一次才能给出 A0402「证书不存在」；</li>
      *     <li><b>传了才校验</b>（包括"传空串要拦住"）：不传表示不改，
-     *     传了空串是想清空——NOT NULL 列不允许，必须在这里拦成 40000。</li>
+     *     传了空串是想清空——NOT NULL 列不允许，必须在这里拦成 A0401。</li>
      * </ul>
      */
     @Override
@@ -202,14 +202,14 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
     /**
      * 按 id 查证书（管理端视图）
      *
-     * <p>查不到要抛 40400 而不是返回 null：返回 null 会让前端收到
+     * <p>查不到要抛 A0402 而不是返回 null：返回 null 会让前端收到
      * 「code=0 但 data 为空」——它分不清这是"没有数据"还是"出错了"。
      */
     @Override
     public CertificateVO getCertificateById(long id) {
         ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "证书 id 不合法");
         StudioCertificate certificate = this.getById(id);
-        // 查不到给明确的 40400，而不是返回 null 让前端收到「成功但 data 为空」
+        // 查不到给明确的 A0402，而不是返回 null 让前端收到「成功但 data 为空」
         ThrowUtils.throwIf(certificate == null, ErrorCode.NOT_FOUND_ERROR, "证书不存在");
         return this.getCertificateVO(certificate);
     }

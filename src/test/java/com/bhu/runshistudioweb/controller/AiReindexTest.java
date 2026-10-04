@@ -153,9 +153,9 @@ class AiReindexTest {
         long projectId = createProject();
 
         // ① 入库：一个 source 类（项目）+ 一个 manual 类（手工录入）
-        assertEquals(0, code(postJson("/knowledge/doc/sync",
+        assertEquals("00000", code(postJson("/knowledge/doc/sync",
                 "{\"sourceType\":\"project\",\"sourceId\":" + projectId + "}", token)), "同步项目应成功");
-        assertEquals(0, code(postJson("/knowledge/doc/manual",
+        assertEquals("00000", code(postJson("/knowledge/doc/manual",
                 "{\"title\":\"T30-团队规范\",\"content\":\"" + MANUAL_CONTENT + "\"}", token)),
                 "手工录入应成功");
 
@@ -171,13 +171,13 @@ class AiReindexTest {
 
         // ③ sync-all 会因为「内容哈希未变」全部跳过，检索仍然救不回来
         String syncAll = postJson("/knowledge/doc/sync-all", "{}", token);
-        assertEquals(0, code(syncAll), "sync-all 应成功：" + syncAll);
+        assertEquals("00000", code(syncAll), "sync-all 应成功：" + syncAll);
         assertTrue(data(syncAll).get("skipped").asInt() >= 1, "内容未变应被跳过：" + syncAll);
         assertEquals(0, hitCount(PROJECT_CONTENT), "sync-all 跳过后检索仍未恢复");
 
         // ④ reindex-all：直接用 chunk 文本重新嵌入，恢复检索
         String reindex = postJson("/knowledge/doc/reindex-all", "{}", token);
-        assertEquals(0, code(reindex), "reindex-all 应成功：" + reindex);
+        assertEquals("00000", code(reindex), "reindex-all 应成功：" + reindex);
         JsonNode result = data(reindex);
         assertTrue(result.get("rebuilt").asInt() >= 2, "两篇文档都应被重建：" + reindex);
         assertEquals(0, result.get("failed").asInt(), "不应有失败：" + reindex);
@@ -188,14 +188,14 @@ class AiReindexTest {
     }
 
     @Test
-    @DisplayName("AC4：权限矩阵——admin 放行 / 普通用户 40101 / 匿名 40100")
+    @DisplayName("AC4：权限矩阵——admin 放行 / 普通用户 A0301 / 匿名 A0201")
     void permissionMatrix() throws Exception {
-        assertEquals(0, code(postJson("/knowledge/doc/reindex-all", "{}", adminToken())),
+        assertEquals("00000", code(postJson("/knowledge/doc/reindex-all", "{}", adminToken())),
                 "管理员应放行");
-        assertEquals(40101, code(postJson("/knowledge/doc/reindex-all", "{}", userToken())),
-                "普通用户应 40101");
-        assertEquals(40100, code(postJson("/knowledge/doc/reindex-all", "{}", null)),
-                "匿名应 40100");
+        assertEquals("A0301", code(postJson("/knowledge/doc/reindex-all", "{}", userToken())),
+                "普通用户应 A0301");
+        assertEquals("A0201", code(postJson("/knowledge/doc/reindex-all", "{}", null)),
+                "匿名应 A0201");
     }
 
     // ==================== 工具 ====================
@@ -268,8 +268,8 @@ class AiReindexTest {
                 .getContentAsString(StandardCharsets.UTF_8);
     }
 
-    private int code(String body) throws Exception {
-        return jsonMapper.readTree(body).get("code").asInt();
+    private String code(String body) throws Exception {
+        return jsonMapper.readTree(body).get("code").asText();
     }
 
     private JsonNode data(String body) throws Exception {

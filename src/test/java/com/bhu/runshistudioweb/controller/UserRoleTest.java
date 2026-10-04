@@ -29,7 +29,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * <p>把「角色取值 = user / member / admin」这条约定**钉在测试里**：
  * 它同时存在于 {@code db/user.sql} 的列注释与默认值、{@code db/DESIGN.md}、
  * 以及 Java 常量三处，任何一处改了而其他两处没跟上，都会静默变成
- * 「明明给了角色却一直 40101」。这里改一处、跑一次，就能发现不一致。
+ * 「明明给了角色却一直 A0301」。这里改一处、跑一次，就能发现不一致。
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -78,7 +78,7 @@ class UserRoleTest {
 
         String body = postJson("/user/register", "{\"userAccount\":\"" + account
                 + "\",\"userPassword\":\"Studio@2026\",\"checkPassword\":\"Studio@2026\"}", null);
-        assertTrue(body.contains("\"code\":0"), "注册失败：" + body);
+        assertTrue(body.contains("\"code\":\"00000\""), "注册失败：" + body);
 
         // 直接查库断言：接口返回体里可能压根不带角色，只有查库才能证明真实落库值
         SysUser user = selectByAccount(account);
@@ -106,7 +106,7 @@ class UserRoleTest {
 
         String newAccount = "role_add_" + (System.nanoTime() % 100000);
         String addBody = postJson("/user/add", "{\"userAccount\":\"" + newAccount + "\"}", token);
-        assertTrue(addBody.contains("\"code\":0"), "新增失败：" + addBody);
+        assertTrue(addBody.contains("\"code\":\"00000\""), "新增失败：" + addBody);
 
         assertEquals(UserRoleConstant.USER, selectByAccount(newAccount).getUserRole(),
                 "管理员不指定角色时应落到最低权限，而不是随便给一个高权限");

@@ -39,18 +39,18 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
  * 下面几个 Sa-Token 异常都会精确命中各自的处理方法，不会落到兜底的 RuntimeException 方法里。
  *
  * <p><b>为什么必须单独处理 Sa-Token 异常</b>：它们都继承自 RuntimeException，
- * 不单独接住就会被兜底方法统一吞成 50000「系统错误」，前端将无法区分
+ * 不单独接住就会被兜底方法统一吞成 B0001「系统错误」，前端将无法区分
  * 「该跳登录页」「该提示无权限」和「服务器真的挂了」。
  *
  * <p><b>为什么还要单独处理参数校验异常</b>：{@code @Valid} 校验失败抛出的
- * MethodArgumentNotValidException 也继承自 RuntimeException，不接住就会返回 50000「系统错误」，
+ * MethodArgumentNotValidException 也继承自 RuntimeException，不接住就会返回 B0001「系统错误」，
  * 前端会把「账号格式不对」显示成「服务器故障」，排查方向完全被带偏。
  *
  * <p>覆盖范围小结：业务异常、Sa-Token 四类鉴权异常、DTO 字段校验失败、方法级校验失败、
  * 请求体解析失败，都已映射到明确的业务错误码，前端可据此直接给出提示。
  * 其余异常（路径参数类型不匹配 MethodArgumentTypeMismatchException、
  * 缺少必填参数 MissingServletRequestParameterException、
- * 请求方法不支持 HttpRequestMethodNotSupportedException 等）会落到兜底方法返回 50000，
+ * 请求方法不支持 HttpRequestMethodNotSupportedException 等）会落到兜底方法返回 B0001，
  * 需要时按同样思路补一个处理器即可。
  */
 @Hidden               // 不在接口文档中暴露异常处理器本身
@@ -87,7 +87,7 @@ public class GlobalExceptionHandler {
      * 若按 error + 堆栈记录，正常的过期登录会把日志淹掉，反而查不到真问题。
      *
      * @param e Sa-Token 未登录异常
-     * @return code 固定 40100；message 用 Sa-Token 自带的提示（如「token已过期」），
+     * @return code 固定 A0201；message 用 Sa-Token 自带的提示（如「token已过期」），
      *         文案面向用户、不含内部细节，前端据此提示并跳转登录页
      */
     @ExceptionHandler(NotLoginException.class)
@@ -104,7 +104,7 @@ public class GlobalExceptionHandler {
      * 角色名属于权限设计信息，只写日志即可，避免为探测提供线索。
      *
      * @param e Sa-Token 角色校验异常
-     * @return code 固定 40101
+     * @return code 固定 A0301
      */
     @ExceptionHandler(NotRoleException.class)
     public BaseResponse<?> notRoleExceptionHandler(NotRoleException e) {
@@ -116,7 +116,7 @@ public class GlobalExceptionHandler {
      * 权限点不足：{@code @SaCheckPermission} 校验未通过（当前项目未使用权限点，预留）
      *
      * @param e Sa-Token 权限校验异常
-     * @return code 固定 40101
+     * @return code 固定 A0301
      */
     @ExceptionHandler(NotPermissionException.class)
     public BaseResponse<?> notPermissionExceptionHandler(NotPermissionException e) {
@@ -127,11 +127,11 @@ public class GlobalExceptionHandler {
     /**
      * 账号被封禁：命中 Sa-Token 的账号封禁策略（{@code StpUtil.disable(...)} 等服务维度封禁）
      *
-     * <p>与「无权限」区分开：无权限是角色不够（40101），封禁是账号本身被限制（40300），
+     * <p>与「无权限」区分开：无权限是角色不够（A0301），封禁是账号本身被限制（A0302），
      * 前端对后者的处理是「提示联系管理员」而不是「跳登录页」。
      *
      * @param e Sa-Token 封禁异常
-     * @return code 固定 40300
+     * @return code 固定 A0302
      */
     @ExceptionHandler(DisableServiceException.class)
     public BaseResponse<?> disableServiceExceptionHandler(DisableServiceException e) {
@@ -147,7 +147,7 @@ public class GlobalExceptionHandler {
      * 全部返回反而让用户不知道先改哪个；完整信息在日志里。
      *
      * @param e 参数校验异常（携带 BindingResult）
-     * @return code 固定 40000，message 为字段上声明的提示文案
+     * @return code 固定 A0401，message 为字段上声明的提示文案
      */
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public BaseResponse<?> methodArgumentNotValidExceptionHandler(MethodArgumentNotValidException e) {
@@ -164,10 +164,10 @@ public class GlobalExceptionHandler {
      * 参数校验失败：方法级校验（{@code @Validated} + {@code @RequestParam} 上的约束）
      *
      * <p>与上一个处理器的区别：{@code @RequestBody} 的校验失败走 MethodArgumentNotValidException，
-     * 而请求参数、路径变量的校验失败走这个异常，两者都要接，否则总有一类会变成 50000。
+     * 而请求参数、路径变量的校验失败走这个异常，两者都要接，否则总有一类会变成 B0001。
      *
      * @param e 约束违反异常
-     * @return code 固定 40000，message 为第一条违反约束的提示
+     * @return code 固定 A0401，message 为第一条违反约束的提示
      */
     @ExceptionHandler(ConstraintViolationException.class)
     public BaseResponse<?> constraintViolationExceptionHandler(ConstraintViolationException e) {
@@ -183,14 +183,14 @@ public class GlobalExceptionHandler {
      * 请求体不可读：请求体不是合法 JSON、字段类型不匹配、缺少请求体等
      *
      * <p>典型触发场景：前端漏传 Content-Type、JSON 里把数字写成裸字符串、
-     * 请求体被截断。若不接住，会落到兜底的 RuntimeException 变成 50000「系统错误」，
+     * 请求体被截断。若不接住，会落到兜底的 RuntimeException 变成 B0001「系统错误」，
      * 前端会把「参数格式不对」显示成「服务器故障」，排查方向被完全带偏。
      *
      * <p>注意：响应里**不回显 Jackson 的原始解析信息**（它可能带上类的全限定名与字段路径），
      * 只给一句无害提示；详细原因记在 warn 日志里。
      *
      * @param e 请求体解析失败异常
-     * @return code 固定 40000
+     * @return code 固定 A0401
      */
     @ExceptionHandler(HttpMessageNotReadableException.class)
     public BaseResponse<?> httpMessageNotReadableExceptionHandler(HttpMessageNotReadableException e) {
@@ -201,7 +201,7 @@ public class GlobalExceptionHandler {
     /**
      * 上传文件超过大小限制：由 Spring 在**解析请求体时**抛出，此时请求还没进入 Controller
      *
-     * <p>为什么必须单独处理：否则会落到兜底的 RuntimeException 变成 50000「系统错误」——
+     * <p>为什么必须单独处理：否则会落到兜底的 RuntimeException 变成 B0001「系统错误」——
      * 用户传了一张过大的照片，看到"系统错误"会以为是服务器故障（去重试、去反馈），
      * 而真实原因只是"文件太大"，换张小图即可。**一次用户自己能解决的输入错误，
      * 被伪装成服务端故障**；对监控也是污染：告警会把"用户传大文件"统计成服务端异常。
@@ -209,7 +209,7 @@ public class GlobalExceptionHandler {
      * <p>提示文案里的限制值从 multipart 配置读取，不写死数字。
      *
      * @param e 上传超限异常
-     * @return code 固定 40000，提示带上当前配置的大小上限
+     * @return code 固定 A0401，提示带上当前配置的大小上限
      */
     @ExceptionHandler(MaxUploadSizeExceededException.class)
     public BaseResponse<?> maxUploadSizeExceededExceptionHandler(MaxUploadSizeExceededException e) {

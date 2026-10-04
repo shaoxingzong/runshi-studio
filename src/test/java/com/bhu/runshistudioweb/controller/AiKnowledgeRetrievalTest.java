@@ -307,9 +307,9 @@ class AiKnowledgeRetrievalTest {
         return mockMvc.perform(request).andReturn().getResponse().getContentAsString();
     }
 
-    private int code(String body) {
-        int start = body.indexOf("\"code\":") + 7;
-        return Integer.parseInt(body.substring(start, body.indexOf(',', start)));
+    private String code(String body) {
+        int start = body.indexOf("\"code\":\"") + 8;
+        return body.substring(start, body.indexOf('"', start));
     }
 
     private JsonNode dataOf(String body) {
@@ -320,7 +320,7 @@ class AiKnowledgeRetrievalTest {
     private long ingest(String title, String content) throws Exception {
         String body = postJson("/knowledge/doc/manual",
                 "{\"title\":\"" + title + "\",\"content\":\"" + content + "\"}", adminToken());
-        assertEquals(0, code(body), "入库应成功：" + body);
+        assertEquals("00000", code(body), "入库应成功：" + body);
         return Long.parseLong(dataOf(body).get("docId").asString());
     }
 
@@ -381,7 +381,7 @@ class AiKnowledgeRetrievalTest {
 
         String body = chatAnon(question);
 
-        assertEquals(0, code(body), "提问应成功：" + body);
+        assertEquals("00000", code(body), "提问应成功：" + body);
         // 注入取证：资料确实被拼进了送进模型的 user 消息
         String userContent = lastUserMessageOfChatRequest();
         assertTrue(userContent.startsWith("参考资料："), "应带参考资料前缀：" + userContent);
@@ -416,7 +416,7 @@ class AiKnowledgeRetrievalTest {
 
         String body = chatAnon(question);
 
-        assertEquals(0, code(body), "提问应成功：" + body);
+        assertEquals("00000", code(body), "提问应成功：" + body);
         assertEquals(question, lastUserMessageOfChatRequest(), "无命中时消息必须原样（不注入）");
 
         JsonNode sources = dataOf(body).get("sources");
@@ -435,7 +435,7 @@ class AiKnowledgeRetrievalTest {
 
         String body = chatAnon("T26 V2-EXACT 问题：找精确资料");
 
-        assertEquals(0, code(body), "提问应成功：" + body);
+        assertEquals("00000", code(body), "提问应成功：" + body);
         JsonNode sources = dataOf(body).get("sources");
         assertEquals(2, sources.size(), "relevance 0.7（cos 0.4）的弱相关命中应被 0.75 阈值过滤：" + body);
         assertEquals("T26-V2精确文档", sources.get(0).get("title").asString(), "相似度降序：精确在前");
@@ -457,7 +457,7 @@ class AiKnowledgeRetrievalTest {
 
         String body = chatAnon("T26 V3-EXACT 问题：找齐三篇");
 
-        assertEquals(0, code(body), "提问应成功：" + body);
+        assertEquals("00000", code(body), "提问应成功：" + body);
         JsonNode sources = dataOf(body).get("sources");
         assertEquals(2, sources.size(), "应被 rag-top-k=2 截断（默认值是 5）：" + body);
     }
@@ -477,7 +477,7 @@ class AiKnowledgeRetrievalTest {
         String question = "T26 V4-EXACT 问题：查已删除的资料";
         String body = chatAnon(question);
 
-        assertEquals(0, code(body), "悬挂数据不应让提问失败：" + body);
+        assertEquals("00000", code(body), "悬挂数据不应让提问失败：" + body);
         assertEquals(0, dataOf(body).get("sources").size(), "两条命中都查不到实体，应全部跳过：" + body);
         assertEquals(question, lastUserMessageOfChatRequest(), "全部跳过等价于无命中，不应注入");
     }
@@ -521,7 +521,7 @@ class AiKnowledgeRetrievalTest {
 
         String body = chatLogged("T26-降级提问：向量服务不可用", token);
 
-        assertEquals(0, code(body), "检索失败不应阻断回答：" + body);
+        assertEquals("00000", code(body), "检索失败不应阻断回答：" + body);
         assertTrue(body.contains("T26-stub-回答"), "应返回模型的回答：" + body);
         assertEquals(0, dataOf(body).get("sources").size(), "降级时 sources 为空数组：" + body);
         assertEquals(1, queryCountOf(lastAccount), "回答成功应正常计数（检索失败≠回答失败）");
@@ -535,13 +535,13 @@ class AiKnowledgeRetrievalTest {
         String token = loginUser();
         // 配额上限 3：用掉 3 次（每次都真实经过检索）
         for (int i = 1; i <= 3; i++) {
-            assertEquals(0, code(chatLogged("T26-配额-" + i, token)), "第 " + i + " 次应成功");
+            assertEquals("00000", code(chatLogged("T26-配额-" + i, token)), "第 " + i + " 次应成功");
         }
         int callsAfterThree = embeddingCalls.get();
 
         String rejected = chatLogged("T26-配额-4", token);
 
-        assertEquals(42900, code(rejected), "第 4 次应超限：" + rejected);
+        assertEquals("A0501", code(rejected), "第 4 次应超限：" + rejected);
         assertEquals(callsAfterThree, embeddingCalls.get(),
                 "超限请求不应触发检索——检索必须排在配额预检之后");
     }

@@ -19,7 +19,7 @@ import org.springframework.stereotype.Component;
  *
  * <p><b>每一个字段都有默认值，这是刻意的</b>：AI 是「锦上添花」的能力，
  * 本地开发者不配 API Key 时，应用必须能正常启动、其它接口照常可用，
- * 只有真正调用 AI 时才返回 50001。若把字段设成必填（无默认值 + 校验），
+ * 只有真正调用 AI 时才返回 C0200。若把字段设成必填（无默认值 + 校验），
  * 一个缺失的环境变量就会让整个应用起不来——那是本末倒置。
  *
  * <p><b>api-key 只从环境变量注入</b>（{@code AI_API_KEY}），不写进仓库：
@@ -35,7 +35,7 @@ public class AiProperties {
      * OpenAI 兼容协议的服务端地址，<b>不带</b> {@code /chat/completions}
      * （例如 {@code https://api.deepseek.com/v1}），路径由 AiManager 拼接。
      *
-     * <p>默认为空字符串：为空时 AiManager 会在调用前直接返回 50001，
+     * <p>默认为空字符串：为空时 AiManager 会在调用前直接返回 C0200，
      * 而不是让 RestClient 抛一个「URI 不合法」的技术异常
      */
     private String baseUrl = "";
@@ -81,7 +81,7 @@ public class AiProperties {
     /**
      * 单个用户的提问次数上限（登录用户才计数，游客不计）
      *
-     * <p>预检命中时返回 42900。默认 100 与 DESIGN 的口径一致
+     * <p>预检命中时返回 A0501。默认 100 与 DESIGN 的口径一致
      */
     private Integer queryLimit = 100;
 

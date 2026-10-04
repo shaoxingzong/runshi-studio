@@ -38,7 +38,7 @@ import java.util.List;
  * 代价是必须防滥用，本模块用两条措施兜住：
  * <ul>
  *     <li><b>会话凭不可枚举的雪花 ID 访问</b>：游客能续聊，但无法遍历别人的会话；</li>
- *     <li><b>登录用户有提问次数上限</b>（超限返回 42900，按用户计数）；
+ *     <li><b>登录用户有提问次数上限</b>（超限返回 A0501，按用户计数）；
  *     <b>游客按 IP 双层窗口限流</b>（分钟 5 / 日 50， · R4 收口）——
  *     游客没有身份，配额无从谈起，只能按 IP 兜底。</li>
  * </ul>
@@ -71,7 +71,7 @@ public class AiChatController {
      * @return 会话 ID 与 AI 回答
      */
     @PostMapping("/chat")
-    @Operation(summary = "AI 提问", description = "匿名可访问；sessionId 可空（为空则新建会话），失败返回 50001")
+    @Operation(summary = "AI 提问", description = "匿名可访问；sessionId 可空（为空则新建会话），失败返回 C0200")
     public BaseResponse<AiChatResponseVO> chat(@RequestBody @Valid AiChatRequest aiChatRequest) {
         // @Valid 只校验字段级约束，请求体整体为 null 时不会触发，这里兜一层防 NPE
         ThrowUtils.throwIf(aiChatRequest == null, ErrorCode.PARAMS_ERROR);
@@ -84,15 +84,15 @@ public class AiChatController {
      * <p>返回最近 50 条、时间正序（旧 → 新），与对话界面自上而下的顺序一致。
      *
      * @param sessionId 会话 ID（必填）
-     * @return 消息列表；会话不存在或无权访问返回 40400
+     * @return 消息列表；会话不存在或无权访问返回 A0402
      */
     @GetMapping("/chat/history")
     @Operation(summary = "AI 会话历史", description = "匿名可访问；返回最近 50 条消息（时间正序）")
     public BaseResponse<List<AiMessageVO>> listHistory(@RequestParam(value = "sessionId", required = false)
                                                       String sessionId) {
         // 刻意用 required = false + 包装类型：缺参数时让 Service 返回
-        // 40000「会话 id 不能为空」，而不是 Spring 抛 MissingServletRequestParameterException
-        // 被全局处理器兜成 50000「系统错误」
+        // A0401「会话 id 不能为空」，而不是 Spring 抛 MissingServletRequestParameterException
+        // 被全局处理器兜成 B0001「系统错误」
         return ResultUtils.success(aiChatService.listHistory(sessionId));
     }
 
@@ -107,7 +107,7 @@ public class AiChatController {
      *     它们都以 {@code error} 事件返回（负载含业务码），前端必须监听 error 事件，
      *     不能再依赖「非 0 code 就报错」那套统一拦截逻辑；</li>
      *     <li>因此这里<b>不加 {@code @Valid}</b>：加了之后 Spring 会抛
-     *     MethodArgumentNotValidException，被全局异常处理器包成 application/json 的 40000 响应，
+     *     MethodArgumentNotValidException，被全局异常处理器包成 application/json 的 A0401 响应，
      *     与 text/event-stream 的内容类型混在一起。校验交给 Service，
      *     失败时同样以 error 事件返回（见 AiChatService#chatStream）。</li>
      * </ol>
@@ -150,13 +150,13 @@ public class AiChatController {
      * 删除会话及其全部消息（<b>匿名可用</b>，归属规则与提问完全一致）
      *
      * <p>删除方式是「双逻辑删」：会话与消息在同一事务内各自写 {@code deleted_at}，
-     * 数据可追溯。重复删除返回 40400（第二次查不到已删除的会话）。
+     * 数据可追溯。重复删除返回 A0402（第二次查不到已删除的会话）。
      *
      * @param aiSessionDeleteRequest 删除请求（sessionId 必填）
      * @return true 表示删除成功
      */
     @PostMapping("/session/delete")
-    @Operation(summary = "删除 AI 会话", description = "匿名可访问；同事务逻辑删除会话与全部消息，重复删除返回 40400")
+    @Operation(summary = "删除 AI 会话", description = "匿名可访问；同事务逻辑删除会话与全部消息，重复删除返回 A0402")
     public BaseResponse<Boolean> deleteSession(@RequestBody @Valid AiSessionDeleteRequest aiSessionDeleteRequest) {
         ThrowUtils.throwIf(aiSessionDeleteRequest == null, ErrorCode.PARAMS_ERROR);
         return ResultUtils.success(aiChatService.deleteSession(aiSessionDeleteRequest.getSessionId()));

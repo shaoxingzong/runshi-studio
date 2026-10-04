@@ -105,7 +105,7 @@ public class KnowledgeBaseManager {
      *
      * @param segments 切分块（顺序即块序号）
      * @return 与入参一一对应的向量条目 ID（写入 chunk 表的 embedding_id）
-     * @throws BusinessException 向量化失败（50001）或数量不符时抛出
+     * @throws BusinessException 向量化失败（C0200）或数量不符时抛出
      */
     public List<String> storeAll(List<TextSegment> segments) {
         ThrowUtils.throwIf(segments == null || segments.isEmpty(),
@@ -140,7 +140,7 @@ public class KnowledgeBaseManager {
      * @param topK     最多取回多少条（对应 {@code studio.ai.rag-top-k}）
      * @param minScore 相似度下限（对应 {@code studio.ai.rag-min-score}，<b>越高越严格</b>）
      * @return 命中列表（按相似度降序，可能为空）
-     * @throws BusinessException 向量化失败（50001）时抛出
+     * @throws BusinessException 向量化失败（C0200）时抛出
      */
     public List<EmbeddingMatch<TextSegment>> search(String question, int topK, double minScore) {
         ThrowUtils.throwIf(StrUtil.isBlank(question), ErrorCode.PARAMS_ERROR, "检索问题不能为空");
@@ -148,7 +148,8 @@ public class KnowledgeBaseManager {
         // ① 问题向量化：与入库走同一个 embedAll，保证同一套超时与失败收敛
         List<Embedding> queryEmbeddings = aiManager.embedAll(List.of(question));
         ThrowUtils.throwIf(queryEmbeddings == null || queryEmbeddings.isEmpty(),
-                ErrorCode.OPERATION_ERROR, "问题向量化结果为空");
+                // 向量化由外部 AI 服务完成，返回空属于第三方服务异常 → C 类
+                ErrorCode.AI_SERVICE_ERROR, "问题向量化结果为空");
 
         // ② 检索：maxResults 控制条数、minScore 过滤低质量命中，两个参数都来自配置
         EmbeddingSearchRequest searchRequest = EmbeddingSearchRequest.builder()

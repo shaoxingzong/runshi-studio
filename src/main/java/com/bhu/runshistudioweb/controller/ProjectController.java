@@ -91,10 +91,10 @@ public class ProjectController {
      * 而不是让列表带一个「要不要正文」的开关。
      *
      * @param id 项目 ID
-     * @return 脱敏详情（列表字段 + content）；不存在返回 40400
+     * @return 脱敏详情（列表字段 + content）；不存在返回 A0402
      */
     @GetMapping("/detail")
-    @Operation(summary = "官网项目详情", description = "匿名可访问；返回含 Markdown 正文的详情，不存在返回 40400")
+    @Operation(summary = "官网项目详情", description = "匿名可访问；返回含 Markdown 正文的详情，不存在返回 A0402")
     public BaseResponse<ProjectFrontDetailVO> getFrontProjectById(@RequestParam("id") long id) {
         ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "id 不合法");
         return ResultUtils.success(studioProjectService.getFrontProjectById(id));

@@ -63,14 +63,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *     <li>全量同步（复跑）：全部 skipped、Embedding 调用增量 0、updated_at 不变（零写库取证）；</li>
  *     <li>单条失败不中断：成员正文带失败记号 → 该条 failed 且不留 doc 行，项目/证书照常入库；
  *     修复后重跑补齐、其余跳过；</li>
- *     <li>分页契约：过滤（title 模糊 / sourceType 精确 / status 精确）、非法 sourceType → 40000、
+ *     <li>分页契约：过滤（title 模糊 / sourceType 精确 / status 精确）、非法 sourceType → A0401、
  *     docId/sourceId 为字符串、时间为约定格式、<b>响应不含正文</b>、pageSize 上限收敛；</li>
  *     <li>级联删除：doc + chunk 同事务逻辑删（行仍在、deleted_at != 0）、提交后清向量
- *     （向量库直查不再命中）、删除后检索不再命中、重复删除 40400；</li>
- *     <li>重建分支：manual 拒绝（40000 且不改动原文档）、文档不存在 40400、id 非法 40000；</li>
+ *     （向量库直查不再命中）、删除后检索不再命中、重复删除 A0402；</li>
+ *     <li>重建分支：manual 拒绝（A0401 且不改动原文档）、文档不存在 A0402、id 非法 A0401；</li>
  *     <li>重建源类：内容变 → rebuilt（块替换、旧块逻辑删）；未变 → skipped；</li>
- *     <li>重建源已删除：40400 + 已有文档标记 status=2；</li>
- *     <li>权限矩阵：4 个接口匿名 40100、普通用户 40101、admin 放行。</li>
+ *     <li>重建源已删除：A0402 + 已有文档标记 status=2；</li>
+ *     <li>权限矩阵：4 个接口匿名 A0201、普通用户 A0301、admin 放行。</li>
  * </ol>
  *
  * <p><b>为什么本类不加 {@code @Transactional}</b>：全量同步与删除内部用
@@ -95,7 +95,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * 因此「新建上下文的测试类」必须全部排在 {@code CertificateCrudTest} 之前——
  * 它是第一个使用默认 MockMvc 上下文的类，该上下文会被其后所有测试类共享，
  * 而静态 DAO 必须始终指向「当前正在使用的上下文」。
- * 本类若排到它之后，后续所有登录类测试都会 50000 失败。
+ * 本类若排到它之后，后续所有登录类测试都会 B0001 失败。
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -262,9 +262,9 @@ class AiKnowledgeManageTest {
         return mockMvc.perform(request).andReturn().getResponse().getContentAsString();
     }
 
-    private int code(String body) {
-        int start = body.indexOf("\"code\":") + 7;
-        return Integer.parseInt(body.substring(start, body.indexOf(',', start)));
+    private String code(String body) {
+        int start = body.indexOf("\"code\":\"") + 8;
+        return body.substring(start, body.indexOf('"', start));
     }
 
     private JsonNode dataOf(String body) {
@@ -282,7 +282,7 @@ class AiKnowledgeManageTest {
     private long ingestManual(String token, String title, String content) throws Exception {
         String body = postJson("/knowledge/doc/manual",
                 "{\"title\":\"" + title + "\",\"content\":\"" + content + "\"}", token);
-        assertEquals(0, code(body), "手工录入应成功：" + body);
+        assertEquals("00000", code(body), "手工录入应成功：" + body);
         return Long.parseLong(dataOf(body).get("docId").asString());
     }
 
@@ -290,7 +290,7 @@ class AiKnowledgeManageTest {
     private long syncSource(String token, String sourceType, long sourceId) throws Exception {
         String body = postJson("/knowledge/doc/sync",
                 "{\"sourceType\":\"" + sourceType + "\",\"sourceId\":" + sourceId + "}", token);
-        assertEquals(0, code(body), "同步应成功：" + body);
+        assertEquals("00000", code(body), "同步应成功：" + body);
         return Long.parseLong(dataOf(body).get("docId").asString());
     }
 
@@ -469,7 +469,7 @@ class AiKnowledgeManageTest {
 
         String body = postJson("/knowledge/doc/sync-all", "", token);
 
-        assertEquals(0, code(body), "全量同步应成功：" + body);
+        assertEquals("00000", code(body), "全量同步应成功：" + body);
         JsonNode data = dataOf(body);
         assertEquals(baseline + 3, data.get("total").asInt(), "总条数 = 原有条数 + 本次新增 3 条：" + body);
         assertEquals(3, data.get("created").asInt(), "本次新增的 3 条应全部 created（原有的走 skipped）：" + body);
@@ -508,14 +508,14 @@ class AiKnowledgeManageTest {
         createMember("T27-幂等成员_" + System.nanoTime());
         createCertificate("T27-幂等证书_" + System.nanoTime());
 
-        assertEquals(0, code(postJson("/knowledge/doc/sync-all", "", token)), "首跑应成功");
+        assertEquals("00000", code(postJson("/knowledge/doc/sync-all", "", token)), "首跑应成功");
         int callsAfterFirst = embeddingCalls.get();
         List<String> updatedAtBefore = docUpdatedAtList();
         assertEquals(baseline + 3, updatedAtBefore.size(), "首跑后文档数 = 原有 + 本次 3 篇");
 
         String second = postJson("/knowledge/doc/sync-all", "", token);
 
-        assertEquals(0, code(second), "复跑应成功：" + second);
+        assertEquals("00000", code(second), "复跑应成功：" + second);
         JsonNode data = dataOf(second);
         assertEquals(baseline + 3, data.get("total").asInt());
         assertEquals(0, data.get("created").asInt(), "复跑不应再新建：" + second);
@@ -543,7 +543,7 @@ class AiKnowledgeManageTest {
 
         String body = postJson("/knowledge/doc/sync-all", "", token);
 
-        assertEquals(0, code(body), "批量任务应返回统计而不是整体异常：" + body);
+        assertEquals("00000", code(body), "批量任务应返回统计而不是整体异常：" + body);
         JsonNode data = dataOf(body);
         assertEquals(baseline + 3, data.get("total").asInt());
         assertEquals(2, data.get("created").asInt(), "本次两条应成功：" + body);
@@ -564,7 +564,7 @@ class AiKnowledgeManageTest {
 
         String retry = postJson("/knowledge/doc/sync-all", "", token);
 
-        assertEquals(0, code(retry), "修复后重跑应成功：" + retry);
+        assertEquals("00000", code(retry), "修复后重跑应成功：" + retry);
         JsonNode retryData = dataOf(retry);
         assertEquals(1, retryData.get("created").asInt(), "只有修复的那条应新建：" + retry);
         // 跳过的 = 库里原有的（baseline）+ 本用例首跑成功的 2 条。
@@ -579,7 +579,7 @@ class AiKnowledgeManageTest {
     // ==================== ④ 分页契约 ====================
 
     @Test
-    @DisplayName("分页契约：过滤生效、非法来源类型 40000、字段类型约定、响应不含正文、pageSize 收敛")
+    @DisplayName("分页契约：过滤生效、非法来源类型 A0401、字段类型约定、响应不含正文、pageSize 收敛")
     void listPageFiltersAndContract() throws Exception {
         String token = adminToken();
         long projectId = createProject("T27-分页项目_" + System.nanoTime(), "T27-分页-项目正文");
@@ -595,7 +595,7 @@ class AiKnowledgeManageTest {
         // 库里若有演示数据会把这个断言顶掉（那是测试把环境当成了前提，不是产品缺陷）。
         String body = postJson("/knowledge/doc/list/page",
                 "{\"current\":1,\"pageSize\":10,\"title\":\"T27-分页\"}", token);
-        assertEquals(0, code(body), "分页应成功：" + body);
+        assertEquals("00000", code(body), "分页应成功：" + body);
         JsonNode data = dataOf(body);
         assertEquals(3, pageNumber(data, "total"), "标题过滤下应有本用例的 3 篇：" + body);
         assertEquals(1, pageNumber(data, "current"));
@@ -634,9 +634,9 @@ class AiKnowledgeManageTest {
                 "{\"status\":2,\"title\":\"T27-分页\"}", token)), "total"),
                 "无失败文档，status=2 应为空");
 
-        // 非法来源类型是闭集校验错误：40000 而不是静默空列表
+        // 非法来源类型是闭集校验错误：A0401 而不是静默空列表
         String illegal = postJson("/knowledge/doc/list/page", "{\"sourceType\":\"superman\"}", token);
-        assertEquals(40000, code(illegal), "非法 sourceType 应 40000：" + illegal);
+        assertEquals("A0401", code(illegal), "非法 sourceType 应 A0401：" + illegal);
         assertTrue(illegal.contains("来源类型不合法"), "应给出可读原因：" + illegal);
 
         // pageSize 上限收敛（999 → 50）
@@ -647,7 +647,7 @@ class AiKnowledgeManageTest {
     // ==================== ⑤ 级联删除 + 检索不再命中 ====================
 
     @Test
-    @DisplayName("级联删除：doc+chunk 同事务逻辑删、向量清理、删除后检索不再命中、重复删除 40400")
+    @DisplayName("级联删除：doc+chunk 同事务逻辑删、向量清理、删除后检索不再命中、重复删除 A0402")
     void deleteCascadesAndStopsRetrieval() throws Exception {
         String token = adminToken();
         String title = "T27-删除文档_" + System.nanoTime();
@@ -665,7 +665,7 @@ class AiKnowledgeManageTest {
 
         String body = postJson("/knowledge/doc/delete", "{\"id\":" + docId + "}", token);
 
-        assertEquals(0, code(body), "删除应成功：" + body);
+        assertEquals("00000", code(body), "删除应成功：" + body);
         assertTrue(dataOf(body).asBoolean(), "应返回 true：" + body);
 
         // 逻辑删除取证：doc 与 chunk 的行都还在（不是物理删），deleted_at 已写毫秒时间戳
@@ -679,34 +679,34 @@ class AiKnowledgeManageTest {
         assertTrue(searchByText(question).stream().noneMatch(m -> embeddingId.equals(m.embeddingId())),
                 "旧向量应已清理（向量库直查不应再命中）");
 
-        // 重复删除 → 40400
-        assertEquals(40400, code(postJson("/knowledge/doc/delete", "{\"id\":" + docId + "}", token)),
-                "已删除的文档再删应 40400");
+        // 重复删除 → A0402
+        assertEquals("A0402", code(postJson("/knowledge/doc/delete", "{\"id\":" + docId + "}", token)),
+                "已删除的文档再删应 A0402");
     }
 
     // ==================== ⑥ 重建分支：manual / 不存在 / id 非法 ====================
 
     @Test
-    @DisplayName("重建分支：manual 拒绝（40000 且不改动）、文档不存在 40400、id 非法 40000")
+    @DisplayName("重建分支：manual 拒绝（A0401 且不改动）、文档不存在 A0402、id 非法 A0401")
     void rebuildRejectsManualAndInvalidIds() throws Exception {
         String token = adminToken();
         long manualDocId = ingestManual(token, "T27-重建手册_" + System.nanoTime(), "T27-重建-手工正文");
 
         String rejected = postJson("/knowledge/doc/rebuild", "{\"id\":" + manualDocId + "}", token);
-        assertEquals(40000, code(rejected), "manual 文档不应允许重建：" + rejected);
+        assertEquals("A0401", code(rejected), "manual 文档不应允许重建：" + rejected);
         assertTrue(rejected.contains("手工录入"), "应给出手工录入的替代路径：" + rejected);
         assertEquals(1, rawDocStatus(manualDocId), "被拒绝的 manual 文档不应被改动");
 
-        assertEquals(40400, code(postJson("/knowledge/doc/rebuild",
-                "{\"id\":999999999999999999}", token)), "不存在的文档应 40400");
-        assertEquals(40000, code(postJson("/knowledge/doc/rebuild", "{\"id\":0}", token)),
-                "id=0 应被 @Positive 拦下 → 40000");
+        assertEquals("A0402", code(postJson("/knowledge/doc/rebuild",
+                "{\"id\":999999999999999999}", token)), "不存在的文档应 A0402");
+        assertEquals("A0401", code(postJson("/knowledge/doc/rebuild", "{\"id\":0}", token)),
+                "id=0 应被 @Positive 拦下 → A0401");
 
         // 删除接口同一套边界
-        assertEquals(40400, code(postJson("/knowledge/doc/delete",
-                "{\"id\":999999999999999999}", token)), "删除不存在的文档应 40400");
-        assertEquals(40000, code(postJson("/knowledge/doc/delete", "{\"id\":0}", token)),
-                "删除 id=0 应 40000");
+        assertEquals("A0402", code(postJson("/knowledge/doc/delete",
+                "{\"id\":999999999999999999}", token)), "删除不存在的文档应 A0402");
+        assertEquals("A0401", code(postJson("/knowledge/doc/delete", "{\"id\":0}", token)),
+                "删除 id=0 应 A0401");
     }
 
     // ==================== ⑦ 重建源类：内容变 rebuilt / 未变 skipped ====================
@@ -727,7 +727,7 @@ class AiKnowledgeManageTest {
 
         String body = postJson("/knowledge/doc/rebuild", "{\"id\":" + docId + "}", token);
 
-        assertEquals(0, code(body), "重建应成功：" + body);
+        assertEquals("00000", code(body), "重建应成功：" + body);
         JsonNode data = dataOf(body);
         assertTrue(data.get("rebuilt").asBoolean(), "内容变更应走重建：" + body);
         assertFalse(data.get("skipped").asBoolean());
@@ -738,7 +738,7 @@ class AiKnowledgeManageTest {
 
         // 内容未变再重建 → skipped（零成本）
         String again = postJson("/knowledge/doc/rebuild", "{\"id\":" + docId + "}", token);
-        assertEquals(0, code(again), "二次重建应成功：" + again);
+        assertEquals("00000", code(again), "二次重建应成功：" + again);
         JsonNode againData = dataOf(again);
         assertTrue(againData.get("skipped").asBoolean(), "内容未变应跳过：" + again);
         assertFalse(againData.get("rebuilt").asBoolean());
@@ -747,7 +747,7 @@ class AiKnowledgeManageTest {
     // ==================== ⑧ 重建：源已删除 ====================
 
     @Test
-    @DisplayName("重建源已删除：40400 + 已有文档标记 status=2（R2 收口）")
+    @DisplayName("重建源已删除：A0402 + 已有文档标记 status=2（R2 收口）")
     void rebuildSourceMissingMarksFailed() throws Exception {
         String token = adminToken();
         long projectId = createProject("T27-源删项目_" + System.nanoTime(), "T27-源删-正文");
@@ -758,45 +758,45 @@ class AiKnowledgeManageTest {
 
         String body = postJson("/knowledge/doc/rebuild", "{\"id\":" + docId + "}", token);
 
-        assertEquals(40400, code(body), "源已删除应 40400：" + body);
+        assertEquals("A0402", code(body), "源已删除应 A0402：" + body);
         assertEquals(2, rawDocStatus(docId), "已有文档应标记 status=2");
     }
 
     // ==================== ⑨ 权限矩阵 ====================
 
     @Test
-    @DisplayName("权限矩阵：4 个接口匿名 40100、普通用户 40101、admin 放行（白名单零改动）")
+    @DisplayName("权限矩阵：4 个接口匿名 A0201、普通用户 A0301、admin 放行（白名单零改动）")
     void permissionMatrixOfManageApis() throws Exception {
         // 匿名：默认拒绝
-        assertEquals(40100, code(postJson("/knowledge/doc/sync-all", "", null)), "sync-all 匿名应 40100");
-        assertEquals(40100, code(postJson("/knowledge/doc/list/page", "{}", null)), "list/page 匿名应 40100");
-        assertEquals(40100, code(postJson("/knowledge/doc/delete", "{\"id\":1}", null)), "delete 匿名应 40100");
-        assertEquals(40100, code(postJson("/knowledge/doc/rebuild", "{\"id\":1}", null)), "rebuild 匿名应 40100");
+        assertEquals("A0201", code(postJson("/knowledge/doc/sync-all", "", null)), "sync-all 匿名应 A0201");
+        assertEquals("A0201", code(postJson("/knowledge/doc/list/page", "{}", null)), "list/page 匿名应 A0201");
+        assertEquals("A0201", code(postJson("/knowledge/doc/delete", "{\"id\":1}", null)), "delete 匿名应 A0201");
+        assertEquals("A0201", code(postJson("/knowledge/doc/rebuild", "{\"id\":1}", null)), "rebuild 匿名应 A0201");
 
         // 普通用户：有登录态但角色不够
         String userToken = userToken();
-        assertEquals(40101, code(postJson("/knowledge/doc/sync-all", "", userToken)), "sync-all 普通用户应 40101");
-        assertEquals(40101, code(postJson("/knowledge/doc/list/page", "{}", userToken)), "list/page 普通用户应 40101");
-        assertEquals(40101, code(postJson("/knowledge/doc/delete", "{\"id\":1}", userToken)), "delete 普通用户应 40101");
-        assertEquals(40101, code(postJson("/knowledge/doc/rebuild", "{\"id\":1}", userToken)), "rebuild 普通用户应 40101");
+        assertEquals("A0301", code(postJson("/knowledge/doc/sync-all", "", userToken)), "sync-all 普通用户应 A0301");
+        assertEquals("A0301", code(postJson("/knowledge/doc/list/page", "{}", userToken)), "list/page 普通用户应 A0301");
+        assertEquals("A0301", code(postJson("/knowledge/doc/delete", "{\"id\":1}", userToken)), "delete 普通用户应 A0301");
+        assertEquals("A0301", code(postJson("/knowledge/doc/rebuild", "{\"id\":1}", userToken)), "rebuild 普通用户应 A0301");
 
         // admin：放行（用「通过权限层后到达业务层」的证据断言：
-        // list/page 空库可查；sync-all 空库统计为 0；delete/rebuild 走业务层得到 40400 而不是 40101）
+        // list/page 空库可查；sync-all 空库统计为 0；delete/rebuild 走业务层得到 A0402 而不是 A0301）
         String admin = adminToken();
         String listBody = postJson("/knowledge/doc/list/page", "{}", admin);
-        assertEquals(0, code(listBody), "admin 应能查列表（不假设库为空）：" + listBody);
+        assertEquals("00000", code(listBody), "admin 应能查列表（不假设库为空）：" + listBody);
 
         String syncAll = postJson("/knowledge/doc/sync-all", "", admin);
-        assertEquals(0, code(syncAll), "admin 应能全量同步：" + syncAll);
+        assertEquals("00000", code(syncAll), "admin 应能全量同步：" + syncAll);
         // 不断言 total == 0：库里可能已有演示数据。
         // 这里真正要证明的是「请求穿过了权限层、进入业务层并正常返回统计」，
         // 所以断言统计等式成立 + 无失败项即可。
         assertSummaryConsistent(dataOf(syncAll), syncAll);
         assertEquals(0, dataOf(syncAll).get("failed").asInt(), "全量同步不应有失败项：" + syncAll);
 
-        assertEquals(40400, code(postJson("/knowledge/doc/delete", "{\"id\":999999999999999999}", admin)),
-                "admin 删除不存在的文档 → 40400（说明已进入业务层）");
-        assertEquals(40400, code(postJson("/knowledge/doc/rebuild", "{\"id\":999999999999999999}", admin)),
-                "admin 重建不存在的文档 → 40400（说明已进入业务层）");
+        assertEquals("A0402", code(postJson("/knowledge/doc/delete", "{\"id\":999999999999999999}", admin)),
+                "admin 删除不存在的文档 → A0402（说明已进入业务层）");
+        assertEquals("A0402", code(postJson("/knowledge/doc/rebuild", "{\"id\":999999999999999999}", admin)),
+                "admin 重建不存在的文档 → A0402（说明已进入业务层）");
     }
 }

@@ -16,11 +16,11 @@ import java.io.Serializable;
  * 由 Service 方法区分，不体现在字段结构上。
  *
  * <p><b>注意与「队长同步」的区别</b>：本 DTO 走的是
- * {@code MemberProjectService#bindMember}——重复绑定会返回 40000，
+ * {@code MemberProjectService#bindMember}——重复绑定会返回 A0401，
  * 因为这是管理员的<b>显式动作</b>，冲突必须被看见。
  * 而新增/修改项目时同步队长用的是幂等的 {@code ensureMemberInProject}
  * （已存在就直接返回），两者不能混用——换队长若走 bind，
- * 管理员每次重复保存都会收到 40000。
+ * 管理员每次重复保存都会收到 A0401。
  *
  * <p>用 {@code Long} 接收雪花 ID：Jackson 对 Long 字段同时接受数字与数字字符串，
  * 前端从列表接口拿到的字符串 ID 可以直接回传。

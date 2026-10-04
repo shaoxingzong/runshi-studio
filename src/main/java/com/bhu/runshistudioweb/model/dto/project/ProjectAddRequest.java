@@ -24,7 +24,7 @@ import java.util.List;
  *
  * <p><b>{@code techStack} 用 {@code List<String>} 而不是字符串</b>：
  * 数据库里存的是 JSON 快照字符串，但那是存储形态，不该泄漏到接口契约上。
- * 转换与长度校验（varchar(256) 上限）由 Service 负责，超出会返回 40000
+ * 转换与长度校验（varchar(256) 上限）由 Service 负责，超出会返回 A0401
  * 「技术栈标签过长或过多」——不校验的话，前端塞 20 个标签会直接撞数据库的 SQL 错误。
  *
  * <p>{@code status} 不做注解白名单（理由与其它模块一致）：枚举一加取值注解就过期，
@@ -52,7 +52,7 @@ public class ProjectAddRequest implements Serializable {
 
     /**
      * 项目队长 ID（必填，权威数据源）
-     * <p>必须是真实存在且未逻辑删除的成员，由 Service 校验（40400）
+     * <p>必须是真实存在且未逻辑删除的成员，由 Service 校验（A0402）
      */
     @NotNull(message = "项目队长不能为空")
     @Positive(message = "项目队长 id 必须为正整数")

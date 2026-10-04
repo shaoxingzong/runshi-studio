@@ -45,7 +45,7 @@ import org.springframework.transaction.annotation.Transactional;
  * <ul>
  *     <li><b>user_id 可选绑定</b>：非空时必须「账号存在」且「未被其他成员绑定」；
  *     并发竞态靠唯一索引 {@code uk_userid_deleted} 兜底 —— 所以 seed 里必须 catch
- *     {@link DuplicateKeyException} 并换成可读提示，否则前端只会看到 50000「系统错误」；</li>
+ *     {@link DuplicateKeyException} 并换成可读提示，否则前端只会看到 B0001「系统错误」；</li>
  *     <li><b>grade_year 是 smallint</b>：用 Integer + 区间校验（1950~2100），
  *     拒绝「2026级」这类字符串输入（Jackson 反序列化阶段就会失败）；</li>
  *     <li><b>team_position / member_status 走枚举校验</b>：非法值入库会让筛选与渲染静默出错；</li>
@@ -109,7 +109,7 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
      *     <li>入学年份、职务、状态三处校验与更新接口走同一套规则，杜绝两套标准；</li>
      *     <li>绑定账号必须过 {@code assertUserBindable}：先确认账号存在、再确认没被别的档案占用；</li>
      *     <li><b>并发兜底</b>：两个请求同时通过上面的校验时，后到的会被唯一索引拦下抛
-     *     {@code DuplicateKeyException}，这里必须翻成可读提示，否则会落到全局兜底变成 50000。</li>
+     *     {@code DuplicateKeyException}，这里必须翻成可读提示，否则会落到全局兜底变成 B0001。</li>
      * </ul>
      *
      * @param memberAddRequest 新增请求（姓名必填）
@@ -153,7 +153,7 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
         } catch (DuplicateKeyException e) {
             // 并发竞态兜底：两个请求同时通过上面的「未被绑定」校验时，
             // 后到的那条会被唯一索引 uk_userid_deleted 拦下并抛 DuplicateKeyException。
-            // 必须在这里换成可读提示，否则会落到全局兜底变成 50000「系统错误」，
+            // 必须在这里换成可读提示，否则会落到全局兜底变成 B0001「系统错误」，
             // 前端既不知道原因、也没法给出「该账号已被绑定」的引导
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "该账号已被其他成员绑定，请刷新后重试");
         }
@@ -233,12 +233,12 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
      * 按 id 查成员详情（返回管理端 VO，接口契约见 StudioMemberService）
      *
      * @param id 成员 ID
-     * @return 成员信息；不存在时抛 40400，不返回 null
+     * @return 成员信息；不存在时抛 A0402，不返回 null
      */
     @Override
     public MemberVO getMemberById(long id) {
         StudioMember member = this.getById(id);
-        // 查不到要给出明确的 40400，而不是返回 null 让前端收到「成功但 data 为空」
+        // 查不到要给出明确的 A0402，而不是返回 null 让前端收到「成功但 data 为空」
         ThrowUtils.throwIf(member == null, ErrorCode.NOT_FOUND_ERROR, "成员不存在");
         return this.getMemberVO(member);
     }
@@ -277,7 +277,7 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
      *
      * <p>分页参数在这里做兜底纠正（页码 < 1 视为 1、每页条数收敛到上限），
      * 而不是靠 DTO 校验报错：传错页码没必要让整个查询失败，
-     * 而且 GET 参数校验失败抛的是 BindException，会落到全局兜底变成 50000。
+     * 而且 GET 参数校验失败抛的是 BindException，会落到全局兜底变成 B0001。
      *
      * @param memberQueryRequest 查询条件，允许为 null（无条件查第一页）
      * @return 分页结果，记录为管理端 VO
@@ -409,7 +409,7 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
      */
     private void assertGradeYearValid(Integer gradeYear) {
         // grade_year 是 smallint 列：这里挡的是「1800」「3200」这类业务上不可能的值；
-        // 「2026级」这类字符串在 JSON 反序列化阶段就已失败（40000），不会走到这里
+        // 「2026级」这类字符串在 JSON 反序列化阶段就已失败（A0401），不会走到这里
         ThrowUtils.throwIf(gradeYear == null || gradeYear < GRADE_YEAR_MIN || gradeYear > GRADE_YEAR_MAX,
                 ErrorCode.PARAMS_ERROR, "入学年份不合法，需在 " + GRADE_YEAR_MIN + "-" + GRADE_YEAR_MAX + " 之间");
     }

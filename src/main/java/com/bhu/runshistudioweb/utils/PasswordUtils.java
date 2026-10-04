@@ -52,7 +52,7 @@ public class PasswordUtils {
      *
      * @param rawPassword 明文密码
      * @return 60 位 BCrypt 哈希串，可直接写入 sys_user.user_password
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 明文为 null / 空串 / 纯空格时抛出（40000）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 明文为 null / 空串 / 纯空格时抛出（A0401）
      */
     public static String encrypt(String rawPassword) {
         ThrowUtils.throwIf(StrUtil.isBlank(rawPassword), ErrorCode.PARAMS_ERROR, "密码不能为空");

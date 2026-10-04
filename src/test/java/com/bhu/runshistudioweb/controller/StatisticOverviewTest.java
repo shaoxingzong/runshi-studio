@@ -56,9 +56,9 @@ class StatisticOverviewTest {
         return mockMvc.perform(get("/statistic/overview")).andReturn().getResponse().getContentAsString();
     }
 
-    private int code(String body) {
-        int start = body.indexOf("\"code\":") + 7;
-        return Integer.parseInt(body.substring(start, body.indexOf(',', start)));
+    private String code(String body) {
+        int start = body.indexOf("\"code\":\"") + 8;
+        return body.substring(start, body.indexOf('"', start));
     }
 
     /**
@@ -96,7 +96,7 @@ class StatisticOverviewTest {
     @DisplayName("匿名可访问，且计数字段是 JSON 数字（不是字符串）")
     void anonymousAccessWithNumberTypes() throws Exception {
         String body = fetchOverview();
-        assertEquals(0, code(body), "匿名访问 /statistic/overview 应放行（白名单）：" + body);
+        assertEquals("00000", code(body), "匿名访问 /statistic/overview 应放行（白名单）：" + body);
 
         // 关键断言：`"certificateTotal":` 后面必须直接是数字，而不是引号——
         // 若 VO 误用 Long，全局 JsonConfig 会把它序列化成字符串，这条会失败
@@ -172,6 +172,6 @@ class StatisticOverviewTest {
     @DisplayName("回归：白名单只放行了公开统计路径，管理端接口仍要求管理员")
     void managementEndpointsStillProtected() throws Exception {
         String anon = mockMvc.perform(get("/member/list/page")).andReturn().getResponse().getContentAsString();
-        assertEquals(40100, code(anon), "管理端接口不该被统计模块的白名单顺带放行");
+        assertEquals("A0201", code(anon), "管理端接口不该被统计模块的白名单顺带放行");
     }
 }

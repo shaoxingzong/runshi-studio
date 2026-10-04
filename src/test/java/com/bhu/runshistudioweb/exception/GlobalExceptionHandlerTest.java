@@ -34,7 +34,7 @@ import static org.mockito.Mockito.when;
  * 容器层面的装配（@RestControllerAdvice 是否生效）由集成测试覆盖。
  *
  * <p>Sa-Token 那 4 个用例的价值在于「防止被兜底吞掉」：
- * 它们都继承 RuntimeException，一旦处理器被误删，接口会返回 50000，
+ * 它们都继承 RuntimeException，一旦处理器被误删，接口会返回 B0001，
  * 前端就无法判断该跳登录页还是该报服务器故障。
  */
 class GlobalExceptionHandlerTest {
@@ -44,10 +44,10 @@ class GlobalExceptionHandlerTest {
     @Test
     @DisplayName("业务异常：透传原始错误码与提示信息")
     void businessExceptionKeepsCodeAndMessage() {
-        // 业务异常是「预期内的失败」，不能降级成 50000，否则前端无法区分参数错和系统错
+        // 业务异常是「预期内的失败」，不能降级成 B0001，否则前端无法区分参数错和系统错
         BaseResponse<?> response = handler.businessExceptionHandler(
                 new BusinessException(ErrorCode.NOT_LOGIN_ERROR));
-        assertEquals(40100, response.getCode());
+        assertEquals("A0201", response.getCode());
         assertEquals("未登录", response.getMessage());
     }
 
@@ -56,17 +56,17 @@ class GlobalExceptionHandlerTest {
     void businessExceptionWithCustomCode() {
         BaseResponse<?> response = handler.businessExceptionHandler(
                 new BusinessException(ErrorCode.PARAMS_ERROR, "账号长度不能超过 64 字符"));
-        assertEquals(40000, response.getCode());
+        assertEquals("A0401", response.getCode());
         assertEquals("账号长度不能超过 64 字符", response.getMessage());
     }
 
     @Test
-    @DisplayName("运行时异常：统一降级为系统错误码 50000")
+    @DisplayName("运行时异常：统一降级为系统错误码 B0001")
     void runtimeExceptionMappedToSystemError() {
         // 未预期异常一律收敛到同一个 code，避免内部实现细节（异常类型）泄露给前端
         BaseResponse<?> response = handler.runtimeExceptionHandler(
                 new RuntimeException("数据库连接失败"));
-        assertEquals(50000, response.getCode());
+        assertEquals("B0001", response.getCode());
     }
 
     @Test
@@ -89,56 +89,56 @@ class GlobalExceptionHandlerTest {
         // NPE 继承自 RuntimeException，必须被兜底方法接住，否则会返回 Spring 默认的白页错误
         BaseResponse<?> response = handler.runtimeExceptionHandler(
                 new NullPointerException("cannot invoke method"));
-        assertEquals(50000, response.getCode());
+        assertEquals("B0001", response.getCode());
         assertEquals("系统错误", response.getMessage());
     }
 
     @Test
-    @DisplayName("Sa-Token 未登录：映射为 40100，绝不能被兜底成 50000")
-    void notLoginExceptionMappedTo40100() {
+    @DisplayName("Sa-Token 未登录：映射为 A0201，绝不能被兜底成 B0001")
+    void notLoginExceptionMappedToA0201() {
         // 构造参数顺序：message、loginType、type（type 为 NotLoginException 的负数常量）
         BaseResponse<?> response = handler.notLoginExceptionHandler(
                 new NotLoginException("token已过期", "login", NotLoginException.TOKEN_TIMEOUT));
 
-        assertEquals(40100, response.getCode(), "未登录被兜底成了系统错误，前端不会跳登录页");
+        assertEquals("A0201", response.getCode(), "未登录被兜底成了系统错误，前端不会跳登录页");
         // 用 Sa-Token 自带的提示，让前端能直接展示「token已过期」这类具体原因
         assertEquals("token已过期", response.getMessage());
     }
 
     @Test
-    @DisplayName("Sa-Token 角色不足：映射为 40101，且不泄露需要什么角色")
-    void notRoleExceptionMappedTo40101() {
+    @DisplayName("Sa-Token 角色不足：映射为 A0301，且不泄露需要什么角色")
+    void notRoleExceptionMappedToA0301() {
         BaseResponse<?> response = handler.notRoleExceptionHandler(
                 new NotRoleException("admin", "login"));
 
-        assertEquals(40101, response.getCode());
+        assertEquals("A0301", response.getCode());
         assertFalse(response.getMessage().contains("admin"),
                 "响应里泄露了所需角色，等于给探测者提供线索：" + response.getMessage());
     }
 
     @Test
-    @DisplayName("Sa-Token 权限点不足：映射为 40101，且不泄露需要什么权限")
-    void notPermissionExceptionMappedTo40101() {
+    @DisplayName("Sa-Token 权限点不足：映射为 A0301，且不泄露需要什么权限")
+    void notPermissionExceptionMappedToA0301() {
         BaseResponse<?> response = handler.notPermissionExceptionHandler(
                 new NotPermissionException("user:update", "login"));
 
-        assertEquals(40101, response.getCode());
+        assertEquals("A0301", response.getCode());
         assertFalse(response.getMessage().contains("user:update"),
                 "响应里泄露了所需权限点：" + response.getMessage());
     }
 
     @Test
-    @DisplayName("Sa-Token 账号封禁：映射为 40300，与「无权限」区分开")
-    void disableServiceExceptionMappedTo40300() {
+    @DisplayName("Sa-Token 账号封禁：映射为 A0302，与「无权限」区分开")
+    void disableServiceExceptionMappedToA0302() {
         BaseResponse<?> response = handler.disableServiceExceptionHandler(
                 new DisableServiceException("login", 10001L, "comment", 2, 1, 7200));
 
-        assertEquals(40300, response.getCode());
+        assertEquals("A0302", response.getCode());
     }
 
     @Test
-    @DisplayName("DTO 校验失败：映射为 40000，并把注解上写的提示文案带给前端")
-    void methodArgumentNotValidMappedTo40000() throws Exception {
+    @DisplayName("DTO 校验失败：映射为 A0401，并把注解上写的提示文案带给前端")
+    void methodArgumentNotValidMappedToA0401() throws Exception {
         // 手工拼一个「校验失败」的异常：真实场景由 @RequestBody @Valid 触发
         MethodParameter parameter = new MethodParameter(
                 Object.class.getDeclaredMethod("toString"), -1);
@@ -151,21 +151,21 @@ class GlobalExceptionHandlerTest {
 
         BaseResponse<?> response = handler.methodArgumentNotValidExceptionHandler(exception);
 
-        // 校验失败绝不能变成 50000：那样「账号格式不对」会被前端显示成「服务器故障」
-        assertEquals(40000, response.getCode(), "参数校验失败被兜底成了系统错误");
+        // 校验失败绝不能变成 B0001：那样「账号格式不对」会被前端显示成「服务器故障」
+        assertEquals("A0401", response.getCode(), "参数校验失败被兜底成了系统错误");
         assertEquals("账号长度需在 4 ~ 16 位之间", response.getMessage());
     }
 
     @Test
-    @DisplayName("请求体解析失败：映射为 40000，且不回显 Jackson 的原始报错")
-    void httpMessageNotReadableMappedTo40000() {
+    @DisplayName("请求体解析失败：映射为 A0401，且不回显 Jackson 的原始报错")
+    void httpMessageNotReadableMappedToA0401() {
         // 真实的 message 里带类的全限定名与解析细节，绝不能透给前端
         String internalDetail = "JSON parse error: Unexpected character ('}' (code 125)): "
                 + "com.bhu.runshistudioweb.model.dto.user.UserLoginRequest";
         BaseResponse<?> response = handler.httpMessageNotReadableExceptionHandler(
                 new HttpMessageNotReadableException(internalDetail, (HttpInputMessage) null));
 
-        assertEquals(40000, response.getCode());
+        assertEquals("A0401", response.getCode());
         assertFalse(response.getMessage().contains("UserLoginRequest"),
                 "响应里回显了内部类名：" + response.getMessage());
         assertFalse(response.getMessage().contains("Unexpected character"),
@@ -173,8 +173,8 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    @DisplayName("方法级校验失败：ConstraintViolationException 同样映射为 40000")
-    void constraintViolationMappedTo40000() {
+    @DisplayName("方法级校验失败：ConstraintViolationException 同样映射为 A0401")
+    void constraintViolationMappedToA0401() {
         // ConstraintViolation 由 Hibernate Validator 运行时生成，单测里用 Mockito 造一个即可
         ConstraintViolation<?> violation = mock(ConstraintViolation.class);
         when(violation.getMessage()).thenReturn("页码不能小于 1");
@@ -183,7 +183,7 @@ class GlobalExceptionHandlerTest {
 
         BaseResponse<?> response = handler.constraintViolationExceptionHandler(exception);
 
-        assertEquals(40000, response.getCode());
+        assertEquals("A0401", response.getCode());
         assertEquals("页码不能小于 1", response.getMessage());
     }
 }

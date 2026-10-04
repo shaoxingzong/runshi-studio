@@ -36,7 +36,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *
  * <p>覆盖两条线：
  * <ol>
- *     <li><b>越权</b>：匿名访问后台接口 40100、普通用户 40101、C 端列表匿名可访问；</li>
+ *     <li><b>越权</b>：匿名访问后台接口 A0201、普通用户 A0301、C 端列表匿名可访问；</li>
  *     <li><b>四个考点</b>：级别与类型正交存储、获奖日期不得晚于今天、图片非空、
  *     默认排序 = 置顶权重倒序 + 获奖日期倒序。</li>
  * </ol>
@@ -93,9 +93,9 @@ class CertificateCrudTest {
         return mockMvc.perform(request).andReturn().getResponse().getContentAsString();
     }
 
-    private int code(String body) {
-        int start = body.indexOf("\"code\":") + 7;
-        return Integer.parseInt(body.substring(start, body.indexOf(',', start)));
+    private String code(String body) {
+        int start = body.indexOf("\"code\":\"") + 8;
+        return body.substring(start, body.indexOf('"', start));
     }
 
     private String dataValue(String body) {
@@ -115,13 +115,13 @@ class CertificateCrudTest {
     @DisplayName("C 端列表匿名可访问；后台接口必须登录且是管理员")
     void accessControl() throws Exception {
         // C 端：白名单生效，游客能拿到列表
-        assertEquals(0, code(getBody("/certificate/list", null)), "C 端证书列表应匿名可访问（已加白名单）");
+        assertEquals("00000", code(getBody("/certificate/list", null)), "C 端证书列表应匿名可访问（已加白名单）");
 
-        // 后台：未登录 40100
-        assertEquals(40100, code(getBody("/certificate/list/page", null)));
-        assertEquals(40100, code(postJson("/certificate/add", "{}", null)));
+        // 后台：未登录 A0201
+        assertEquals("A0201", code(getBody("/certificate/list/page", null)));
+        assertEquals("A0201", code(postJson("/certificate/add", "{}", null)));
 
-        // 后台：普通用户 40101
+        // 后台：普通用户 A0301
         String account = "cert_user_" + (System.nanoTime() % 100000);
         SysUser normal = new SysUser();
         normal.setUserAccount(account);
@@ -131,7 +131,7 @@ class CertificateCrudTest {
         normal.setUserStatus(0);
         sysUserMapper.insert(normal);
         String token = login(account);
-        assertEquals(40101, code(getBody("/certificate/list/page", token)), "普通用户不应能访问后台证书列表");
+        assertEquals("A0301", code(getBody("/certificate/list/page", token)), "普通用户不应能访问后台证书列表");
     }
 
     // ==================== 四个考点 ====================
@@ -147,17 +147,17 @@ class CertificateCrudTest {
         // 正常：级别与类型分别落库
         String body = postJson("/certificate/add", addBody("数学建模国赛", CertificateLevelEnum.NATIONAL.getValue(),
                 CertificateTypeEnum.COMPETITION.getValue(), pastDate, "/uploads/a.png", null), token);
-        assertEquals(0, code(body), "新增失败：" + body);
+        assertEquals("00000", code(body), "新增失败：" + body);
 
         StudioCertificate saved = certificateService.getById(Long.parseLong(dataValue(body)));
         assertEquals(CertificateLevelEnum.NATIONAL.getValue(), saved.getAwardLevel());
         assertEquals(CertificateTypeEnum.COMPETITION.getValue(), saved.getAwardType());
 
         // 非法级别 / 非法类型：ADR-5 要求拆开存，取值必须在枚举内
-        assertEquals(40000, code(postJson("/certificate/add",
+        assertEquals("A0401", code(postJson("/certificate/add",
                 addBody("级别非法", "superman", CertificateTypeEnum.COMPETITION.getValue(), pastDate,
                         "/uploads/a.png", null), token)));
-        assertEquals(40000, code(postJson("/certificate/add",
+        assertEquals("A0401", code(postJson("/certificate/add",
                 addBody("类型非法", CertificateLevelEnum.NATIONAL.getValue(), "unknown", pastDate,
                         "/uploads/a.png", null), token)));
     }
@@ -171,16 +171,16 @@ class CertificateCrudTest {
         String pastDate = LocalDate.now().minusDays(10).toString();
 
         // 日期晚于今天 → 拒绝
-        assertEquals(40000, code(postJson("/certificate/add", addBody("未来的奖", CertificateLevelEnum.NATIONAL.getValue(),
+        assertEquals("A0401", code(postJson("/certificate/add", addBody("未来的奖", CertificateLevelEnum.NATIONAL.getValue(),
                 CertificateTypeEnum.PAPER.getValue(), LocalDate.now().plusDays(1).toString(),
                 "/uploads/a.png", null), token)));
 
         // 图片为空 → 拒绝（DDL 中 image_url 是 NOT NULL）
-        assertEquals(40000, code(postJson("/certificate/add", addBody("没图", CertificateLevelEnum.NATIONAL.getValue(),
+        assertEquals("A0401", code(postJson("/certificate/add", addBody("没图", CertificateLevelEnum.NATIONAL.getValue(),
                 CertificateTypeEnum.PAPER.getValue(), pastDate, "", null), token)));
 
         // 合法组合 → 通过
-        assertEquals(0, code(postJson("/certificate/add", addBody("合法证书", CertificateLevelEnum.PROVINCIAL.getValue(),
+        assertEquals("00000", code(postJson("/certificate/add", addBody("合法证书", CertificateLevelEnum.PROVINCIAL.getValue(),
                 CertificateTypeEnum.PATENT.getValue(), pastDate, "/uploads/b.png", null), token)));
     }
 
@@ -225,7 +225,7 @@ class CertificateCrudTest {
                 "/uploads/c.png", 3), token);
 
         String body = getBody("/certificate/list", null);
-        assertEquals(0, code(body));
+        assertEquals("00000", code(body));
         assertFalse(body.contains("sortOrder"), "C 端返回了置顶权重：" + body);
         assertFalse(body.contains("createdAt"), "C 端返回了审计时间：" + body);
         assertFalse(body.contains("deletedAt"), "C 端返回了逻辑删除标记：" + body);
@@ -245,21 +245,21 @@ class CertificateCrudTest {
 
         // 详情
         String detail = getBody("/certificate/get?id=" + id, token);
-        assertEquals(0, code(detail));
+        assertEquals("00000", code(detail));
 
         // 更新：只改名称，其余不动
-        assertEquals(0, code(postJson("/certificate/update", "{\"id\":" + id + ",\"title\":\"改后名称\"}", token)));
+        assertEquals("00000", code(postJson("/certificate/update", "{\"id\":" + id + ",\"title\":\"改后名称\"}", token)));
         CertificateVO updated = certificateService.getCertificateById(id);
         assertEquals("改后名称", updated.getTitle());
         assertEquals(CertificateLevelEnum.NATIONAL.getValue(), updated.getAwardLevel(), "未传的字段不应被改动");
 
         // 分页查询
         String pageBody = getBody("/certificate/list/page?current=1&pageSize=10&title=改后名称", token);
-        assertEquals(0, code(pageBody));
+        assertEquals("00000", code(pageBody));
         assertTrue(pageBody.contains("改后名称"), "按名称模糊查询没查到：" + pageBody);
 
         // 删除 → 逻辑删除后查不到
-        assertEquals(0, code(postJson("/certificate/delete", "{\"id\":" + id + "}", token)));
-        assertEquals(40400, code(getBody("/certificate/get?id=" + id, token)), "删除后应查不到");
+        assertEquals("00000", code(postJson("/certificate/delete", "{\"id\":" + id + "}", token)));
+        assertEquals("A0402", code(getBody("/certificate/get?id=" + id, token)), "删除后应查不到");
     }
 }

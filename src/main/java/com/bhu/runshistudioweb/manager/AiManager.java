@@ -77,10 +77,10 @@ import java.util.function.Consumer;
  *     用户对话内容。两者一个是泄密、一个是隐私，故保持关闭。</li>
  * </ol>
  *
- * <p><b>所有异常都在这里被吃掉并转成 {@code OPERATION_ERROR(50001)}</b>：
+ * <p><b>所有异常都在这里被吃掉并转成 {@code OPERATION_ERROR(C0200)}</b>：
  * LangChain4j 抛的是 {@code LangChain4jException} 这类技术异常
  * （{@code InternalServerException / TimeoutException / ...}），直接放出去会被全局兜底成
- * 50000，还可能把服务商返回的原始报文带进日志与响应。对外统一一句
+ * B0001，还可能把服务商返回的原始报文带进日志与响应。对外统一一句
  * 「AI 服务暂时不可用，请稍后重试」。
  *
  * <p><b>日志纪律</b>：只记录 base-url / model / 异常，<b>绝不记录 api-key</b>。
@@ -167,7 +167,7 @@ public class AiManager {
      * 「对话可用但向量不可用」这种半配置状态不会出现。
      *
      * <p>未配置 base-url / api-key 时<b>不构建、也不抛异常</b>：
-     * 本地不配 AI 也能正常启动应用，真正调用时才返回 50001（见各方法内的判断）。
+     * 本地不配 AI 也能正常启动应用，真正调用时才返回 C0200（见各方法内的判断）。
      */
     @PostConstruct
     void initModels() {
@@ -176,7 +176,7 @@ public class AiManager {
 
         if (StrUtil.isBlank(aiProperties.getBaseUrl()) || StrUtil.isBlank(aiProperties.getApiKey())) {
             // 只提示「缺什么」，绝不打印密钥内容
-            log.warn("AI 未配置完整（base-url={} / apiKeyConfigured={}），提问接口将返回 50001；"
+            log.warn("AI 未配置完整（base-url={} / apiKeyConfigured={}），提问接口将返回 C0200；"
                             + "其它接口不受影响", StrUtil.isBlank(aiProperties.getBaseUrl()) ? "空" : "已配置",
                     StrUtil.isNotBlank(aiProperties.getApiKey()));
             return;
@@ -271,13 +271,13 @@ public class AiManager {
      * @param history     上下文消息（<b>时间正序</b>，由 Service 取最近 N 条），可为空
      * @param userMessage 本次提问
      * @return AI 回答正文（已校验非空）
-     * @throws BusinessException 未配置、调用失败或回答为空时抛出（50001）
+     * @throws BusinessException 未配置、调用失败或回答为空时抛出（C0200）
      */
     public String chat(List<AiMessageVO> history, String userMessage) {
         // 未配置时直接失败：ApplicationContext 已经起来了，这里只影响这一次调用
         if (chatModel == null) {
             log.warn("调用 AI 失败：studio.ai.base-url 或 api-key 未配置（本地不配置不影响其它接口）");
-            throw new BusinessException(ErrorCode.OPERATION_ERROR, AI_UNAVAILABLE_MESSAGE);
+            throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, AI_UNAVAILABLE_MESSAGE);
         }
 
         ChatRequest chatRequest = ChatRequest.builder()
@@ -290,10 +290,10 @@ public class AiManager {
             chatResponse = chatModel.chat(chatRequest);
         } catch (Exception e) {
             // 超时、连接失败、4xx/5xx、限流都在这里被收敛。不把 e 直接抛出：
-            // 响应会变成 50000，且异常信息里可能带着服务商返回的原始报文
+            // 响应会变成 B0001，且异常信息里可能带着服务商返回的原始报文
             log.error("调用 AI 服务失败 | baseUrl={} | model={}", aiProperties.getBaseUrl(),
                     aiProperties.getModel(), e);
-            throw new BusinessException(ErrorCode.OPERATION_ERROR, AI_UNAVAILABLE_MESSAGE);
+            throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, AI_UNAVAILABLE_MESSAGE);
         }
 
         return extractAnswer(chatResponse);
@@ -319,12 +319,12 @@ public class AiManager {
      * @param onDelta     每收到一段增量时的回调（可为 null，表示只关心最终结果）
      * @return 完整回答（取自模型的最终响应，而不是自己拼接的增量——两者理论上一致，
      *         但以模型为准可以避免「增量丢失导致落库内容缺字」）
-     * @throws BusinessException 未配置、调用失败或回答为空时抛出（50001）
+     * @throws BusinessException 未配置、调用失败或回答为空时抛出（C0200）
      */
     public String chatStream(List<AiMessageVO> history, String userMessage, Consumer<String> onDelta) {
         if (streamingChatModel == null) {
             log.warn("调用 AI 失败：studio.ai.base-url 或 api-key 未配置（本地不配置不影响其它接口）");
-            throw new BusinessException(ErrorCode.OPERATION_ERROR, AI_UNAVAILABLE_MESSAGE);
+            throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, AI_UNAVAILABLE_MESSAGE);
         }
 
         ChatRequest chatRequest = ChatRequest.builder()
@@ -363,7 +363,7 @@ public class AiManager {
             if (!latch.await(REQUEST_TIMEOUT.plusSeconds(5).toMillis(), TimeUnit.MILLISECONDS)) {
                 log.error("等待 AI 流式响应超时 | baseUrl={} | model={}",
                         aiProperties.getBaseUrl(), aiProperties.getModel());
-                throw new BusinessException(ErrorCode.OPERATION_ERROR, AI_UNAVAILABLE_MESSAGE);
+                throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, AI_UNAVAILABLE_MESSAGE);
             }
         } catch (BusinessException e) {
             throw e;
@@ -371,18 +371,18 @@ public class AiManager {
             // 恢复中断标记：吞掉中断会让上层（例如应用关闭）失去感知
             Thread.currentThread().interrupt();
             log.error("AI 流式调用被中断", e);
-            throw new BusinessException(ErrorCode.OPERATION_ERROR, AI_UNAVAILABLE_MESSAGE);
+            throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, AI_UNAVAILABLE_MESSAGE);
         } catch (Exception e) {
             log.error("调用 AI 流式服务失败 | baseUrl={} | model={}", aiProperties.getBaseUrl(),
                     aiProperties.getModel(), e);
-            throw new BusinessException(ErrorCode.OPERATION_ERROR, AI_UNAVAILABLE_MESSAGE);
+            throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, AI_UNAVAILABLE_MESSAGE);
         }
 
         if (errorRef.get() != null) {
             // 流中途报错（连接断了、服务商限流）也走同一个出口
             log.error("AI 流式响应出错 | baseUrl={} | model={}", aiProperties.getBaseUrl(),
                     aiProperties.getModel(), errorRef.get());
-            throw new BusinessException(ErrorCode.OPERATION_ERROR, AI_UNAVAILABLE_MESSAGE);
+            throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, AI_UNAVAILABLE_MESSAGE);
         }
         return extractAnswer(responseRef.get());
     }
@@ -400,12 +400,12 @@ public class AiManager {
      *
      * @param texts 待向量化的文本（非空）
      * @return 与入参顺序一致的向量列表
-     * @throws BusinessException 未配置、调用失败或返回数量不符时抛出（50001，与对话同文案）
+     * @throws BusinessException 未配置、调用失败或返回数量不符时抛出（C0200，与对话同文案）
      */
     public List<Embedding> embedAll(List<String> texts) {
         if (embeddingModel == null) {
             log.warn("调用 Embedding 失败：studio.ai.base-url 或 api-key 未配置（本地不配置不影响其它接口）");
-            throw new BusinessException(ErrorCode.OPERATION_ERROR, AI_UNAVAILABLE_MESSAGE);
+            throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, AI_UNAVAILABLE_MESSAGE);
         }
         ThrowUtils.throwIf(texts == null || texts.isEmpty(), ErrorCode.PARAMS_ERROR, "待向量化的文本为空");
 
@@ -416,7 +416,7 @@ public class AiManager {
             Response<List<Embedding>> response = embeddingModel.embedAll(segments);
             List<Embedding> embeddings = response == null ? null : response.content();
             ThrowUtils.throwIf(embeddings == null || embeddings.size() != texts.size(),
-                    ErrorCode.OPERATION_ERROR, AI_UNAVAILABLE_MESSAGE);
+                    ErrorCode.AI_SERVICE_ERROR, AI_UNAVAILABLE_MESSAGE);
             return embeddings;
         } catch (BusinessException e) {
             throw e;
@@ -424,7 +424,7 @@ public class AiManager {
             // 超时、限流、协议错误都收敛成同一句提示，不把服务商的原始报文带出去
             log.error("调用 Embedding 服务失败 | baseUrl={} | model={} | 文本数={}",
                     aiProperties.getBaseUrl(), aiProperties.getEmbeddingModel(), texts.size(), e);
-            throw new BusinessException(ErrorCode.OPERATION_ERROR, AI_UNAVAILABLE_MESSAGE);
+            throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, AI_UNAVAILABLE_MESSAGE);
         }
     }
 
@@ -493,7 +493,7 @@ public class AiManager {
      *
      * @param chatResponse LangChain4j 响应
      * @return 回答正文
-     * @throws BusinessException 响应为空或正文为空时抛出（50001）
+     * @throws BusinessException 响应为空或正文为空时抛出（C0200）
      */
     private String extractAnswer(ChatResponse chatResponse) {
         if (chatResponse == null || chatResponse.aiMessage() == null
@@ -501,7 +501,7 @@ public class AiManager {
             // 结构不符（例如被网关拦截、服务商改了协议）或模型返回空内容，
             // 对用户而言都是「这次没答上来」，不做区分
             log.warn("AI 响应中没有可用内容 | response={}", chatResponse);
-            throw new BusinessException(ErrorCode.OPERATION_ERROR, AI_UNAVAILABLE_MESSAGE);
+            throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, AI_UNAVAILABLE_MESSAGE);
         }
         return chatResponse.aiMessage().text();
     }

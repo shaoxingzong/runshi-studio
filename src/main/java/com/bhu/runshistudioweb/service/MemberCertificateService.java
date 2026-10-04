@@ -41,9 +41,9 @@ public interface MemberCertificateService extends IService<StudioMemberCertifica
      *
      * <p>校验顺序（每一步都有明确错误码）：
      * <ol>
-     *     <li>两个 id 必须 &gt; 0 → 40000；</li>
-     *     <li>成员、证书都必须存在（{@code selectById} 自动过滤 {@code deleted_at}）→ 40400；</li>
-     *     <li>已绑定过 → 40000「该成员已绑定此证书」；</li>
+     *     <li>两个 id 必须 &gt; 0 → A0401；</li>
+     *     <li>成员、证书都必须存在（{@code selectById} 自动过滤 {@code deleted_at}）→ A0402；</li>
+     *     <li>已绑定过 → A0401「该成员已绑定此证书」；</li>
      *     <li>插入。并发下两条请求同时通过第 3 步时，由唯一索引
      *     {@code uk_member_cert} 兜底抛 {@code DuplicateKeyException}，
      *     实现里 catch 后返回**同一文案**（应用层管友好提示，索引管绝对不出现脏数据）。</li>
@@ -52,7 +52,7 @@ public interface MemberCertificateService extends IService<StudioMemberCertifica
      * @param memberId      成员 ID
      * @param certificateId 证书 ID
      * @return true 表示绑定成功
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数非法（40000）或目标不存在（40400）时抛出
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数非法（A0401）或目标不存在（A0402）时抛出
      */
     boolean bind(long memberId, long certificateId);
 
@@ -62,7 +62,7 @@ public interface MemberCertificateService extends IService<StudioMemberCertifica
      * @param memberId      成员 ID
      * @param certificateId 证书 ID
      * @return true 表示解绑成功
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数非法（40000）或关系不存在（40400）时抛出
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数非法（A0401）或关系不存在（A0402）时抛出
      */
     boolean unbind(long memberId, long certificateId);
 
@@ -72,7 +72,7 @@ public interface MemberCertificateService extends IService<StudioMemberCertifica
      * 查某成员持有的全部证书（管理端视图，含图片/权重/审计字段）
      *
      * @param memberId 成员 ID
-     * @return 证书列表（按 sort_order → award_date → id 倒序）；成员不存在时抛 40400
+     * @return 证书列表（按 sort_order → award_date → id 倒序）；成员不存在时抛 A0402
      */
     List<CertificateVO> listCertificatesByMember(long memberId);
 
@@ -82,7 +82,7 @@ public interface MemberCertificateService extends IService<StudioMemberCertifica
      * <p>反向查询，走 {@code idx_cert_member (certificate_id, member_id)} 索引。
      *
      * @param certificateId 证书 ID
-     * @return 成员列表（按 sort_order → id 倒序）；证书不存在时抛 40400
+     * @return 成员列表（按 sort_order → id 倒序）；证书不存在时抛 A0402
      */
     List<MemberVO> listMembersByCertificate(long certificateId);
 

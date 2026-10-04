@@ -24,9 +24,9 @@ import com.bhu.runshistudioweb.model.vo.ProjectVO;
  *     {@link #addProject} 与 {@link #updateProject}（换队长时）都要在同一事务内
  *     调 {@code MemberProjectService#ensureMemberInProject}，
  *     保证「队长必然出现在参与成员列表中」。用<b>幂等的 ensure</b> 而不是 bind——
- *     重复保存项目是正常路径，不该报 40000；</li>
+ *     重复保存项目是正常路径，不该报 A0401；</li>
  *     <li><b>tech_stack 的 JSON 边界</b>：数据库存 varchar(256) 快照，接口对外是
- *     {@code List<String>}。序列化后超过 256 必须抛 40000，
+ *     {@code List<String>}。序列化后超过 256 必须抛 A0401，
  *     否则会撞数据库的字符串截断错误；读回时解析失败返回空列表，
  *     绝不因为一条脏数据让列表接口 500。</li>
  * </ol>
@@ -44,8 +44,8 @@ public interface StudioProjectService extends IService<StudioProject> {
      *
      * @param projectAddRequest 新增请求（title / description / leaderId 必填）
      * @return 新项目 ID
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数不合法（40000）、
-     *         队长不存在或已逻辑删除（40400）、技术栈超长（40000）时抛出
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数不合法（A0401）、
+     *         队长不存在或已逻辑删除（A0402）、技术栈超长（A0401）时抛出
      */
     long addProject(ProjectAddRequest projectAddRequest);
 
@@ -58,8 +58,8 @@ public interface StudioProjectService extends IService<StudioProject> {
      *
      * @param projectUpdateRequest 更新请求（id 必填）
      * @return true 表示更新成功
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数不合法、项目不存在（40400）、
-     *         队长不存在（40400）、技术栈超长（40000）时抛出
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数不合法、项目不存在（A0402）、
+     *         队长不存在（A0402）、技术栈超长（A0401）时抛出
      */
     boolean updateProject(ProjectUpdateRequest projectUpdateRequest);
 
@@ -68,7 +68,7 @@ public interface StudioProjectService extends IService<StudioProject> {
      *
      * @param id 项目 ID
      * @return true 表示删除成功
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数不合法、项目不存在（40400）时抛出
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数不合法、项目不存在（A0402）时抛出
      */
     boolean deleteProject(long id);
 
@@ -77,7 +77,7 @@ public interface StudioProjectService extends IService<StudioProject> {
      *
      * @param id 项目 ID
      * @return 含 content / leaderId / sortOrder / 审计字段的项目信息
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 项目不存在时抛出（40400）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 项目不存在时抛出（A0402）
      */
     ProjectVO getProjectById(long id);
 
@@ -109,7 +109,7 @@ public interface StudioProjectService extends IService<StudioProject> {
      *
      * @param id 项目 ID
      * @return 脱敏详情 VO（列表字段 + content）
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 项目不存在时抛出（40400）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 项目不存在时抛出（A0402）
      */
     ProjectFrontDetailVO getFrontProjectById(long id);
 

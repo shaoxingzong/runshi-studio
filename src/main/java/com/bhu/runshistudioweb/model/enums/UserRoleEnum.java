@@ -10,7 +10,7 @@ import com.bhu.runshistudioweb.constant.UserRoleConstant;
  * <p>为什么必须有它：角色是**权限判定的唯一依据**，而权限判定的三处都是字符串——
  * {@code @SaCheckRole(...)}、注册时的默认角色、管理端传入的角色值。
  * 一旦某处写成 {@code "Admin"} 或 {@code "admmin"}，编译不会报错，
- * 表现是「明明给了管理员，却一直 40101」，排查成本极高。
+ * 表现是「明明给了管理员，却一直 A0301」，排查成本极高。
  *
  * <p>取值统一放在 {@link UserRoleConstant}：枚举负责「类型与校验」，
  * 常量类负责「字面量」（因为 {@code @SaCheckRole} 只接受编译期常量，两边无法共用枚举本身）。

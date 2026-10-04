@@ -50,8 +50,8 @@ public interface KnowledgeDocService {
      *
      * @param request 录入请求（title、content 必填）
      * @return 入库结果（status=1 表示已索引）
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数不合法（40000）、
-     *         向量化失败（50001）时抛出
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数不合法（A0401）、
+     *         向量化失败（C0200）时抛出
      */
     KnowledgeIngestVO ingestManual(KnowledgeManualIngestRequest request);
 
@@ -65,8 +65,8 @@ public interface KnowledgeDocService {
      *
      * @param request 同步请求（sourceType ∈ project/member/certificate，sourceId 必填）
      * @return 入库结果（skipped / rebuilt 说明这次到底做了什么）
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数不合法或传了 manual（40000）、
-     *         源数据不存在（40400，同时把已有文档标记 status=2）、向量化失败（50001）时抛出
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数不合法或传了 manual（A0401）、
+     *         源数据不存在（A0402，同时把已有文档标记 status=2）、向量化失败（C0200）时抛出
      */
     KnowledgeIngestVO sync(KnowledgeSyncRequest request);
 
@@ -94,7 +94,7 @@ public interface KnowledgeDocService {
      *
      * @param question 用户提问（允许为空，返回空结果）
      * @return 检索结果；无命中时 contextText 为空串、sources 为空列表（不为 null）
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 向量化失败（50001）时抛出
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 向量化失败（C0200）时抛出
      */
     RetrievalResult retrieve(String question);
 
@@ -149,7 +149,7 @@ public interface KnowledgeDocService {
      *
      * @param request 查询条件（title 模糊 / sourceType 精确 / status 精确 + 分页），允许为 null
      * @return 分页结果，记录为 {@link KnowledgeDocVO}（<b>不含正文</b>）
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 来源类型取值非法时抛出（40000）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 来源类型取值非法时抛出（A0401）
      */
     Page<KnowledgeDocVO> listDocByPage(KnowledgeDocQueryRequest request);
 
@@ -158,8 +158,8 @@ public interface KnowledgeDocService {
      *
      * @param id 文档 ID
      * @return true 表示删除成功
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数非法（40000）、
-     *         文档不存在或已删除（40400）时抛出
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数非法（A0401）、
+     *         文档不存在或已删除（A0402）时抛出
      */
     boolean deleteDoc(long id);
 
@@ -174,8 +174,8 @@ public interface KnowledgeDocService {
      *
      * @param id 文档 ID
      * @return 入库结果
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数非法或文档不存在（40000/40400）、
-     *         manual 来源不支持重建（40000）、源数据已删除（40400）时抛出
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数非法或文档不存在（A0401/A0402）、
+     *         manual 来源不支持重建（A0401）、源数据已删除（A0402）时抛出
      */
     KnowledgeIngestVO rebuildDoc(long id);
 

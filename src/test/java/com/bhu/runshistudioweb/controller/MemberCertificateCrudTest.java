@@ -35,8 +35,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * <p>覆盖四条线：
  * <ol>
  *     <li><b>绑定/解绑主流程</b>：绑定后两个方向都能查到，解绑后都消失；</li>
- *     <li><b>错误码约定</b>：参数非法 40000、成员/证书不存在 40400、
- *     重复绑定 40000、解绑不存在的关系 40400；</li>
+ *     <li><b>错误码约定</b>：参数非法 A0401、成员/证书不存在 A0402、
+ *     重复绑定 A0401、解绑不存在的关系 A0402；</li>
  *     <li><b>C 端脱敏与匿名可访问</b>：官网接口不带 token 可用，且不含置顶权重与审计字段；</li>
  *     <li><b>级联清理</b>：删成员 / 删证书时，关联行必须被同一事务清掉（DESIGN.md 2.2）。</li>
  * </ol>
@@ -98,9 +98,9 @@ class MemberCertificateCrudTest {
         return mockMvc.perform(request).andReturn().getResponse().getContentAsString();
     }
 
-    private int code(String body) {
-        int start = body.indexOf("\"code\":") + 7;
-        return Integer.parseInt(body.substring(start, body.indexOf(',', start)));
+    private String code(String body) {
+        int start = body.indexOf("\"code\":\"") + 8;
+        return body.substring(start, body.indexOf('"', start));
     }
 
     private String message(String body) {
@@ -120,7 +120,7 @@ class MemberCertificateCrudTest {
     private long addMember(String name) throws Exception {
         String body = postJson("/member/add",
                 "{\"name\":\"" + name + "\",\"gradeYear\":2022}", token);
-        assertEquals(0, code(body), "新增成员失败：" + body);
+        assertEquals("00000", code(body), "新增成员失败：" + body);
         return Long.parseLong(dataValue(body));
     }
 
@@ -131,7 +131,7 @@ class MemberCertificateCrudTest {
                         + "\",\"awardType\":\"" + CertificateTypeEnum.COMPETITION.getValue()
                         + "\",\"awardDate\":\"" + LocalDate.now().minusDays(10)
                         + "\",\"imageUrl\":\"/uploads/cert.png\",\"sortOrder\":" + sortOrder + "}", token);
-        assertEquals(0, code(body), "新增证书失败：" + body);
+        assertEquals("00000", code(body), "新增证书失败：" + body);
         return Long.parseLong(dataValue(body));
     }
 
@@ -144,28 +144,28 @@ class MemberCertificateCrudTest {
     // ==================== 主流程 ====================
 
     @Test
-    @DisplayName("绑定 → 双向可查 → 解绑 → 双向查不到；重复解绑返回 40400")
+    @DisplayName("绑定 → 双向可查 → 解绑 → 双向查不到；重复解绑返回 A0402")
     void bindAndUnbindFlow() throws Exception {
         long memberId = addMember("关联流程成员");
         long certificateId = addCertificate("关联流程证书", 1);
 
         String bindBody = postJson("/member-certificate/bind",
                 "{\"memberId\":\"" + memberId + "\",\"certificateId\":\"" + certificateId + "\"}", token);
-        assertEquals(0, code(bindBody), "绑定失败：" + bindBody);
+        assertEquals("00000", code(bindBody), "绑定失败：" + bindBody);
         assertEquals(1, countRelations(memberId, certificateId), "关联行没有真正插入");
 
         // 成员 → 证书
         String certList = getBody("/member-certificate/certificate/list?memberId=" + memberId, token);
-        assertEquals(0, code(certList));
+        assertEquals("00000", code(certList));
         assertTrue(certList.contains("关联流程证书"), "按成员查不到证书：" + certList);
 
         // 证书 → 成员（反向查询）
         String memberList = getBody("/member-certificate/member/list?certificateId=" + certificateId, token);
-        assertEquals(0, code(memberList));
+        assertEquals("00000", code(memberList));
         assertTrue(memberList.contains("关联流程成员"), "按证书查不到成员：" + memberList);
 
         // 解绑
-        assertEquals(0, code(postJson("/member-certificate/unbind",
+        assertEquals("00000", code(postJson("/member-certificate/unbind",
                 "{\"memberId\":\"" + memberId + "\",\"certificateId\":\"" + certificateId + "\"}", token)));
         assertEquals(0, countRelations(memberId, certificateId), "关联行没有被物理删除");
         assertTrue(getBody("/member-certificate/certificate/list?memberId=" + memberId, token)
@@ -174,22 +174,22 @@ class MemberCertificateCrudTest {
         // 重复解绑：关系已不存在
         String again = postJson("/member-certificate/unbind",
                 "{\"memberId\":\"" + memberId + "\",\"certificateId\":\"" + certificateId + "\"}", token);
-        assertEquals(40400, code(again), "解绑不存在的关系应返回 40400");
+        assertEquals("A0402", code(again), "解绑不存在的关系应返回 A0402");
         assertEquals("该成员未绑定此证书", message(again));
     }
 
     @Test
-    @DisplayName("重复绑定返回 40000，且提示文案明确")
+    @DisplayName("重复绑定返回 A0401，且提示文案明确")
     void duplicateBindRejected() throws Exception {
         long memberId = addMember("重复绑定成员");
         long certificateId = addCertificate("重复绑定证书", 1);
 
-        assertEquals(0, code(postJson("/member-certificate/bind",
+        assertEquals("00000", code(postJson("/member-certificate/bind",
                 "{\"memberId\":" + memberId + ",\"certificateId\":" + certificateId + "}", token)));
 
         String second = postJson("/member-certificate/bind",
                 "{\"memberId\":" + memberId + ",\"certificateId\":" + certificateId + "}", token);
-        assertEquals(40000, code(second), "重复绑定应返回 40000（唯一索引也兜底并发场景）");
+        assertEquals("A0401", code(second), "重复绑定应返回 A0401（唯一索引也兜底并发场景）");
         assertEquals("该成员已绑定此证书", message(second));
         assertEquals(1, countRelations(memberId, certificateId), "重复绑定不应产生第二行");
     }
@@ -197,30 +197,30 @@ class MemberCertificateCrudTest {
     // ==================== 错误码约定 ====================
 
     @Test
-    @DisplayName("错误码：参数非法 40000 / 成员不存在 40400 / 证书不存在 40400")
+    @DisplayName("错误码：参数非法 A0401 / 成员不存在 A0402 / 证书不存在 A0402")
     void errorCodes() throws Exception {
         long memberId = addMember("错误码成员");
         long certificateId = addCertificate("错误码证书", 1);
 
         // id 为 0：参数非法
-        assertEquals(40000, code(postJson("/member-certificate/bind",
+        assertEquals("A0401", code(postJson("/member-certificate/bind",
                 "{\"memberId\":0,\"certificateId\":" + certificateId + "}", token)));
 
         // 成员不存在
         String noMember = postJson("/member-certificate/bind",
                 "{\"memberId\":999999999999999999,\"certificateId\":" + certificateId + "}", token);
-        assertEquals(40400, code(noMember));
+        assertEquals("A0402", code(noMember));
         assertEquals("成员不存在", message(noMember));
 
         // 证书不存在
         String noCert = postJson("/member-certificate/bind",
                 "{\"memberId\":" + memberId + ",\"certificateId\":999999999999999999}", token);
-        assertEquals(40400, code(noCert));
+        assertEquals("A0402", code(noCert));
         assertEquals("证书不存在", message(noCert));
 
-        // 查询接口缺参数：必须是 40000，不能被兜底成 50000
+        // 查询接口缺参数：必须是 A0401，不能被兜底成 B0001
         // （原 /member/certificate/list 的缺参用例已随该 C 端接口下线删除，）
-        assertEquals(40000, code(getBody("/member-certificate/member/list", token)), "缺 certificateId 应返回 40000");
+        assertEquals("A0401", code(getBody("/member-certificate/member/list", token)), "缺 certificateId 应返回 A0401");
     }
 
     // ==================== 排序（原 C 端用例改用管理端接口） ====================
@@ -241,7 +241,7 @@ class MemberCertificateCrudTest {
                 "{\"memberId\":" + memberId + ",\"certificateId\":" + highCertId + "}", token);
 
         String list = getBody("/member-certificate/certificate/list?memberId=" + memberId, token);
-        assertEquals(0, code(list), "管理端证书列表应可访问：" + list);
+        assertEquals("00000", code(list), "管理端证书列表应可访问：" + list);
         assertTrue(list.indexOf("高权重证书") < list.indexOf("低权重证书"),
                 "默认排序应是 sort_order 倒序，实际：" + list);
     }
@@ -257,7 +257,7 @@ class MemberCertificateCrudTest {
                 "{\"memberId\":" + memberId + ",\"certificateId\":" + certificateId + "}", token);
         assertEquals(1, countRelations(memberId, certificateId));
 
-        assertEquals(0, code(postJson("/member/delete", "{\"id\":" + memberId + "}", token)));
+        assertEquals("00000", code(postJson("/member/delete", "{\"id\":" + memberId + "}", token)));
 
         assertEquals(0, countRelations(memberId, certificateId), "删成员后关联行必须被清空（DESIGN.md 2.2）");
     }
@@ -271,7 +271,7 @@ class MemberCertificateCrudTest {
                 "{\"memberId\":" + memberId + ",\"certificateId\":" + certificateId + "}", token);
         assertEquals(1, countRelations(memberId, certificateId));
 
-        assertEquals(0, code(postJson("/certificate/delete", "{\"id\":" + certificateId + "}", token)));
+        assertEquals("00000", code(postJson("/certificate/delete", "{\"id\":" + certificateId + "}", token)));
 
         assertEquals(0, countRelations(memberId, certificateId), "删证书后关联行必须被清空（DESIGN.md 2.2）");
     }

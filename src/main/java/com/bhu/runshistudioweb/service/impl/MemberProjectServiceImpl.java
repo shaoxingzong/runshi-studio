@@ -88,7 +88,7 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
         } catch (DuplicateKeyException e) {
             // 并发下另一个请求已经插进去了：对「保证在列表里」这个语义而言，
             // 这正是我们想要的结果，因此**静默成功**，绝不抛异常。
-            // 这也是 ensure 与 bind 的关键差别——bind 在这个分支必须抛 40000
+            // 这也是 ensure 与 bind 的关键差别——bind 在这个分支必须抛 A0401
         }
     }
 

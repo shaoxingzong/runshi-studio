@@ -68,17 +68,17 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * <p>覆盖十二条线：
  * <ol>
  *     <li>手工录入全链路：批量向量化 → doc 行 + N 块（embedding_id 齐全、序号连续、长正文正确多块）；</li>
- *     <li>手工录入参数校验（标题/正文/超长边界）→ 40000；</li>
+ *     <li>手工录入参数校验（标题/正文/超长边界）→ A0401；</li>
  *     <li>手工录入不幂等：同内容两次 → 两篇文档；</li>
  *     <li>同步项目（首次）：溯源字段完整、正文含「标题/摘要/正文」拼装；</li>
  *     <li>同步幂等：内容未变 → skipped=true、零 Embedding、零写库（raw SQL 取证）；</li>
  *     <li>重建：旧块逻辑删、新块替换、chunk_count 刷新、旧向量清理（向量库检索取证）；</li>
- *     <li>源已删除：40400 + 已有文档标 status=2 + 旧块保留（R2 收口）；</li>
- *     <li>同步参数校验：manual 被拒、非法 sourceType、sourceId 非法 → 40000；</li>
- *     <li>权限：匿名 40100、普通用户 40101、admin 放行（白名单零改动）；</li>
+ *     <li>源已删除：A0402 + 已有文档标 status=2 + 旧块保留（R2 收口）；</li>
+ *     <li>同步参数校验：manual 被拒、非法 sourceType、sourceId 非法 → A0401；</li>
+ *     <li>权限：匿名 A0201、普通用户 A0301、admin 放行（白名单零改动）；</li>
  *     <li>拼装规则：成员中文标签行；证书级别/类型转中文文案（不是库里的英文值）；</li>
- *     <li>向量化失败（首次）：50001 + 无残留行，且失败可重试；</li>
- *     <li>向量化失败（重建）：50001 + 旧块与旧向量原样保留 + status=2，恢复后重建成功。</li>
+ *     <li>向量化失败（首次）：C0200 + 无残留行，且失败可重试；</li>
+ *     <li>向量化失败（重建）：C0200 + 旧块与旧向量原样保留 + status=2，恢复后重建成功。</li>
  * </ol>
  *
  * <p><b>类名以 {@code Ai} 开头是刻意的「排序约束」，改动前先读这段</b>：
@@ -90,7 +90,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * 因此「新建上下文的测试类」必须全部排在 {@code CertificateCrudTest} 之前——
  * 它是第一个使用默认 MockMvc 上下文的类，该上下文会被其后所有测试类共享，
  * 而静态 DAO 必须始终指向「当前正在使用的上下文」。
- * 本类若排到它之后，后续所有登录类测试都会 50000 失败（本次验收已实测复现）。</p>
+ * 本类若排到它之后，后续所有登录类测试都会 B0001 失败（本次验收已实测复现）。</p>
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -255,9 +255,9 @@ class AiKnowledgeIngestTest {
         return mockMvc.perform(request).andReturn().getResponse().getContentAsString();
     }
 
-    private int code(String body) {
-        int start = body.indexOf("\"code\":") + 7;
-        return Integer.parseInt(body.substring(start, body.indexOf(',', start)));
+    private String code(String body) {
+        int start = body.indexOf("\"code\":\"") + 8;
+        return body.substring(start, body.indexOf('"', start));
     }
 
     private JsonNode dataOf(String body) {
@@ -394,7 +394,7 @@ class AiKnowledgeIngestTest {
 
         String body = postJson("/knowledge/doc/manual", manualJson(title, content), token);
 
-        assertEquals(0, code(body), "入库应成功：" + body);
+        assertEquals("00000", code(body), "入库应成功：" + body);
         // docId 必须是「字符串形式的 19 位雪花 ID」（全局 JsonConfig 约定，防止 JS 精度丢失）
         assertTrue(body.matches("(?s).*\"docId\":\"\\d{19}\".*"), "docId 应为字符串：" + body);
 
@@ -438,14 +438,14 @@ class AiKnowledgeIngestTest {
     }
 
     @Test
-    @DisplayName("手工录入参数校验：空白标题 / 空白正文 / 标题超 128 / 正文超 20000 → 40000")
+    @DisplayName("手工录入参数校验：空白标题 / 空白正文 / 标题超 128 / 正文超 20000 → A0401")
     void manualValidationRejectsBadInput() throws Exception {
         String token = adminToken();
 
-        assertEquals(40000, code(postJson("/knowledge/doc/manual", manualJson("   ", "正文"), token)));
-        assertEquals(40000, code(postJson("/knowledge/doc/manual", manualJson("标题", "   "), token)));
-        assertEquals(40000, code(postJson("/knowledge/doc/manual", manualJson("t".repeat(129), "正文"), token)));
-        assertEquals(40000, code(postJson("/knowledge/doc/manual", manualJson("标题", "文".repeat(20001)), token)));
+        assertEquals("A0401", code(postJson("/knowledge/doc/manual", manualJson("   ", "正文"), token)));
+        assertEquals("A0401", code(postJson("/knowledge/doc/manual", manualJson("标题", "   "), token)));
+        assertEquals("A0401", code(postJson("/knowledge/doc/manual", manualJson("t".repeat(129), "正文"), token)));
+        assertEquals("A0401", code(postJson("/knowledge/doc/manual", manualJson("标题", "文".repeat(20001)), token)));
     }
 
     @Test
@@ -474,7 +474,7 @@ class AiKnowledgeIngestTest {
 
         String body = postJson("/knowledge/doc/sync", syncJson("project", projectId), token);
 
-        assertEquals(0, code(body), "同步应成功：" + body);
+        assertEquals("00000", code(body), "同步应成功：" + body);
         JsonNode data = dataOf(body);
         long docId = Long.parseLong(data.get("docId").asString());
         assertFalse(data.get("skipped").asBoolean());
@@ -508,7 +508,7 @@ class AiKnowledgeIngestTest {
 
         String second = postJson("/knowledge/doc/sync", syncJson("project", projectId), token);
 
-        assertEquals(0, code(second));
+        assertEquals("00000", code(second));
         JsonNode data = dataOf(second);
         assertTrue(data.get("skipped").asBoolean(), "内容未变应跳过：" + second);
         assertFalse(data.get("rebuilt").asBoolean());
@@ -544,7 +544,7 @@ class AiKnowledgeIngestTest {
 
         String body = postJson("/knowledge/doc/sync", syncJson("project", projectId), token);
 
-        assertEquals(0, code(body), "重建应成功：" + body);
+        assertEquals("00000", code(body), "重建应成功：" + body);
         JsonNode data = dataOf(body);
         assertTrue(data.get("rebuilt").asBoolean(), "内容变更应走重建：" + body);
         assertFalse(data.get("skipped").asBoolean());
@@ -568,7 +568,7 @@ class AiKnowledgeIngestTest {
     }
 
     @Test
-    @DisplayName("源已删除：sync 返回 40400，已有文档标记 status=2，旧块保留（R2 收口）")
+    @DisplayName("源已删除：sync 返回 A0402，已有文档标记 status=2，旧块保留（R2 收口）")
     void syncSourceMissingMarksDocFailed() throws Exception {
         String token = adminToken();
         long projectId = createProject("T25源删项目_" + System.nanoTime(), "T25-源删-正文");
@@ -581,44 +581,44 @@ class AiKnowledgeIngestTest {
 
         String body = postJson("/knowledge/doc/sync", syncJson("project", projectId), token);
 
-        assertEquals(40400, code(body), "源已删除应 40400：" + body);
+        assertEquals("A0402", code(body), "源已删除应 A0402：" + body);
         assertEquals(2, rawDocStatus(docId), "已有文档应标记 status=2（检索层可据此降级）");
         assertEquals(liveBefore, rawLiveChunkCount(docId), "标记失败不应动旧块");
 
-        // 从未同步过的来源：40400 且不产生任何 doc 行（不写 status=2 新行，避免污染幂等）
+        // 从未同步过的来源：A0402 且不产生任何 doc 行（不写 status=2 新行，避免污染幂等）
         long ghostId = 999999999999999L;
-        assertEquals(40400, code(postJson("/knowledge/doc/sync", syncJson("project", ghostId), token)));
+        assertEquals("A0402", code(postJson("/knowledge/doc/sync", syncJson("project", ghostId), token)));
         assertEquals(0, countDocsBySource("project", ghostId));
     }
 
     @Test
-    @DisplayName("同步参数校验：manual 被拒、非法 sourceType、sourceId 非法 → 40000")
+    @DisplayName("同步参数校验：manual 被拒、非法 sourceType、sourceId 非法 → A0401")
     void syncValidationRejectsBadRequests() throws Exception {
         String token = adminToken();
 
         String manual = postJson("/knowledge/doc/sync", syncJson("manual", 1L), token);
-        assertEquals(40000, code(manual));
+        assertEquals("A0401", code(manual));
         assertTrue(manual.contains("手工录入"), "应引导到 /knowledge/doc/manual：" + manual);
 
-        assertEquals(40000, code(postJson("/knowledge/doc/sync", syncJson("bogus", 1L), token)));
-        // sourceId 为 0 / 缺失 → 40000（@Positive / @NotNull）
-        assertEquals(40000, code(postJson("/knowledge/doc/sync", syncJson("project", 0), token)));
-        assertEquals(40000, code(postJson("/knowledge/doc/sync", "{\"sourceType\":\"project\"}", token)));
+        assertEquals("A0401", code(postJson("/knowledge/doc/sync", syncJson("bogus", 1L), token)));
+        // sourceId 为 0 / 缺失 → A0401（@Positive / @NotNull）
+        assertEquals("A0401", code(postJson("/knowledge/doc/sync", syncJson("project", 0), token)));
+        assertEquals("A0401", code(postJson("/knowledge/doc/sync", "{\"sourceType\":\"project\"}", token)));
     }
 
     // ==================== ⑨ 权限 ====================
 
     @Test
-    @DisplayName("权限：匿名 40100、普通用户 40101、admin 放行（白名单零改动）")
+    @DisplayName("权限：匿名 A0201、普通用户 A0301、admin 放行（白名单零改动）")
     void permissionMatrix() throws Exception {
         String json = manualJson("T25权限", "T25权限正文");
 
-        assertEquals(40100, code(postJson("/knowledge/doc/manual", json, null)), "匿名应 40100");
-        assertEquals(40101, code(postJson("/knowledge/doc/manual", json, userToken())), "普通用户应 40101");
-        assertEquals(0, code(postJson("/knowledge/doc/manual", json, adminToken())), "admin 应放行");
+        assertEquals("A0201", code(postJson("/knowledge/doc/manual", json, null)), "匿名应 A0201");
+        assertEquals("A0301", code(postJson("/knowledge/doc/manual", json, userToken())), "普通用户应 A0301");
+        assertEquals("00000", code(postJson("/knowledge/doc/manual", json, adminToken())), "admin 应放行");
 
         // sync 走同一套机制，抽一条匿名验证
-        assertEquals(40100, code(postJson("/knowledge/doc/sync", syncJson("project", 1L), null)));
+        assertEquals("A0201", code(postJson("/knowledge/doc/sync", syncJson("project", 1L), null)));
     }
 
     // ==================== ⑩ 拼装规则 ====================
@@ -652,7 +652,7 @@ class AiKnowledgeIngestTest {
     // ==================== ⑪⑫ 向量化失败 ====================
 
     @Test
-    @DisplayName("向量化失败（首次）：50001 + 无残留行（不写新 hash，避免污染幂等），恢复后可重试成功")
+    @DisplayName("向量化失败（首次）：C0200 + 无残留行（不写新 hash，避免污染幂等），恢复后可重试成功")
     void embeddingFailureOnNewDocIsRetryable() throws Exception {
         String token = adminToken();
         String title = "T25失败重试_" + System.nanoTime();
@@ -661,19 +661,20 @@ class AiKnowledgeIngestTest {
 
         String failed = postJson("/knowledge/doc/manual", manualJson(title, content), token);
 
-        assertEquals(50001, code(failed), "向量化失败应 50001：" + failed);
+        // 向量化由外部 AI 服务完成 → C 类（第三方服务），不是本系统 bug
+        assertEquals("C0200", code(failed), "向量化失败应 C0200：" + failed);
         assertTrue(failed.contains("暂时不可用"), failed);
         assertEquals(0, countDocsByTitle(title), "失败不应留下 doc 行（否则新 hash 会让重试被跳过）");
 
         // 恢复后重试：同一份内容必须能成功（证明失败没有污染幂等判定）
         failEmbeddings = false;
         String retry = postJson("/knowledge/doc/manual", manualJson(title, content), token);
-        assertEquals(0, code(retry), "恢复后应可重试成功：" + retry);
+        assertEquals("00000", code(retry), "恢复后应可重试成功：" + retry);
         assertEquals(1, countDocsByTitle(title));
     }
 
     @Test
-    @DisplayName("向量化失败（重建）：50001 + 旧块与旧向量原样保留 + status=2，恢复后重建成功")
+    @DisplayName("向量化失败（重建）：C0200 + 旧块与旧向量原样保留 + status=2，恢复后重建成功")
     void embeddingFailureOnRebuildKeepsOldData() throws Exception {
         String token = adminToken();
         long projectId = createProject("T25重建失败_" + System.nanoTime(), "T25-重建失败-旧正文");
@@ -691,7 +692,7 @@ class AiKnowledgeIngestTest {
         failEmbeddings = true;
         String failed = postJson("/knowledge/doc/sync", syncJson("project", projectId), token);
 
-        assertEquals(50001, code(failed), "重建失败应 50001：" + failed);
+        assertEquals("C0200", code(failed), "重建失败应 C0200（向量化走第三方服务）：" + failed);
         assertEquals(2, rawDocStatus(docId), "重建失败应把已有文档标记 status=2");
         assertEquals(oldLiveCount, rawLiveChunkCount(docId), "旧块必须原样保留（可用性优先）");
         List<EmbeddingMatch<TextSegment>> matches = searchByText(oldChunk0);
@@ -701,7 +702,7 @@ class AiKnowledgeIngestTest {
         // 恢复后重建成功：状态回到 1、内容更新
         failEmbeddings = false;
         String retry = postJson("/knowledge/doc/sync", syncJson("project", projectId), token);
-        assertEquals(0, code(retry), "恢复后应重建成功：" + retry);
+        assertEquals("00000", code(retry), "恢复后应重建成功：" + retry);
         assertTrue(dataOf(retry).get("rebuilt").asBoolean());
         assertEquals(1, rawDocStatus(docId));
         assertTrue(rawChunkContent(docId, 0).contains("T25-重建失败-新正文"));
@@ -717,9 +718,9 @@ class AiKnowledgeIngestTest {
         long docId = Long.parseLong(dataOf(postJson("/knowledge/doc/sync", syncJson("project", projectId), token))
                 .get("docId").asString());
 
-        // 源被逻辑删除 → sync 返回 40400 并把已有文档标记为失败（status=2，content_hash 保持旧值）
+        // 源被逻辑删除 → sync 返回 A0402 并把已有文档标记为失败（status=2，content_hash 保持旧值）
         studioProjectMapper.deleteById(projectId);
-        assertEquals(40400, code(postJson("/knowledge/doc/sync", syncJson("project", projectId), token)));
+        assertEquals("A0402", code(postJson("/knowledge/doc/sync", syncJson("project", projectId), token)));
         assertEquals(2, rawDocStatus(docId), "源删除后文档应标记失败");
 
         // 源恢复（deleted_at 置回 0）且内容未变：reset 前的实现会因「hash 相同」直接 skipped，
@@ -729,7 +730,7 @@ class AiKnowledgeIngestTest {
 
         String body = postJson("/knowledge/doc/sync", syncJson("project", projectId), token);
 
-        assertEquals(0, code(body), "源恢复后应能重建：" + body);
+        assertEquals("00000", code(body), "源恢复后应能重建：" + body);
         JsonNode data = dataOf(body);
         assertFalse(data.get("skipped").asBoolean(), "失败态不应被幂等跳过：" + body);
         assertTrue(data.get("rebuilt").asBoolean(), "应走一次复位重建：" + body);

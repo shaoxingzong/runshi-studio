@@ -67,7 +67,7 @@ public interface StudioMemberService extends IService<StudioMember> {
      *
      * @param id 成员 ID
      * @return 含内部字段的成员信息（管理端视图）
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 成员不存在时抛出（40400）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 成员不存在时抛出（A0402）
      */
     MemberVO getMemberById(long id);
 

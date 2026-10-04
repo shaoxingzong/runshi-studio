@@ -1,6 +1,7 @@
 package com.bhu.runshistudioweb.config;
 
 import com.bhu.runshistudioweb.common.BaseResponse;
+import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.model.entity.SysUser;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -83,7 +84,7 @@ class JsonConfigTest {
     @Test
     @DisplayName("null 字段必须保留：BaseResponse.data 为 null 时字段不能消失")
     void nullFieldIsPreserved() {
-        BaseResponse<String> response = new BaseResponse<>(0, null, "ok");
+        BaseResponse<String> response = new BaseResponse<>(ErrorCode.SUCCESS.getCode(), null, "ok");
 
         String json = jsonMapper.writeValueAsString(response);
 

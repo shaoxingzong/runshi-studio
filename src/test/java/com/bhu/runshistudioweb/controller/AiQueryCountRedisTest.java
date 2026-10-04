@@ -136,7 +136,7 @@ class AiQueryCountRedisTest {
         long userId = createUser();
         String token = login(userId);
 
-        assertEquals(0, code(postJson("/ai/chat", "{\"message\":\"T29-第一次提问\"}", token)),
+        assertEquals("00000", code(postJson("/ai/chat", "{\"message\":\"T29-第一次提问\"}", token)),
                 "提问应成功");
 
         assertEquals(1, redisDelta(userId), "提问一次后 Redis 增量应为 1");
@@ -170,7 +170,7 @@ class AiQueryCountRedisTest {
         stringRedisTemplate.opsForValue().set(AiQueryCountConstant.keyOf(userId), "1");
 
         String body = postJson("/ai/chat", "{\"message\":\"T29-超限\"}", token);
-        assertEquals(42900, code(body), "合并值已达上限应返回 42900：" + body);
+        assertEquals("A0501", code(body), "合并值已达上限应返回 A0501：" + body);
         // 关键：此时并没有发生回刷，DB 仍是 4 ——证明预检读的是合并值而不是只看 DB
         assertEquals(4, dbCount(userId), "本用例不应依赖回刷，DB 基准应保持 4");
         assertEquals(1, redisDelta(userId), "Redis 增量仍在那里");
@@ -225,7 +225,7 @@ class AiQueryCountRedisTest {
         postJson("/ai/chat", "{\"message\":\"T29-看数字\"}", token);
         String body = mockMvc.perform(get("/user/current").header("satoken", token))
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
-        assertEquals(0, code(body), "查询当前用户应成功：" + body);
+        assertEquals("00000", code(body), "查询当前用户应成功：" + body);
         int shown = jsonMapper.readTree(body).get("data").get("aiQueryCount").asInt();
         assertEquals(1, shown, "当前用户信息应返回合并值 1（DB 0 + Redis 1），实际：" + body);
     }
@@ -284,8 +284,8 @@ class AiQueryCountRedisTest {
                 .getContentAsString(StandardCharsets.UTF_8);
     }
 
-    private int code(String body) throws Exception {
-        return jsonMapper.readTree(body).get("code").asInt();
+    private String code(String body) throws Exception {
+        return jsonMapper.readTree(body).get("code").asText();
     }
 
     private int redisDelta(long userId) {

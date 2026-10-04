@@ -40,8 +40,8 @@ import org.springframework.web.bind.annotation.RestController;
  * 因此这里用 {@code @SaCheckRole(ADMIN)} 卡死，和白名单无关。
  *
  * <p><b>白名单零改动</b>：本接口不在 {@code SaTokenMvcConfig} 的白名单里，
- * 而全局拦截器是「默认拒绝」策略——未登录访问会得到 40100，
- * 登录了但角色不够会得到 40101。这两条都是既有机制自动覆盖的，不需要额外配置。
+ * 而全局拦截器是「默认拒绝」策略——未登录访问会得到 A0201，
+ * 登录了但角色不够会得到 A0301。这两条都是既有机制自动覆盖的，不需要额外配置。
  *
  * <p>Controller 依旧只做三件事：接参、调 Service、包响应。
  * 编排（切分 → 向量化 → 事务落库 → 清理旧向量）全在 {@link KnowledgeDocService} 里。
@@ -81,7 +81,7 @@ public class KnowledgeDocController {
      */
     @PostMapping("/sync")
     @SaCheckRole(UserRoleConstant.ADMIN)
-    @Operation(summary = "【管理员】同步业务数据到知识库", description = "内容哈希未变则跳过；源不存在返回 40400 并标记失败")
+    @Operation(summary = "【管理员】同步业务数据到知识库", description = "内容哈希未变则跳过；源不存在返回 A0402 并标记失败")
     public BaseResponse<KnowledgeIngestVO> sync(@RequestBody @Valid KnowledgeSyncRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
         return ResultUtils.success(knowledgeDocService.sync(request));
@@ -116,10 +116,10 @@ public class KnowledgeDocController {
      */
     @PostMapping("/list/page")
     @SaCheckRole(UserRoleConstant.ADMIN)
-    @Operation(summary = "【管理员】知识库文档分页列表", description = "不含正文；来源类型非法返回 40000")
+    @Operation(summary = "【管理员】知识库文档分页列表", description = "不含正文；来源类型非法返回 A0401")
     public BaseResponse<Page<KnowledgeDocVO>> listDocByPage(@RequestBody KnowledgeDocQueryRequest request) {
-        // 刻意不加 @Valid：GET 式查询参数校验失败会抛 BindException 变成 50000，
-        // 这里只有「来源类型非法」需要报错，交给 Service 抛 40000
+        // 刻意不加 @Valid：GET 式查询参数校验失败会抛 BindException 变成 B0001，
+        // 这里只有「来源类型非法」需要报错，交给 Service 抛 A0401
         return ResultUtils.success(knowledgeDocService.listDocByPage(request));
     }
 
@@ -131,7 +131,7 @@ public class KnowledgeDocController {
      */
     @PostMapping("/delete")
     @SaCheckRole(UserRoleConstant.ADMIN)
-    @Operation(summary = "【管理员】删除知识库文档", description = "逻辑删文档并级联删块；文档不存在返回 40400")
+    @Operation(summary = "【管理员】删除知识库文档", description = "逻辑删文档并级联删块；文档不存在返回 A0402")
     public BaseResponse<Boolean> deleteDoc(@RequestBody @Valid DeleteRequest deleteRequest) {
         ThrowUtils.throwIf(deleteRequest == null, ErrorCode.PARAMS_ERROR);
         return ResultUtils.success(knowledgeDocService.deleteDoc(deleteRequest.getId()));
@@ -140,7 +140,7 @@ public class KnowledgeDocController {
     /**
      * 重建一篇文档（回到业务源重新读一遍正文）
      *
-     * <p><b>手工录入的文档无法重建</b>（40000）：它没有业务源可回读，
+     * <p><b>手工录入的文档无法重建</b>（A0401）：它没有业务源可回读，
      * 从块拼回正文会丢失原切分意图。提示文案直接给出可执行的替代路径——
      * 删除后重新录入，而不是让管理员自己猜。
      *
@@ -149,7 +149,7 @@ public class KnowledgeDocController {
      */
     @PostMapping("/rebuild")
     @SaCheckRole(UserRoleConstant.ADMIN)
-    @Operation(summary = "【管理员】重建知识库文档", description = "按业务源重新入库；manual 来源返回 40000")
+    @Operation(summary = "【管理员】重建知识库文档", description = "按业务源重新入库；manual 来源返回 A0401")
     public BaseResponse<KnowledgeIngestVO> rebuildDoc(@RequestBody @Valid KnowledgeRebuildRequest rebuildRequest) {
         ThrowUtils.throwIf(rebuildRequest == null, ErrorCode.PARAMS_ERROR);
         return ResultUtils.success(knowledgeDocService.rebuildDoc(rebuildRequest.getId()));

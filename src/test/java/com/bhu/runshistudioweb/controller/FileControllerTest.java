@@ -29,7 +29,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *
  * <p>验证的是「接口层面的边界」，而不是文件本身怎么写：
  * <ol>
- *     <li><b>上传必须登录</b>：/file/upload 不在白名单里，匿名调用要拿到 40100，
+ *     <li><b>上传必须登录</b>：/file/upload 不在白名单里，匿名调用要拿到 A0201，
  *     否则等于开放了一个免费图床；</li>
  *     <li><b>上传后的图片必须匿名可访问</b>：/uploads/** 在白名单里，
  *     而且 WebMvcConfig 的磁盘映射要真的生效——这条不测就很容易出现「存进去了但网页上全是裂图」。</li>
@@ -68,7 +68,7 @@ class FileControllerTest {
 
         String response = body(mockMvc.perform(multipart("/file/upload").file(file)).andReturn());
 
-        assertTrue(response.contains("40100"), "匿名上传应被拦截，实际响应：" + response);
+        assertTrue(response.contains("A0201"), "匿名上传应被拦截（未登录 A0201），实际响应：" + response);
     }
 
     @Test
@@ -88,7 +88,7 @@ class FileControllerTest {
         String uploadBody = body(mockMvc.perform(multipart("/file/upload").file(file)
                 .header("satoken", token)).andReturn());
 
-        assertTrue(uploadBody.contains("\"code\":0"), "上传失败：" + uploadBody);
+        assertTrue(uploadBody.contains("\"code\":\"00000\""), "上传失败：" + uploadBody);
         String accessPath = uploadBody.substring(uploadBody.indexOf("\"/uploads/") + 1);
         accessPath = accessPath.substring(0, accessPath.indexOf('"'));
 

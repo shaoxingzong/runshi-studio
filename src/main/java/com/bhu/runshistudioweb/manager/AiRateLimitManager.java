@@ -64,7 +64,7 @@ public class AiRateLimitManager {
      * 超限的请求不该触发后面的检索与 Embedding——那才是真正的开销。
      *
      * @param ip 客户端 IP（为 null 或空时直接放行：拿不到 IP 不能变成「拒绝所有人」）
-     * @throws BusinessException 超过任一窗口上限时抛出 42900
+     * @throws BusinessException 超过任一窗口上限时抛出 A0501
      */
     public void assertAllowed(String ip) {
         Boolean enabled = aiProperties.getGuestIpLimitsEnabled();

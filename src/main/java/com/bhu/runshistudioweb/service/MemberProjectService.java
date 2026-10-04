@@ -19,10 +19,10 @@ import java.util.List;
  *     <li>{@code ensure}＝「保证这个成员在项目成员列表里」——<b>幂等</b>，已存在就直接返回，
  *     并发撞唯一索引也静默成功。它是「新增项目 / 换队长」的内部同步动作，
  *     重复执行是<b>正常路径</b>；</li>
- *     <li>{@code bind}＝「管理员显式添加一个成员」——<b>冲突要报错</b>（40000），
+ *     <li>{@code bind}＝「管理员显式添加一个成员」——<b>冲突要报错</b>（A0401），
  *     因为管理员的显式动作如果没生效，必须让他看见。</li>
  * </ul>
- * 换队长若误用 {@code bind}，管理员每次重复保存项目都会收到 40000「该成员已参与此项目」——
+ * 换队长若误用 {@code bind}，管理员每次重复保存项目都会收到 A0401「该成员已参与此项目」——
  * 这是本任务最隐蔽的坑。
  *
  * <p><b>不变量</b>：项目队长（{@code studio_project.leader_id}）必然在关联表中有一行。
@@ -47,7 +47,7 @@ public interface MemberProjectService extends IService<StudioMemberProject> {
      *
      * @param projectId 项目 ID
      * @param memberId  成员 ID（通常是队长）
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数非法时抛出（40000）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数非法时抛出（A0401）
      */
     void ensureMemberInProject(long projectId, long memberId);
 
@@ -57,8 +57,8 @@ public interface MemberProjectService extends IService<StudioMemberProject> {
      * @param projectId 项目 ID
      * @param memberId  成员 ID
      * @return true 表示绑定成功
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数非法（40000）、
-     *         项目/成员不存在（40400）、已参与（40000）时抛出
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数非法（A0401）、
+     *         项目/成员不存在（A0402）、已参与（A0401）时抛出
      */
     boolean bindMember(long projectId, long memberId);
 
@@ -68,8 +68,8 @@ public interface MemberProjectService extends IService<StudioMemberProject> {
      * @param projectId 项目 ID
      * @param memberId  成员 ID
      * @return true 表示解绑成功
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数非法（40000）、
-     *         未参与（40400）、<b>该成员是当前队长</b>（40000）时抛出
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数非法（A0401）、
+     *         未参与（A0402）、<b>该成员是当前队长</b>（A0401）时抛出
      */
     boolean unbindMember(long projectId, long memberId);
 
@@ -77,7 +77,7 @@ public interface MemberProjectService extends IService<StudioMemberProject> {
      * 查参与某项目的全部成员（管理端视图）
      *
      * @param projectId 项目 ID
-     * @return 成员列表（按 sort_order → id 倒序）；项目不存在时抛 40400
+     * @return 成员列表（按 sort_order → id 倒序）；项目不存在时抛 A0402
      */
     List<MemberVO> listMembersByProject(long projectId);
 
@@ -85,7 +85,7 @@ public interface MemberProjectService extends IService<StudioMemberProject> {
      * 查某成员参与的全部项目（管理端视图，反向查询）
      *
      * @param memberId 成员 ID
-     * @return 项目列表（按 sort_order → created_at → id 倒序）；成员不存在时抛 40400
+     * @return 项目列表（按 sort_order → created_at → id 倒序）；成员不存在时抛 A0402
      */
     List<ProjectVO> listProjectsByMember(long memberId);
 
@@ -100,7 +100,7 @@ public interface MemberProjectService extends IService<StudioMemberProject> {
      * <p>排序与管理端一致：{@code sort_order 倒序 → created_at 倒序 → id 倒序}。
      *
      * @param memberId 成员 ID
-     * @return 脱敏项目列表；成员不存在时抛 40400
+     * @return 脱敏项目列表；成员不存在时抛 A0402
      */
     List<ProjectFrontVO> listFrontProjectsByMember(long memberId);
 
@@ -113,7 +113,7 @@ public interface MemberProjectService extends IService<StudioMemberProject> {
      * <p>排序与管理端一致：{@code sort_order 倒序 → id 倒序}。
      *
      * @param projectId 项目 ID
-     * @return 脱敏成员列表；项目不存在时抛 40400
+     * @return 脱敏成员列表；项目不存在时抛 A0402
      */
     List<MemberFrontVO> listFrontMembersByProject(long projectId);
 

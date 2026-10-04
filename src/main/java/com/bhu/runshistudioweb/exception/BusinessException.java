@@ -24,8 +24,12 @@ import lombok.Getter;
 @Getter
 public class BusinessException extends RuntimeException {
 
-    /** 业务状态码，取值来自 {@link ErrorCode} 的号段 */
-    private final int code;
+    /**
+     * 业务状态码，取值来自 {@link ErrorCode}
+     *
+     * <p>类型是 <b>String</b>：错误码是 5 位字符串（来源 A/B/C + 4 位编号），见 {@link ErrorCode}。
+     */
+    private final String code;
 
     /**
      * 直接用状态码 + 提示信息构造
@@ -34,7 +38,7 @@ public class BusinessException extends RuntimeException {
      * @param code    业务状态码
      * @param message 提示信息（会直接返回给前端）
      */
-    public BusinessException(int code, String message) {
+    public BusinessException(String code, String message) {
         super(message);
         this.code = code;
     }

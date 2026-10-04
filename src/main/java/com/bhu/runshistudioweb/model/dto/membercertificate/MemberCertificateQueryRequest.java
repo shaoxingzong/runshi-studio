@@ -20,8 +20,8 @@ import java.io.Serializable;
  *
  * <p><b>这里刻意不加 {@code @NotNull / @Valid}</b>：查询参数是 GET 传参，
  * 加校验后失败抛的是 {@code BindException}（不是 MethodArgumentNotValidException），
- * 全局异常处理器没接它 → 会落到兜底变成 50000「系统错误」，
- * 而「忘了传 memberId」明明是参数问题，应该给 40000。
+ * 全局异常处理器没接它 → 会落到兜底变成 B0001「系统错误」，
+ * 而「忘了传 memberId」明明是参数问题，应该给 A0401。
  * 所以非空与合法性判断放在 Service 里用 {@code ThrowUtils.throwIf} 完成。
  *
  * <p><b>没有分页字段</b>：一名成员的证书、一张证书的署名成员都是十几条量级，

@@ -58,3 +58,4 @@ logs/
 Thumbs.db
 *.swp
 *~
+/deploy/

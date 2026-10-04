@@ -111,7 +111,7 @@ public class MemberCertificateServiceImpl extends ServiceImpl<StudioMemberCertif
     /**
      * 解绑成员与证书（<b>物理删除</b>：本实体没有 {@code @TableLogic}）
      *
-     * <p>先查关系是否存在再删：不存在要明确返回 40400「该成员未绑定此证书」，
+     * <p>先查关系是否存在再删：不存在要明确返回 A0402「该成员未绑定此证书」，
      * 而不是返回 false 让前端去猜「是没删掉还是本来就没有」。
      */
     @Override

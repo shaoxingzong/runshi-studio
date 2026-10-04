@@ -29,7 +29,7 @@ import java.nio.file.Paths;
  *     {@code Paths.get(null)} 会抛空指针；更隐蔽的是：这类注解误用会让 javac 直接跳过注解处理，
  *     导致 Lombok 生成的 getter/setter 全部"找不到符号"，报出几百条迷惑性错误；</li>
  *     <li><b>静态资源也必须过鉴权</b>：{@code /uploads/**} 需要在 Sa-Token 白名单里
- *     （见 {@link SaTokenMvcConfig}），否则图片 URL 对未登录的游客会返回 40100，官网页面上就是一片裂图。</li>
+ *     （见 {@link SaTokenMvcConfig}），否则图片 URL 对未登录的游客会返回 A0201，官网页面上就是一片裂图。</li>
  * </ol>
  */
 @Configuration

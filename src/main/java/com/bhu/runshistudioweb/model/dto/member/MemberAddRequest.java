@@ -22,7 +22,7 @@ import java.io.Serializable;
  * <ul>
  *     <li>{@code gradeYear} 用 {@code @NotNull + @Min/@Max} 而不是 {@code @Pattern}：
  *     它是 smallint（Java 侧 Integer），如果前端把「2026级」这种字符串塞进来，
- *     Jackson 反序列化阶段就会失败，由全局异常处理器统一转成 40000，
+ *     Jackson 反序列化阶段就会失败，由全局异常处理器统一转成 A0401，
  *     不会出现「字符串混进数字列」的脏数据；区间 1950~2100 是业务上合理的范围，
  *     挡住 1800、3200 这类明显不可能的输入；</li>
  *     <li>{@code teamPosition / memberStatus} 不做注解白名单，只声明「选填」，

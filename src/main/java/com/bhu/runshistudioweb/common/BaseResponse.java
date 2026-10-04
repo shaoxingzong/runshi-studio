@@ -46,8 +46,13 @@ public class BaseResponse<T> implements Serializable {
      */
     private static final long serialVersionUID = 1L;
 
-    /** 业务状态码：0-成功，非 0-失败 */
-    private int code;
+    /**
+     * 业务状态码：{@code 00000} 表示成功，其余为失败（取值见 {@link ErrorCode}）
+     *
+     * <p>类型是 <b>String</b> 而非 int：错误码是「5 位字符串」= 来源（A/B/C）+ 4 位编号，
+     * 首位是字母，数字类型装不下。这也顺带杜绝了前端写 {@code if (code)} 把 0 当假值的写法。
+     */
+    private String code;
 
     /** 业务数据，用泛型表示（返回前无法确定具体类型）；失败时为 null */
     private T data;
@@ -63,7 +68,7 @@ public class BaseResponse<T> implements Serializable {
      * @param data    业务数据
      * @param message 提示信息
      */
-    public BaseResponse(int code, T data, String message) {
+    public BaseResponse(String code, T data, String message) {
         this.code = code;
         this.data = data;
         this.message = message;
@@ -75,7 +80,7 @@ public class BaseResponse<T> implements Serializable {
      * @param code 业务状态码
      * @param data 业务数据
      */
-    public BaseResponse(int code, T data) {
+    public BaseResponse(String code, T data) {
         this(code, data, "");
     }
 

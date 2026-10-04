@@ -38,7 +38,7 @@ public interface CertificateService extends IService<StudioCertificate> {
      *
      * @param certificateAddRequest 新增请求
      * @return 新证书 ID
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数不合法时抛出（40000）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数不合法时抛出（A0401）
      */
     long addCertificate(CertificateAddRequest certificateAddRequest);
 
@@ -47,7 +47,7 @@ public interface CertificateService extends IService<StudioCertificate> {
      *
      * @param certificateUpdateRequest 更新请求（id 必填）
      * @return true 表示更新成功
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 证书不存在（40400）或参数非法（40000）时抛出
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 证书不存在（A0402）或参数非法（A0401）时抛出
      */
     boolean updateCertificate(CertificateUpdateRequest certificateUpdateRequest);
 
@@ -56,7 +56,7 @@ public interface CertificateService extends IService<StudioCertificate> {
      *
      * @param id 证书 ID
      * @return true 表示删除成功
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 证书不存在时抛出（40400）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 证书不存在时抛出（A0402）
      */
     boolean deleteCertificate(long id);
 
@@ -64,7 +64,7 @@ public interface CertificateService extends IService<StudioCertificate> {
      * 按 id 查证书详情（返回管理端 VO）
      *
      * @param id 证书 ID
-     * @return 证书信息；不存在时抛 40400，不返回 null
+     * @return 证书信息；不存在时抛 A0402，不返回 null
      */
     CertificateVO getCertificateById(long id);
 

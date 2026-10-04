@@ -26,7 +26,7 @@ export interface StreamHandlers {
     onSources?: (sources: KnowledgeSource[]) => void;
     onDelta?: (delta: string) => void;
     onDone?: (payload: { messageId: string }) => void;
-    onError?: (payload: { code: number; message: string }) => void;
+    onError?: (payload: { code: string; message: string }) => void;
 }
 
 /**

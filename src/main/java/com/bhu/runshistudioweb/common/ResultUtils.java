@@ -13,10 +13,10 @@ import com.bhu.runshistudioweb.exception.ErrorCode;
  *
  * <p>使用约定：
  * <ul>
- *     <li>成功一律用 {@link #success(Object)}，成功码固定为 0；</li>
- *     <li>失败必须使用 {@link ErrorCode} 中定义的号段（4xxxx 客户端错误 / 5xxxx 服务端错误），
- *     不要自己临时编数字，否则前端没法归类处理；</li>
- *     <li>失败响应的 data 固定为 null，前端拿到 code != 0 时无需再看 data。</li>
+ *     <li>成功一律用 {@link #success(Object)}，成功码固定为 {@code 00000}；</li>
+ *     <li>失败必须使用 {@link ErrorCode} 中定义的号段（A 用户端 / B 当前系统 / C 第三方服务），
+ *     不要自己临时编号，否则前端没法按来源归类处理；</li>
+ *     <li>失败响应的 data 固定为 null，前端拿到 code 不为 {@code 00000} 时无需再看 data。</li>
  * </ul>
  */
 public class ResultUtils {
@@ -29,7 +29,8 @@ public class ResultUtils {
      * @return 响应对象，code 固定为 0、message 固定为 "ok"
      */
     public static <T> BaseResponse<T> success(T data) {
-        return new BaseResponse<>(0, data, "ok");
+        // 成功码取自枚举而不是手写 0：号段只有一处定义，改号段时不会漏改这里
+        return new BaseResponse<>(ErrorCode.SUCCESS.getCode(), data, ErrorCode.SUCCESS.getMessage());
     }
 
     /**
@@ -50,7 +51,7 @@ public class ResultUtils {
      * @param message 提示信息，不得包含异常堆栈等内部细节
      * @return 响应对象，data 固定为 null
      */
-    public static BaseResponse<?> error(int code, String message) {
+    public static BaseResponse<?> error(String code, String message) {
         return new BaseResponse<>(code, null, message);
     }
 

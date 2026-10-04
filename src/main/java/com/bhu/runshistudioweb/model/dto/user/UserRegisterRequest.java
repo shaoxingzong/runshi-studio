@@ -20,7 +20,7 @@ import java.io.Serializable;
  * </ul>
  *
  * <p>校验注解由 Controller 上的 {@code @Valid} 触发，失败会抛 {@code MethodArgumentNotValidException}，
- * 由全局异常处理器统一转成 40000 与第一条错误提示。
+ * 由全局异常处理器统一转成 A0401 与第一条错误提示。
  *
  * <p>注意：这里的规则必须与 {@code UserServiceImpl.userRegister} 里的手写校验保持一致，
  * 否则会出现「DTO 说 16 位、Service 说 20 位」两套标准（目前就不一致，建议统一为一处）。
