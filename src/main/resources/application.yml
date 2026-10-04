@@ -27,3 +27,12 @@ management:
     web:
       exposure:
         include: health
+
+# ===== Knife4j 接口文档：默认**关闭**，只在 dev 打开 =====
+# 放在全局默认里关闭是刻意的（安全默认值原则）：
+#   - 文档 UI 会暴露全部接口路径、参数与示例，不该对公网开放；
+#   - 以前只有 application-dev.yml 写了 enable: true，于是「生产没有显式配置」时
+#     用的是框架默认值（开启）——属于典型的安全靠侥幸；
+#   - 现在改成「默认关、dev 开」：即使将来新增 prod 配置忘了写这一项，也不会误开。
+knife4j:
+  enable: false

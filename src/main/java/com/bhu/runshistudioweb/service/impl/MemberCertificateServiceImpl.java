@@ -11,7 +11,6 @@ import com.bhu.runshistudioweb.mapper.StudioMemberMapper;
 import com.bhu.runshistudioweb.model.entity.StudioCertificate;
 import com.bhu.runshistudioweb.model.entity.StudioMember;
 import com.bhu.runshistudioweb.model.entity.StudioMemberCertificate;
-import com.bhu.runshistudioweb.model.vo.CertificateFrontVO;
 import com.bhu.runshistudioweb.model.vo.CertificateVO;
 import com.bhu.runshistudioweb.model.vo.MemberVO;
 import com.bhu.runshistudioweb.service.MemberCertificateService;
@@ -178,20 +177,9 @@ public class MemberCertificateServiceImpl extends ServiceImpl<StudioMemberCertif
         return studioMemberMapper.selectList(wrapper).stream().map(this::toMemberVO).toList();
     }
 
-    /**
-     * 查某成员持有的全部证书（<b>C 端脱敏视图</b>）
-     *
-     * <p>与管理端查询共用同一条取数逻辑（{@code selectCertificatesOfMember}），
-     * 只是换成了 {@code CertificateFrontVO}——这样两端的筛选与排序规则天然一致，
-     * 不会出现「后台看到 3 张、官网只显示 2 张」。
-     */
-    @Override
-    public List<CertificateFrontVO> listFrontCertificatesByMember(long memberId) {
-        ThrowUtils.throwIf(memberId <= 0, ErrorCode.PARAMS_ERROR, "成员 id 不合法");
-        assertMemberExists(memberId);
-
-        return selectCertificatesOfMember(memberId).stream().map(this::toCertificateFrontVO).toList();
-    }
+    // 原 listFrontCertificatesByMember(long)（C 端脱敏视图）已随「团队成员不对外展示」删除。
+    // 管理端的 listCertificatesByMember 仍复用下方同一条取数逻辑（selectCertificatesOfMember），
+    // 保证「后台看到几张、官网就看到几张」这个一致性前提不受影响。
 
     // ==================== 级联清理 ====================
 
@@ -322,11 +310,6 @@ public class MemberCertificateServiceImpl extends ServiceImpl<StudioMemberCertif
      * @param certificate 证书实体
      * @return C 端脱敏 VO
      */
-    private CertificateFrontVO toCertificateFrontVO(StudioCertificate certificate) {
-        CertificateFrontVO frontVO = new CertificateFrontVO();
-        BeanUtils.copyProperties(certificate, frontVO);
-        return frontVO;
-    }
 
     /**
      * 实体转管理端成员 VO（写法与 StudioMemberServiceImpl 一致）

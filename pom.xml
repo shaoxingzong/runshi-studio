@@ -230,6 +230,11 @@
                 <configuration>
                     <systemPropertyVariables>
                         <FILE_ROOT_DIR>${project.build.directory}/test-uploads</FILE_ROOT_DIR>
+                        <!-- 测试环境默认关闭游客 IP 限流。
+                             既有匿名提问用例极多，而 MockMvc 下所有请求的来源 IP 都是 127.0.0.1，
+                             一旦默认开启，跑到第 6 个用例就会集体 42900——那是假失败，会掩盖真实问题。
+                             限流专项测试类用 @DynamicPropertySource 覆盖为 true（优先级高于系统属性）。 -->
+                        <studio.ai.guest-ip-limits-enabled>false</studio.ai.guest-ip-limits-enabled>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

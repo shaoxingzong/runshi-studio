@@ -2,6 +2,7 @@ package com.bhu.runshistudioweb.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.bhu.runshistudioweb.constant.UserRoleConstant;
+import com.bhu.runshistudioweb.manager.AiQueryCountManager;
 import com.bhu.runshistudioweb.mapper.StudioAiMessageMapper;
 import com.bhu.runshistudioweb.mapper.StudioAiSessionMapper;
 import com.bhu.runshistudioweb.mapper.SysUserMapper;
@@ -93,6 +94,10 @@ class AiChatCrudTest {
     @Resource
     private JsonMapper jsonMapper;
 
+    /** 配额计数走 Redis，测试里读「用量」必须取合并值（DB 基准 + Redis 增量） */
+    @Resource
+    private AiQueryCountManager aiQueryCountManager;
+
     // ==================== 本地 AI Stub ====================
 
     /** Stub 服务：只认识 /chat/completions，其余路径一律 404 */
@@ -130,7 +135,10 @@ class AiChatCrudTest {
         registry.add("studio.ai.base-url", () -> "http://127.0.0.1:" + port);
         registry.add("studio.ai.api-key", () -> "test-key");
         registry.add("studio.ai.model", () -> "test-model");
-        registry.add("studio.ai.system-prompt", () -> "你是测试助手");
+        // 提示词改为「文件位置」：这里指向测试专用文件（src/test/resources/prompts/test-system-prompt.txt）。
+        // 断言仍校验模型收到的首条消息是「你是测试助手」——于是这条用例从「配置透传」
+        // 升级成「文件 → 模型」全链路验证，且与线上真实话术文本解耦
+        registry.add("studio.ai.system-prompt-location", () -> "classpath:prompts/test-system-prompt.txt");
         // 配额上限调小：让「超限 42900」用例不必真的问 100 次
         registry.add("studio.ai.query-limit", () -> 3);
     }
@@ -227,7 +235,9 @@ class AiChatCrudTest {
         // 走 JdbcTemplate 直查库：不受 MyBatis 一级缓存影响，读到的是真实库值
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT ai_query_count FROM sys_user WHERE id=?", Integer.class, userId);
-        return count == null ? 0 : count;
+        // 计数先进 Redis、由定时任务回刷 DB，
+        // 因此「用户实际用量」= DB 基准 + Redis 未落库增量，只读 DB 会读到回刷前的旧值
+        return aiQueryCountManager.merge(userId, count);
     }
 
     // ==================== ① 白名单与鉴权 ====================
@@ -251,7 +261,8 @@ class AiChatCrudTest {
         assertEquals(40100, code(postJson("/member/add", "{}", null)));
 
         // 既有公开接口回归：仍匿名可用
-        assertEquals(0, code(getBody("/member/list", null)));
+        // （成员接口已按「团队成员不对外展示」整体删除，访问得到 404 且响应体为空，
+        //   相关断言集中放在 StudioMemberCrudTest#anonymousCanBrowseFrontListButNotAdmin，）
         assertEquals(0, code(getBody("/project/list", null)));
     }
 

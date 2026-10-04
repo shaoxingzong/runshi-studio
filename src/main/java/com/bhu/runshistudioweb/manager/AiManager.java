@@ -4,6 +4,7 @@ import cn.hutool.core.util.StrUtil;
 import com.bhu.runshistudioweb.config.AiProperties;
 import com.bhu.runshistudioweb.exception.BusinessException;
 import com.bhu.runshistudioweb.exception.ErrorCode;
+import com.bhu.runshistudioweb.exception.ThrowUtils;
 import com.bhu.runshistudioweb.model.enums.AiMessageRoleEnum;
 import com.bhu.runshistudioweb.model.vo.AiMessageVO;
 import dev.langchain4j.data.message.AiMessage;
@@ -12,16 +13,23 @@ import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.StreamingChatModel;
+import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.chat.response.StreamingChatResponseHandler;
+import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
+import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
+import dev.langchain4j.model.output.Response;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.ResourceLoader;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -107,6 +115,23 @@ public class AiManager {
     private AiProperties aiProperties;
 
     /**
+     * 资源加载器：用来读取系统提示词文件
+     *
+     * <p>它同时支持 {@code classpath:} 与 {@code file:} 两种前缀，
+     * 因此「随包发布」和「指向服务器文件」两种部署方式不用改代码，只改配置
+     */
+    @Resource
+    private ResourceLoader resourceLoader;
+
+    /**
+     * 系统提示词内容：启动时从 {@link AiProperties#getSystemPromptLocation()} 读一次，之后不变
+     *
+     * <p>默认为空字符串而不是 null：配合 {@code StrUtil.isNotBlank} 判断，
+     * 空值就是「这次请求不带 system 消息」，不用再判一次 null
+     */
+    private String systemPrompt = "";
+
+    /**
      * 只依赖 {@link ChatModel} 接口，不持有具体实现：
      * 将来换流式模型或换服务商时，改动被限制在 {@link #initChatModel()} 里
      */
@@ -122,13 +147,33 @@ public class AiManager {
     private StreamingChatModel streamingChatModel;
 
     /**
-     * 初始化模型客户端（{@code @PostConstruct} 保证配置已绑定完成）
+     * 向量模型（Embedding）：把文本变成向量，RAG 入库与检索都要用
+     *
+     * <p>与对话模型一样，只依赖 LangChain4j 的 {@link EmbeddingModel} 接口：
+     * 将来换向量模型（或换成本地模型）只动 {@link #initModels()}。
+     */
+    private EmbeddingModel embeddingModel;
+
+    /**
+     * 启动初始化：先加载系统提示词，再构建三个模型客户端
+     * （{@code @PostConstruct} 保证配置已绑定完成）
+     *
+     * <p><b>提示词加载放在最前面、且无条件执行</b>：它不依赖 AI 是否配置好。
+     * 否则「本地不配 api-key」时提示词不会被加载，等线上配置生效后才发现话术是空的，
+     * 问题会藏得很深。
+     *
+     * <p>为什么一个方法建三个模型：它们共用同一份 {@code studio.ai.*} 配置，
+     * 且「未配置」的处理完全一致——放在一处才能确保
+     * 「对话可用但向量不可用」这种半配置状态不会出现。
      *
      * <p>未配置 base-url / api-key 时<b>不构建、也不抛异常</b>：
-     * 本地不配 AI 也能正常启动应用，真正调用时返回 50001（见 {@link #chat}）。
+     * 本地不配 AI 也能正常启动应用，真正调用时才返回 50001（见各方法内的判断）。
      */
     @PostConstruct
-    void initChatModel() {
+    void initModels() {
+        // 无条件先加载提示词：与后面是否构建模型无关
+        loadSystemPrompt();
+
         if (StrUtil.isBlank(aiProperties.getBaseUrl()) || StrUtil.isBlank(aiProperties.getApiKey())) {
             // 只提示「缺什么」，绝不打印密钥内容
             log.warn("AI 未配置完整（base-url={} / apiKeyConfigured={}），提问接口将返回 50001；"
@@ -158,21 +203,77 @@ public class AiManager {
                 .timeout(REQUEST_TIMEOUT)
                 .build();
 
-        log.info("AI 客户端初始化完成 | baseUrl={} | model={} | timeout={}s | maxRetries={}",
-                aiProperties.getBaseUrl(), aiProperties.getModel(),
+        // 向量模型：同一套 base-url / api-key，但用独立的模型名（studio.ai.embedding-model）。
+        // 超时与重试跟对话模型保持一致——向量化同样是一次外部 HTTP，必须设天花板上限
+        this.embeddingModel = OpenAiEmbeddingModel.builder()
+                .baseUrl(aiProperties.getBaseUrl())
+                .apiKey(aiProperties.getApiKey())
+                .modelName(aiProperties.getEmbeddingModel())
+                .timeout(REQUEST_TIMEOUT)
+                .maxRetries(MAX_RETRIES)
+                .build();
+
+        log.info("AI 客户端初始化完成 | baseUrl={} | model={} | embeddingModel={} | timeout={}s | maxRetries={}",
+                aiProperties.getBaseUrl(), aiProperties.getModel(), aiProperties.getEmbeddingModel(),
                 REQUEST_TIMEOUT.toSeconds(), MAX_RETRIES);
+    }
+
+    /**
+     * 启动时加载系统提示词（<b>只读一次</b>）
+     *
+     * <p><b>为什么只在启动时读</b>：
+     * <ul>
+     *     <li>同一次运行内提示词不该漂移——否则同一段对话前后两句的语气约束可能不一致；</li>
+     *     <li>避免每次提问都产生一次文件 IO（匿名接口，流量不可控）。</li>
+     * </ul>
+     * 代价是<b>改完文件要重启</b>才生效，这与「话术是随包资源」的定位一致；
+     * 需要热更新时用 {@code file:} 前缀指向服务器文件，改完重启即可（仍比重新打包快）。
+     *
+     * <p><b>失败策略：warn + 置空，绝不抛异常</b>——与「AI 不配也能启动」是同一条纪律。
+     * 提示词缺失只是让回答少了身份约束，不该让整个应用起不来。
+     *
+     * <p><b>剥 BOM 与 strip</b>：Windows 编辑器保存的 UTF-8 文件常带 {@code ﻿} 前缀，
+     * 不剥掉的话它会成为提示词的第一个字符（肉眼看不出来，但会污染 system 消息）；
+     * {@code strip()} 去掉文件末尾的换行，避免提示词尾部带多余空白。
+     */
+    private void loadSystemPrompt() {
+        String location = aiProperties.getSystemPromptLocation();
+        try {
+            // 用全限定名：本类已导入 jakarta.annotation.Resource，两个 Resource 会撞名
+            org.springframework.core.io.Resource resource = resourceLoader.getResource(location);
+            if (!resource.exists()) {
+                // 配置文件里写了位置但文件不在：明确 warn，让人一眼看出是路径写错还是忘了放文件
+                log.warn("系统提示词文件不存在，本次运行不带 system 消息 | location={}", location);
+                return;
+            }
+            String content = resource.getContentAsString(StandardCharsets.UTF_8);
+            // 剥 BOM + 去首尾空白（详见 javadoc）
+            if (content.startsWith("\uFEFF")) {
+                content = content.substring(1);
+            }
+            this.systemPrompt = content.strip();
+            // 只记位置与长度：提示词全文可能与运营口径相关，但没必要进日志；
+            // 长度足以用来确认「文件换了、内容确实变了」
+            log.info("系统提示词加载完成 | location={} | length={}", location, this.systemPrompt.length());
+        } catch (Exception e) {
+            log.warn("系统提示词加载失败，本次运行不带 system 消息 | location={}", location, e);
+            this.systemPrompt = "";
+        }
     }
 
     /**
      * 带上下文调用 AI，返回回答正文
      *
-     * @param systemPrompt 系统提示词（约束身份与语气，来自配置）
-     * @param history      上下文消息（<b>时间正序</b>，由 Service 取最近 N 条），可为空
-     * @param userMessage  本次提问
+     * <p><b>为什么不再把 system 提示词当参数传</b>：它启动时已从文件加载进字段
+     * {@link #systemPrompt}，调用方不需要知道它从哪来。让调用方传，等于要求
+     * 每个调用点都去 AiProperties 取值——那正是「提示词放哪」这个实现细节的泄露。
+     *
+     * @param history     上下文消息（<b>时间正序</b>，由 Service 取最近 N 条），可为空
+     * @param userMessage 本次提问
      * @return AI 回答正文（已校验非空）
      * @throws BusinessException 未配置、调用失败或回答为空时抛出（50001）
      */
-    public String chat(String systemPrompt, List<AiMessageVO> history, String userMessage) {
+    public String chat(List<AiMessageVO> history, String userMessage) {
         // 未配置时直接失败：ApplicationContext 已经起来了，这里只影响这一次调用
         if (chatModel == null) {
             log.warn("调用 AI 失败：studio.ai.base-url 或 api-key 未配置（本地不配置不影响其它接口）");
@@ -180,7 +281,7 @@ public class AiManager {
         }
 
         ChatRequest chatRequest = ChatRequest.builder()
-                .messages(buildMessages(systemPrompt, history, userMessage))
+                .messages(buildMessages(history, userMessage))
                 .build();
 
         ChatResponse chatResponse;
@@ -213,23 +314,21 @@ public class AiManager {
      * 代价是断连后仍消耗一次模型调用；收益是代码简单、且不会出现「半截流已被计费但没落库」。
      * 调用方通过「不再累积、不再落库、不计数」来表达中断语义（见 AiChatServiceImpl）。
      *
-     * @param systemPrompt 系统提示词
-     * @param history      上下文消息（时间正序），可为空
-     * @param userMessage  本次提问
-     * @param onDelta      每收到一段增量时的回调（可为 null，表示只关心最终结果）
+     * @param history     上下文消息（时间正序），可为空
+     * @param userMessage 本次提问
+     * @param onDelta     每收到一段增量时的回调（可为 null，表示只关心最终结果）
      * @return 完整回答（取自模型的最终响应，而不是自己拼接的增量——两者理论上一致，
      *         但以模型为准可以避免「增量丢失导致落库内容缺字」）
      * @throws BusinessException 未配置、调用失败或回答为空时抛出（50001）
      */
-    public String chatStream(String systemPrompt, List<AiMessageVO> history, String userMessage,
-                             Consumer<String> onDelta) {
+    public String chatStream(List<AiMessageVO> history, String userMessage, Consumer<String> onDelta) {
         if (streamingChatModel == null) {
             log.warn("调用 AI 失败：studio.ai.base-url 或 api-key 未配置（本地不配置不影响其它接口）");
             throw new BusinessException(ErrorCode.OPERATION_ERROR, AI_UNAVAILABLE_MESSAGE);
         }
 
         ChatRequest chatRequest = ChatRequest.builder()
-                .messages(buildMessages(systemPrompt, history, userMessage))
+                .messages(buildMessages(history, userMessage))
                 .build();
 
         AtomicReference<ChatResponse> responseRef = new AtomicReference<>();
@@ -289,20 +388,63 @@ public class AiManager {
     }
 
     /**
+     * 批量向量化：把一批文本变成向量（RAG 入库的第一步）
+     *
+     * <p><b>为什么是批量而不是逐条</b>：Embedding 接口一次可以收一批文本，
+     * 逐条调用会把「一次 HTTP」放大成 N 次——网络往返与限流风险都翻 N 倍。
+     * 这也和本项目其它「批量」纪律同源（场景 E 的 messageCount、场景 H 的回查）。
+     *
+     * <p><b>返回顺序必须与入参一一对应</b>：调用方要用第 i 个向量对应第 i 个切分块，
+     * 因此这里额外校验了数量一致——数量对不上时宁可报错，
+     * 也不能让向量与块错位（错位会导致检索命中内容张冠李戴，且极难排查）。
+     *
+     * @param texts 待向量化的文本（非空）
+     * @return 与入参顺序一致的向量列表
+     * @throws BusinessException 未配置、调用失败或返回数量不符时抛出（50001，与对话同文案）
+     */
+    public List<Embedding> embedAll(List<String> texts) {
+        if (embeddingModel == null) {
+            log.warn("调用 Embedding 失败：studio.ai.base-url 或 api-key 未配置（本地不配置不影响其它接口）");
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, AI_UNAVAILABLE_MESSAGE);
+        }
+        ThrowUtils.throwIf(texts == null || texts.isEmpty(), ErrorCode.PARAMS_ERROR, "待向量化的文本为空");
+
+        // LangChain4j 的 embedAll 收 TextSegment：这里先包一层，
+        // 让上层只跟「字符串」打交道（切分块的文本本身就是字符串）
+        List<TextSegment> segments = texts.stream().map(TextSegment::from).toList();
+        try {
+            Response<List<Embedding>> response = embeddingModel.embedAll(segments);
+            List<Embedding> embeddings = response == null ? null : response.content();
+            ThrowUtils.throwIf(embeddings == null || embeddings.size() != texts.size(),
+                    ErrorCode.OPERATION_ERROR, AI_UNAVAILABLE_MESSAGE);
+            return embeddings;
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            // 超时、限流、协议错误都收敛成同一句提示，不把服务商的原始报文带出去
+            log.error("调用 Embedding 服务失败 | baseUrl={} | model={} | 文本数={}",
+                    aiProperties.getBaseUrl(), aiProperties.getEmbeddingModel(), texts.size(), e);
+            throw new BusinessException(ErrorCode.OPERATION_ERROR, AI_UNAVAILABLE_MESSAGE);
+        }
+    }
+
+    /**
      * 组装消息列表：system 提示词 + 历史消息 + 本次提问
      *
      * <p>顺序遵循协议要求（时间正序），模型把<b>最后一条</b>当作「当前问题」；
      * system 消息始终在最前，用来约束身份与语气。
      *
-     * @param systemPrompt 系统提示词
-     * @param history      历史消息（可空）
-     * @param userMessage  本次提问
+     * <p>提示词取自字段 {@link #systemPrompt}（启动时从文件加载）：
+     * 为空时<b>跳过 system 消息</b>而不是报错——这与「AI 不配也能启动」是同一条纪律，
+     * 少一句身份约束不影响聊天本身可用。
+     *
+     * @param history     历史消息（可空）
+     * @param userMessage 本次提问
      * @return LangChain4j 的消息列表
      */
-    private List<ChatMessage> buildMessages(String systemPrompt, List<AiMessageVO> history,
-                                            String userMessage) {
+    private List<ChatMessage> buildMessages(List<AiMessageVO> history, String userMessage) {
         List<ChatMessage> messages = new ArrayList<>();
-        // ① 系统提示词
+        // ① 系统提示词：为空（文件缺失/未配置）就不发这条消息，聊天照常可用
         if (StrUtil.isNotBlank(systemPrompt)) {
             messages.add(SystemMessage.from(systemPrompt));
         }

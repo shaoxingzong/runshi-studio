@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.exception.ThrowUtils;
+import com.bhu.runshistudioweb.manager.AiQueryCountManager;
 import com.bhu.runshistudioweb.mapper.SysUserMapper;
 import com.bhu.runshistudioweb.model.dto.user.UserAddRequest;
 import com.bhu.runshistudioweb.model.dto.user.UserQueryRequest;
@@ -17,6 +18,7 @@ import com.bhu.runshistudioweb.model.vo.LoginUserVO;
 import com.bhu.runshistudioweb.model.vo.UserVO;
 import com.bhu.runshistudioweb.service.UserService;
 import com.bhu.runshistudioweb.utils.PasswordUtils;
+import jakarta.annotation.Resource;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
@@ -66,6 +68,15 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
     /** 分页每页条数的默认值与上限（上限是用来防「一次拉全表」的） */
     private static final long DEFAULT_PAGE_SIZE = 10L;
     private static final long MAX_PAGE_SIZE = 50L;
+
+    /**
+     * AI 提问配额计数
+     *
+     * <p>只用于「读出合并值」：登录信息里的 {@code aiQueryCount} 必须是
+     * 「DB 基准 + Redis 未落库增量」，否则用户刚问完就看不出数字变化。
+     */
+    @Resource
+    private AiQueryCountManager aiQueryCountManager;
 
     // ==================== C 端：用户自己 ====================
 
@@ -198,6 +209,12 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         // 用属性名自动拷贝，避免手写一长串 setXxx（漏一个字段就是线上 bug）；
         // VO 中没有 userPassword 字段，因此密码哈希串**不会**被拷贝进去，这是脱敏的关键
         BeanUtils.copyProperties(user, loginUserVO);
+        // aiQueryCount 覆盖为合并值：库里的是「基准」，最近几次提问的增量还在 Redis 里
+        // 等定时回刷。只返回库值的话，用户会看到「问了好几次，数字一动不动」
+        if (user.getId() != null) {
+            loginUserVO.setAiQueryCount(
+                    aiQueryCountManager.merge(user.getId(), user.getAiQueryCount()));
+        }
         return loginUserVO;
     }
 

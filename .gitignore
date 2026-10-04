@@ -35,3 +35,10 @@ build/
 ### 本地参考源码副本（保留在磁盘供查阅，但不参与版本管理）###
 # 根目录下的 ai-code-helper-master 是参考项目源码副本，只做本地参考，不应被提交
 /ai-code-helper-master/
+
+### 本地私有配置：含密钥/服务商地址，绝不提交 ###
+# application-dev.yml 用 spring.config.import 引入它；文件不存在也能正常启动
+application-local.yml
+**/application-local.yml
+*.env
+.env*

@@ -2,12 +2,9 @@ package com.bhu.runshistudioweb.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.bhu.runshistudioweb.mapper.StudioCertificateMapper;
-import com.bhu.runshistudioweb.mapper.StudioMemberMapper;
 import com.bhu.runshistudioweb.model.entity.StudioCertificate;
-import com.bhu.runshistudioweb.model.entity.StudioMember;
 import com.bhu.runshistudioweb.model.enums.CertificateLevelEnum;
 import com.bhu.runshistudioweb.model.enums.CertificateTypeEnum;
-import com.bhu.runshistudioweb.model.enums.MemberStatusEnum;
 import com.bhu.runshistudioweb.model.vo.StatisticOverviewVO;
 import com.bhu.runshistudioweb.service.StatisticService;
 import jakarta.annotation.Resource;
@@ -26,7 +23,7 @@ import java.util.Map;
  *
  * <p><b>三条强制口径（改本类前先读）</b>：
  * <ol>
- *     <li><b>一律排除逻辑删除数据</b>：studio_member / studio_certificate 都带
+ *     <li><b>一律排除逻辑删除数据</b>：studio_certificate 带
  *     {@code @TableLogic deletedAt}，MyBatis-Plus 会自动把 {@code deleted_at = 0}
  *     追加到查询条件里（包括 {@code selectCount} 与 {@code selectMaps}）。
  *     <b>这个条件是"看不见"的</b>——它不在我们写的代码里，只在最终 SQL 里，
@@ -57,8 +54,9 @@ import java.util.Map;
  *     当前路径为什么够用，不是要求我们优化）。</li>
  * </ul>
  *
- * <p><b>本期范围</b>：只覆盖成员与证书，项目模块（{@code studio_project}）还没实现。
- * 等它落地后在 VO 加字段、这里加对应查询即可，接口路径与响应结构都不用改。
+ * <p><b>本期范围：只覆盖证书维度</b>。
+ * 项目模块（{@code studio_project}）落地后在 VO 加字段、这里加对应查询即可，
+ * 接口路径与响应结构都不用改；管理端若将来需要人数统计，应另开一个要求 admin 的接口。
  */
 @Service
 public class StatisticServiceImpl implements StatisticService {
@@ -71,18 +69,16 @@ public class StatisticServiceImpl implements StatisticService {
     private static final String COUNT_ALIAS = "cnt";
 
     /** 分组列名：硬编码常量，不是用户输入，不存在注入风险 */
-    private static final String MEMBER_STATUS_COLUMN = "member_status";
     private static final String AWARD_LEVEL_COLUMN = "award_level";
     private static final String AWARD_TYPE_COLUMN = "award_type";
-
-    @Resource
-    private StudioMemberMapper studioMemberMapper;
 
     @Resource
     private StudioCertificateMapper studioCertificateMapper;
 
     /**
-     * 查询官网首页大盘：共 5 条查询，顺序即实现顺序
+     * 查询官网首页大盘：共 3 条查询，顺序即实现顺序
+     *
+     * <p>成员维度（总数 / 在读 / 已毕业）已随「团队成员不对外展示」移除。
      *
      * @return 大盘统计，永不为 null
      */
@@ -90,27 +86,11 @@ public class StatisticServiceImpl implements StatisticService {
     public StatisticOverviewVO getOverview() {
         StatisticOverviewVO overview = new StatisticOverviewVO();
 
-        // ① 成员总数：selectCount(null) 表示无附加条件，
+        // ① 证书总数：selectCount(null) 表示无附加条件，
         // 但 MP 仍会自动拼上 deleted_at = 0（逻辑删除条件由 @TableLogic 驱动，与入参无关）
-        overview.setMemberTotal(toInt(studioMemberMapper.selectCount(null)));
-
-        // ② 成员按状态分组：拿到 0 / 1 两个桶的计数
-        QueryWrapper<StudioMember> memberStatusWrapper = new QueryWrapper<>();
-        memberStatusWrapper.select(MEMBER_STATUS_COLUMN, "COUNT(*) AS " + COUNT_ALIAS)
-                .groupBy(MEMBER_STATUS_COLUMN);
-        Map<String, Integer> statusCount =
-                toCountMap(studioMemberMapper.selectMaps(memberStatusWrapper), MEMBER_STATUS_COLUMN);
-        // 用 String.valueOf 拼接 key：与 toCountMap 里 String.valueOf(key) 的写法保持一致。
-        // 某个状态没有成员时 getOrDefault 兜 0——GROUP BY 不会返回 0 条的那一行
-        overview.setMemberInTeam(
-                statusCount.getOrDefault(String.valueOf(MemberStatusEnum.IN_TEAM.getValue()), 0));
-        overview.setMemberGraduated(
-                statusCount.getOrDefault(String.valueOf(MemberStatusEnum.GRADUATED.getValue()), 0));
-
-        // ③ 证书总数
         overview.setCertificateTotal(toInt(studioCertificateMapper.selectCount(null)));
 
-        // ④ 证书按级别分组（key 固定为级别枚举的三个取值，缺位补 0）
+        // ② 证书按级别分组（key 固定为级别枚举的三个取值，缺位补 0）
         QueryWrapper<StudioCertificate> levelWrapper = new QueryWrapper<>();
         levelWrapper.select(AWARD_LEVEL_COLUMN, "COUNT(*) AS " + COUNT_ALIAS)
                 .groupBy(AWARD_LEVEL_COLUMN);
@@ -119,7 +99,7 @@ public class StatisticServiceImpl implements StatisticService {
                 AWARD_LEVEL_COLUMN,
                 enumValues(CertificateLevelEnum.values(), CertificateLevelEnum::getValue)));
 
-        // ⑤ 证书按类型分组（key 固定为类型枚举的四个取值，缺位补 0）
+        // ③ 证书按类型分组（key 固定为类型枚举的四个取值，缺位补 0）
         QueryWrapper<StudioCertificate> typeWrapper = new QueryWrapper<>();
         typeWrapper.select(AWARD_TYPE_COLUMN, "COUNT(*) AS " + COUNT_ALIAS)
                 .groupBy(AWARD_TYPE_COLUMN);

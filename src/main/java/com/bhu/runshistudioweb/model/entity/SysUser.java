@@ -93,7 +93,15 @@ public class SysUser implements Serializable {
     private Integer userStatus;
 
     /**
-     * AI 查询次数：热点行，每次提问都会 UPDATE 同一行，高并发下存在行锁竞争（风险 R1，）
+     * AI 查询次数（<b>基准值</b>，不是实时用量）
+     *
+     * <p>它不再是「每次提问都要写」的热点行（风险 R1 已收口）：
+     * 提问的增量先进 Redis（{@code INCR}，在数据库事务外），
+     * 由定时任务批量回刷到本字段。
+     *
+     * <p>因此<b>读的时候必须取「本字段 + Redis 增量」的合并值</b>
+     * （见 {@code AiQueryCountManager#merge}）——只查这里会读到回刷前的旧值，
+     * 表现为「用户问了好几次，数字一动不动」。
      */
     private Integer aiQueryCount;
 

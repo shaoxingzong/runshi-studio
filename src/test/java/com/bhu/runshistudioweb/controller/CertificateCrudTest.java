@@ -201,12 +201,17 @@ class CertificateCrudTest {
                 "/uploads/2.png", 9), token);
 
         List<CertificateFrontVO> list = certificateService.listFrontCertificates(null);
+        List<String> titles = list.stream().map(CertificateFrontVO::getTitle).toList();
         assertTrue(list.size() >= 2, "列表至少应有两条记录，实际：" + list.size());
-        // 置顶权重高的排在最前（哪怕它的获奖日期更早）——这就是「先按 sort_order 倒序」的含义
-        assertEquals("高权重旧日期", list.get(0).getTitle(),
-                "默认排序应先按 sort_order 倒序，实际首条：" + list.get(0).getTitle());
-        assertEquals("低权重新日期", list.get(1).getTitle(),
-                "第二条的 sort_order 更小，实际：" + list.get(1).getTitle());
+
+        // 断言**这两条的相对顺序**，而不是「首条必须是高权重」。
+        // 为什么：库里可能已有演示数据（它们的置顶权重可能更高），
+        // 那样 list.get(0) 就不是本用例建的那条——那是把环境当成前提，不是排序有 bug。
+        int idxHigh = titles.indexOf("高权重旧日期");
+        int idxLow = titles.indexOf("低权重新日期");
+        assertTrue(idxHigh >= 0 && idxLow >= 0, "本用例建的两条都应出现在列表中，实际：" + titles);
+        assertTrue(idxHigh < idxLow,
+                "置顶权重高的应排在前面（哪怕获奖日期更早）——这就是「先按 sort_order 倒序」的含义，实际：" + titles);
     }
 
     @Test

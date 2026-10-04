@@ -106,6 +106,16 @@ class StudioMemberCrudTest {
         return mockMvc.perform(request).andReturn().getResponse().getContentAsString();
     }
 
+    /**
+     * 取 HTTP 状态码
+     *
+     * <p>用途：被删除的接口返回 404 且<b>响应体为空</b>（不存在 handler 时，
+     * MVC 拦截器不执行，也就没有统一的 40100 响应体），此时 code(body) 无法判读。
+     */
+    private int statusOf(String path) throws Exception {
+        return mockMvc.perform(get(path)).andReturn().getResponse().getStatus();
+    }
+
     /** 从响应 JSON 中取出 data.code */
     private int code(String body) {
         int start = body.indexOf("\"code\":") + 7;
@@ -135,24 +145,26 @@ class StudioMemberCrudTest {
     // ==================== 1. 鉴权边界 ====================
 
     @Test
-    @DisplayName("鉴权：C 端 /member/list 匿名可访问；管理端接口匿名 40100")
+    @DisplayName("鉴权：成员对外接口已整体删除（404）；管理端接口匿名 40100")
     void anonymousCanBrowseFrontListButNotAdmin() throws Exception {
-        // C 端公开列表：不带 token 必须成功（游客看官网成员页）
-        String name = uniqueName("front");
         long adminId = insertUser("fAdmin" + (System.nanoTime() % 100000), UserRoleConstant.ADMIN);
         String token = login(findAccount(adminId));
         String addBody = postJson("/member/add",
-                "{\"name\":\"" + name + "\",\"gradeYear\":2022}", token);
+                "{\"name\":\"" + uniqueName("front") + "\",\"gradeYear\":2022}", token);
         assertEquals(0, code(addBody), "新增失败：" + addBody);
 
-        String frontBody = getBody("/member/list", null);
-        assertEquals(0, code(frontBody), "匿名访问 /member/list 应放行（白名单）：" + frontBody);
-        assertTrue(frontBody.contains(name), "公开列表应包含刚创建的成员");
-        // 脱敏：C 端 VO 不得出现内部字段
-        assertFalse(frontBody.contains("\"userId\""), "C 端列表泄露了 userId：" + frontBody);
-        assertFalse(frontBody.contains("\"sortOrder\""), "C 端列表泄露了 sortOrder：" + frontBody);
+        //「团队成员不对外展示」：原先匿名放行的三个成员接口已整体删除。
+        //
+        // ⚠️ 断言方式很关键（这是本次改动最容易踩的坑）：
+        // **Sa-Token 的 MVC 拦截器只在「匹配到 handler」时才执行**，
+        // 接口被删掉后请求根本进不了拦截器链，于是拿到的是 404 且**响应体为空**。
+        // 因此不能用 code(body) 判读（body 为空会 StringIndexOutOfBounds），
+        // 只能看 HTTP 状态码；同时也说明「40100」这个预期在这里是错的。
+        assertEquals(404, statusOf("/member/list"), "成员对外列表不应存在");
+        assertEquals(404, statusOf("/member/detail?id=1"), "成员对外详情不应存在");
+        assertEquals(404, statusOf("/member/certificate/list?memberId=1"), "按成员查证书的对外接口不应存在");
 
-        // 管理端接口不在白名单：匿名访问应 40100
+        // 管理端接口仍在、且不在白名单：匿名访问应 40100（这里拦截器能生效）
         assertEquals(40100, code(getBody("/member/list/page", null)), "管理端列表匿名访问应 40100");
         assertEquals(40100, code(postJson("/member/add", "{\"name\":\"x\",\"gradeYear\":2022}", null)));
         assertEquals(40100, code(getBody("/member/get?id=1", null)));
@@ -329,14 +341,8 @@ class StudioMemberCrudTest {
         assertTrue(idxTop >= 0 && idxMid > idxTop && idxZero > idxMid,
                 "默认排序应为 sort_order 倒序（100 → 50 → 0），实际响应：" + listBody);
 
-        // C 端公开列表：即使带上 sortField=id&sortOrder=asc 也必须忽略，维持置顶排序
-        String frontBody = getBody("/member/list?gradeYear=2023&name=sort&sortField=id&sortOrder=asc", null);
-        assertEquals(0, code(frontBody));
-        int fTop = frontBody.indexOf(nameTop);
-        int fMid = frontBody.indexOf(nameMid);
-        int fZero = frontBody.indexOf(nameZero);
-        assertTrue(fTop >= 0 && fMid > fTop && fZero > fMid,
-                "C 端列表固定按 sort_order 倒序，不应响应 sortField： " + frontBody);
+        // 原「C 端公开列表即使传 sortField 也必须忽略」那一段已随该接口下线删除。
+        // 上面管理端那条断言已经守住了「默认排序 = sort_order 倒序」这个行为。
     }
 
     // ==================== 私有小工具 ====================

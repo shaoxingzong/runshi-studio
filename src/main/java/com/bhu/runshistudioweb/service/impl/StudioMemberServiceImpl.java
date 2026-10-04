@@ -16,8 +16,6 @@ import com.bhu.runshistudioweb.model.entity.StudioMember;
 import com.bhu.runshistudioweb.model.entity.SysUser;
 import com.bhu.runshistudioweb.model.enums.MemberStatusEnum;
 import com.bhu.runshistudioweb.model.enums.TeamPositionEnum;
-import com.bhu.runshistudioweb.model.vo.CertificateFrontVO;
-import com.bhu.runshistudioweb.model.vo.MemberDetailFrontVO;
 import com.bhu.runshistudioweb.model.vo.MemberFrontVO;
 import com.bhu.runshistudioweb.model.vo.MemberVO;
 import com.bhu.runshistudioweb.model.vo.ProjectFrontVO;
@@ -298,93 +296,17 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
 
     // ==================== C 端：游客可访问 ====================
 
-    /**
-     * C 端公开分页列表（游客可访问，接口契约见 StudioMemberService）
-     *
-     * <p><b>与后台分页查询的差别</b>：只使用分页参数，<b>不使用</b>排序参数——
-     * 公开接口的排序规则由产品定义，不接受请求方指定（既缩小可被利用的输入面，
-     * 也避免前端随意排序破坏「置顶」这个产品能力）。
-     *
-     * <p><b>枚举校验必须前置</b>：{@code teamPosition / memberStatus} 是闭集取值，
-     * 非法值若只是「查不到」，用户会以为是搜索条件写错了（排查方向被带偏），
-     * 因此这里明确抛 40000 并在提示里列出全部合法取值。
-     * 反过来 {@code gradeYear} 不校验区间：年份是开集，「2026 年没有成员」就是正确答案。
-     *
-     * @param memberQueryRequest 查询条件，允许为 null
-     * @return 分页结果，记录为脱敏后的 {@link MemberFrontVO}
-     */
-    @Override
-    public Page<MemberFrontVO> listFrontMembers(MemberQueryRequest memberQueryRequest) {
-        MemberQueryRequest query = memberQueryRequest == null ? new MemberQueryRequest() : memberQueryRequest;
+    // ==================== C 端：已随「团队成员不对外展示」删除 ====================
 
-        // 枚举校验前置：必须在构造查询条件之前拦住非法取值，
-        // 否则它会变成一个「永远匹配不到」的等值条件，静默返回空列表
-        if (StrUtil.isNotBlank(query.getTeamPosition())) {
-            ThrowUtils.throwIf(TeamPositionEnum.of(query.getTeamPosition()) == null,
-                    ErrorCode.PARAMS_ERROR, "团队职务不合法，仅支持 " + TeamPositionEnum.valuesText());
-        }
-        if (query.getMemberStatus() != null) {
-            ThrowUtils.throwIf(MemberStatusEnum.of(query.getMemberStatus()) == null,
-                    ErrorCode.PARAMS_ERROR, "成员状态不合法，仅支持 " + MemberStatusEnum.valuesText());
-        }
-
-        LambdaQueryWrapper<StudioMember> wrapper = buildQueryWrapper(query);
-        // 固定排序：官方列表以置顶权重为准（数值越大越靠前），id 倒序兜底稳定次序。
-        // 刻意不接 sortField/sortOrder 参数：排序规则由产品定义，不由请求方决定
-        wrapper.orderByDesc(StudioMember::getSortOrder).orderByDesc(StudioMember::getId);
-
-        // 分页：与后台共用同一套收敛规则（页码 < 1 视为 1、pageSize 上限 50）。
-        //
-        // ⚠️ searchCount 必须保持默认的 true：证书模块 C 端用的是 new Page<>(1, N, false)
-        // （关掉 COUNT 查询），照抄过来 total 会恒为 0，前端分页组件拿不到总页数直接报废。
-        // 这里要的就是 total ——分页组件必须知道一共多少页
-        Page<StudioMember> page = this.page(newPageWithDefaults(query), wrapper);
-        return toFrontVOPage(page);
-    }
-
-    /**
-     * C 端成员详情：一次装配「基础档案 + 证书 + 项目」
-     *
-     * <p><b>一共只有 3 次数据库查询，绝无 N+1</b>：
-     * <ol>
-     *     <li>{@code getById(id)} —— 成员档案本身；</li>
-     *     <li>{@code memberCertificateService.listFrontCertificatesByMember(id)} ——
-     *     内部是「先从关联表取 ID 列表 + IN 查主表」的批量两步查询；</li>
-     *     <li>{@code memberProjectService.listFrontProjectsByMember(id)} —— 同样是批量两步查询。</li>
-     * </ol>
-     * 也就是说「一个成员有 N 张证书 / M 个项目」不会变成 N+M 次查询。
-     *
-     * <p><b>反面教材（将来做列表页聚合时必须避免）</b>：如果以后要在
-     * <b>成员列表</b>上显示「每人有多少张证书」，绝不能写成
-     * {@code for (成员 m : 列表) { countByMember(m.id) }} ——那是标准的 N+1，
-     * 一页 50 个成员就是 50 次查询。正确做法是一次
-     * {@code SELECT member_id, COUNT(*) FROM studio_member_certificate WHERE member_id IN (...)
-     * GROUP BY member_id}（{@code selectMaps} 即可），拿到 Map 后在内存里拼。
-     * 这里之所以能逐个查，是因为<b>只查一个人</b>。
-     *
-     * <p>三段数据全部是 Front 系列脱敏 VO：管理端的 {@code MemberVO / CertificateVO / ProjectVO}
-     * 含 userId / leaderId / sortOrder / content / 审计字段，一旦用在这里就是匿名接口泄露。
-     *
-     * @param id 成员 ID
-     * @return 成员详情（证书与项目为空时空列表，不是 null）
-     */
-    @Override
-    public MemberDetailFrontVO getFrontMemberDetail(long id) {
-        ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "成员 id 不合法");
-
-        // 档案：getById 会被 MP 自动追加 deleted_at = 0，已逻辑删除的成员查出来就是 null
-        StudioMember member = this.getById(id);
-        ThrowUtils.throwIf(member == null, ErrorCode.NOT_FOUND_ERROR, "成员不存在");
-
-        MemberDetailFrontVO detailVO = new MemberDetailFrontVO();
-        detailVO.setProfile(this.getMemberFrontVO(member));
-        // 证书与项目：各自模块内部的批量两步查询已经过滤了「主表已删除」的悬空关联
-        // （证书/项目被删后，IN 查主表时 MP 自动追加 deleted_at = 0 会把它们挡掉），
-        // 所以这里不需要再做一次过滤——但这是**回归点**，改动那两个方法时要留意
-        detailVO.setCertificates(memberCertificateService.listFrontCertificatesByMember(id));
-        detailVO.setProjects(memberProjectService.listFrontProjectsByMember(id));
-        return detailVO;
-    }
+    // 原 listFrontMembers(...)（官网成员列表）与 getFrontMemberDetail(...)（官网成员详情聚合）
+    // 两个实现已删除，配套的接口方法、白名单路径与 MemberDetailFrontVO 同步移除。
+    // 成员档案此后只由管理端方法读取（listMemberByPage / getMemberById）。
+    //
+    // 这里保留一条原来的性能纪律（对将来任何列表聚合都适用）：
+    // 若要让「成员列表」显示每人证书数，绝不能写成
+    // {@code for (成员 m : 列表) { countByMember(m.id) }}（标准 N+1，一页 50 条 = 50 次查询），
+    // 正确做法是一次 {@code SELECT member_id, COUNT(*) ... WHERE member_id IN (...) GROUP BY member_id}，
+    // 用 {@code selectMaps} 拿回 Map 后在内存里拼。
 
     /**
      * 实体转管理端 VO（含全部字段，只给管理员看）
@@ -587,18 +509,4 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
         return voPage;
     }
 
-    /**
-     * 实体分页结果转「C 端 VO」分页结果
-     *
-     * <p>与 {@link #toMemberVOPage} 的差别只在 VO 类型：这里转的是 {@link MemberFrontVO}（脱敏）。
-     * 保留 total / current / size 是必须的——前端分页组件靠它们渲染页码与总条数。
-     *
-     * @param entityPage 实体分页
-     * @return C 端 VO 分页
-     */
-    private Page<MemberFrontVO> toFrontVOPage(Page<StudioMember> entityPage) {
-        Page<MemberFrontVO> voPage = new Page<>(entityPage.getCurrent(), entityPage.getSize(), entityPage.getTotal());
-        voPage.setRecords(entityPage.getRecords().stream().map(this::getMemberFrontVO).toList());
-        return voPage;
-    }
 }

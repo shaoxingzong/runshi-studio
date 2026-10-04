@@ -29,28 +29,19 @@ import java.util.Map;
  * VO 结构不用动。前端按固定 key 集合渲染图表，因此 Service 必须保证
  * <b>枚举里的每个 key 都出现且缺位补 0</b>——key 缺失会导致图表维度错乱。
  *
- * <p>本期只覆盖成员与证书两个模块：项目模块（{@code studio_project}）尚未实现，
- * 等它落地后在<b>本类加字段即可</b>，接口路径与响应结构都不用改（这也是用 VO 承载的好处）。
+ * <p><b>本期只覆盖证书维度</b>。
+ * 项目模块（{@code studio_project}）落地后在<b>本类加字段即可</b>，
+ * 接口路径与响应结构都不用改（这也是用 VO 承载的好处）。
  */
 @Data
 public class StatisticOverviewVO implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    /**
-     * 成员总数（studio_member 未删除的全部行数）
-     */
-    private Integer memberTotal;
-
-    /**
-     * 在读/在队成员数（member_status = 0）
-     */
-    private Integer memberInTeam;
-
-    /**
-     * 毕业/离队成员数（member_status = 1）
-     */
-    private Integer memberGraduated;
+    // ⚠️ 原三个成员计数字段（memberTotal / memberInTeam / memberGraduated）已随
+    // 「团队成员不对外展示」删除。本 VO 挂在**匿名**接口 /statistic/overview 上，
+    // 对外暴露「团队有多少人」同样属于展示成员信息，因此一并移除；
+    // 首页大盘如今只剩证书维度。管理端若将来需要人数，应另开一个要求 admin 的统计接口。
 
     /**
      * 证书总数（studio_certificate 未删除的全部行数）

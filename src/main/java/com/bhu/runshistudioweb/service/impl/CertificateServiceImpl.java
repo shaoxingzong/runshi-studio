@@ -171,22 +171,18 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
     }
 
     /**
-     * 删除证书（逻辑删除 + 级联清理关联表，接口契约见 CertificateService）
-     *
-     * <p>两次写必须在<b>同一事务</b>内：先清关联再删主表。
-     * 反过来的话，一旦主表删除失败，就会出现「证书还在、关联却没了」的静默数据丢失。
-     *
-     * @param id 证书 ID
-     * @return true 表示删除成功
-     */
-    /**
      * 删除证书（逻辑删除 + <b>同一事务内</b>清理成员-证书关联）
      *
-     * <p>顺序是「先清关联、再删主表」：反过来一旦主表删成功而清理失败，
-     * 就会留下指向已删除证书的悬空关联（DESIGN.md 2.2）。
+     * <p>顺序是「先清关联、再删主表」，且两次写必须在<b>同一事务</b>内：
+     * 反过来（先删主表）一旦清理失败，就会留下指向已删除证书的悬空关联（DESIGN.md 2.2）；
+     * 而现在的顺序下，主表删除失败会让整个事务回滚，
+     * 不会出现「证书还在、关联却没了」的静默数据丢失。
      *
      * <p>{@code rollbackFor = Exception.class} 必须写：Spring 默认只回滚
      * RuntimeException，漏了它等于「事务声明了一半」。
+     *
+     * @param id 证书 ID
+     * @return true 表示删除成功
      */
     @Override
     @Transactional(rollbackFor = Exception.class)

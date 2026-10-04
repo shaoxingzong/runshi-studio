@@ -5,7 +5,7 @@ import cn.hutool.core.convert.Convert;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import cn.dev33.satoken.context.SaHolder;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bhu.runshistudioweb.config.AiProperties;
 import com.bhu.runshistudioweb.constant.AiChatConstant;
@@ -13,6 +13,8 @@ import com.bhu.runshistudioweb.exception.BusinessException;
 import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.exception.ThrowUtils;
 import com.bhu.runshistudioweb.manager.AiManager;
+import com.bhu.runshistudioweb.manager.AiQueryCountManager;
+import com.bhu.runshistudioweb.manager.AiRateLimitManager;
 import com.bhu.runshistudioweb.mapper.StudioAiMessageMapper;
 import com.bhu.runshistudioweb.mapper.StudioAiSessionMapper;
 import com.bhu.runshistudioweb.mapper.SysUserMapper;
@@ -26,8 +28,10 @@ import com.bhu.runshistudioweb.model.vo.AiChatResponseVO;
 import com.bhu.runshistudioweb.model.vo.AiMessageVO;
 import com.bhu.runshistudioweb.model.vo.AiSessionVO;
 import com.bhu.runshistudioweb.service.AiChatService;
+import com.bhu.runshistudioweb.service.KnowledgeDocService;
 import jakarta.annotation.PreDestroy;
 import jakarta.annotation.Resource;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
@@ -81,14 +85,6 @@ public class AiChatServiceImpl implements AiChatService {
     /** 会话不存在 / 无权访问的统一提示：两种情况共用一句，不暴露存在性 */
     private static final String SESSION_NOT_FOUND_MESSAGE = "会话不存在";
 
-    /**
-     * 配额原子自增 SQL
-     *
-     * <p>硬编码列名是安全的：它是常量，不来自用户输入。用 {@code setSql} 是
-     * MyBatis-Plus 表达「列 = 列 + 1」的标准方式（Lambda 写不了自引用表达式）。
-     */
-    private static final String SQL_INCREASE_QUERY_COUNT = "ai_query_count = ai_query_count + 1";
-
     /** 会话列表的分页默认值与上限（上限防「一次拉全表」） */
     private static final long DEFAULT_PAGE_SIZE = 10L;
     private static final long MAX_PAGE_SIZE = 50L;
@@ -114,9 +110,14 @@ public class AiChatServiceImpl implements AiChatService {
     /**
      * SSE 事件名（前端按 name 分派，改名等于契约变更）
      *
-     * <p>序列固定为：{@code meta} → {@code delta}* → {@code done} / {@code error}
+     * <p>序列固定为：{@code meta} → {@code sources} → {@code delta}* → {@code done} / {@code error}
+     *
+     * <p><b>{@code sources} 恒发</b>：即使没有命中资料也发一个空数组。
+     * 前端因此可以无分支地写 {@code on('sources', s => setSources(s))}；
+     * 若只在命中时发，前端就得靠「等一段时间没收到」来判断没有资料——那是竞态。
      */
     private static final String EVENT_META = "meta";
+    private static final String EVENT_SOURCES = "sources";
     private static final String EVENT_DELTA = "delta";
     private static final String EVENT_DONE = "done";
     private static final String EVENT_ERROR = "error";
@@ -133,8 +134,34 @@ public class AiChatServiceImpl implements AiChatService {
     @Resource
     private AiManager aiManager;
 
+    /**
+     * 提问配额计数（Redis INCR + 定时回刷，）
+     *
+     * <p>它替代了原来的 {@code UPDATE sys_user SET ai_query_count = ai_query_count + 1}：
+     * 计数从「每次提问一次 DB 写」变成「Redis 内存自增 + 批量回刷」。
+     */
+    @Resource
+    private AiQueryCountManager aiQueryCountManager;
+
+    /**
+     * 游客 IP 限流
+     *
+     * <p>只在「未登录」时生效，且位于最外层（配额预检与检索之前）。
+     */
+    @Resource
+    private AiRateLimitManager aiRateLimitManager;
+
     @Resource
     private AiProperties aiProperties;
+
+    /**
+     * 知识库检索：提问前先检索资料注入模型（RAG，）
+     *
+     * <p>依赖方向是单向的：{@code KnowledgeDocServiceImpl} 只注入 Mapper 与配置，
+     * 不依赖本类，因此不构成循环。
+     */
+    @Resource
+    private KnowledgeDocService knowledgeDocService;
 
     /** SSE 事件负载的 JSON 序列化：复用容器里被 JsonConfig 定制过的那个 JsonMapper */
     @Resource
@@ -173,25 +200,39 @@ public class AiChatServiceImpl implements AiChatService {
 
     @Override
     public AiChatResponseVO chat(AiChatRequest request) {
-        // 校验 / 会话 / 配额 / 上下文：与流式接口走**同一个**私有方法，
+        // 登录身份与来源 IP 都必须在这里（请求线程）取好：
+        // Sa-Token 的登录态与 Spring 的 RequestContextHolder 都存在 ThreadLocal 里，
+        // 后面的流式分支跑在虚拟线程上，拿不到（见 chatStream 里的说明）
+        Long userId = currentUserIdOrNull();
+
+        // ① 游客 IP 限流：**最外层**——
+        // 超限的请求不该再走检索 / Embedding / 模型调用，那些才是真正的开销
+        assertGuestRateLimit(userId, currentIpOrNull());
+
+        // ② 校验 / 会话 / 配额 / 上下文：与流式接口走**同一个**私有方法，
         // 保证「鉴权与归属规则完全一致」是靠同一份代码，而不是靠两处人肉同步
-        PreparedChat prepared = prepareChat(request, currentUserIdOrNull());
+        PreparedChat prepared = prepareChat(request, userId);
 
         // ④ 先落用户消息，再调 AI —— 顺序不能反。
         // 反过来的话，AI 失败时这条提问就丢了：用户明明问了，历史里却什么都没有，
         // 而且前端往往已经把它渲染在界面上了
         insertMessage(prepared.sessionId(), AiMessageRoleEnum.USER, prepared.message());
 
-        // ⑤ 调 AI：注意这里**没有** @Transactional，HTTP 请求不在数据库事务内
-        String answer = aiManager.chat(aiProperties.getSystemPrompt(), prepared.history(), prepared.message());
+        // ⑤ 检索资料（RAG，）：位置刻意放在「配额预检与会话解析之后、模型调用之前」——
+        // 检索失败不扣额度（扣额度发生在 persistAnswer），也不影响用户消息已落库
+        KnowledgeDocService.RetrievalResult retrieval = retrieveSafely(prepared.message());
 
-        // ⑥ 成功：三处写必须原子（assistant 消息 + 会话 updated_at + 配额计数）
+        // ⑥ 调 AI：注意这里**没有** @Transactional，HTTP 请求不在数据库事务内
+        String answer = aiManager.chat(prepared.history(), buildUserMessage(prepared.message(), retrieval));
+
+        // ⑦ 成功：三处写必须原子（assistant 消息 + 会话 updated_at + 配额计数）
         persistAnswer(prepared, answer);
 
         AiChatResponseVO responseVO = new AiChatResponseVO();
         // 每次回答都回传会话 ID：前端首次提问后存下它，即可无感续聊
         responseVO.setSessionId(prepared.sessionId());
         responseVO.setAnswer(answer);
+        responseVO.setSources(retrieval.sources());
         return responseVO;
     }
 
@@ -231,8 +272,10 @@ public class AiChatServiceImpl implements AiChatService {
         // 于是流里只剩一个 error 事件、连 meta 都发不出来）。
         // 这一行是本类唯一依赖「请求线程」的地方，改动时务必保留。
         Long userId = currentUserIdOrNull();
+        // 来源 IP 同理必须在请求线程取好：虚拟线程里没有 RequestContextHolder
+        String clientIp = currentIpOrNull();
 
-        streamExecutor.execute(() -> streamChat(request, userId, emitter, state));
+        streamExecutor.execute(() -> streamChat(request, userId, clientIp, emitter, state));
         return emitter;
     }
 
@@ -355,11 +398,119 @@ public class AiChatServiceImpl implements AiChatService {
         transactionTemplate.executeWithoutResult(status -> {
             messageIdHolder[0] = insertMessage(prepared.sessionId(), AiMessageRoleEnum.ASSISTANT, answer);
             touchSession(prepared.sessionId());
-            if (prepared.userId() != null) {
-                increaseQueryCount(prepared.userId());
-            }
+            // ⚠️ 配额计数**刻意不在这里**：
+            // 计数已改为 Redis INCR，Redis 是外部系统——写它不属于数据库事务。
+            // 若放在事务内，一旦事务回滚，Redis 里的 +1 却撤不回来，就变成了「没回答成功也扣了额度」
         });
+
+        // 事务提交之后再计数：与「HTTP 调用不进事务」是同一条纪律——
+        // 外部系统的写必须留在数据库事务边界之外
+        if (prepared.userId() != null) {
+            aiQueryCountManager.increment(prepared.userId());
+        }
         return messageIdHolder[0];
+    }
+
+    // ==================== 游客 IP 限流 ====================
+
+    /**
+     * 游客限流：<b>只对未登录用户生效</b>
+     *
+     * <p>登录用户走「按用户计数」的 {@code studio.ai.query-limit}，
+     * 不受 IP 限流约束——同一出口 IP 下可能有多个用户（公司、校园网），
+     * 按 IP 限会让他们互相拖累，而且他们本来就有配额兜底。
+     * 反过来，游客没有身份，配额无从谈起，只能按 IP 兜底。
+     *
+     * @param userId   当前登录用户 ID（null 表示游客）
+     * @param clientIp 来源 IP（由请求线程取好后传入，见 {@link #currentIpOrNull}）
+     */
+    private void assertGuestRateLimit(Long userId, String clientIp) {
+        if (userId != null) {
+            return;
+        }
+        aiRateLimitManager.assertAllowed(clientIp);
+    }
+
+    /**
+     * 取请求来源 IP（<b>必须在请求线程调用</b>）
+     *
+     * <p><b>⚠️ 这个 IP 不完全可信</b>：若请求经过反向代理，
+     * {@code X-Forwarded-For} / {@code X-Real-IP} 是<b>客户端可以伪造的请求头</b>——
+     * 攻击者换个头就能绕过限流。因此：
+     * <ul>
+     *     <li>生产环境必须在<b>网关 / Nginx 层</b>重写这些头（只信任来自可信代理的链路），
+     *     并把「取 IP」的责任放在最外层；</li>
+     *     <li>应用层的限流只是<b>兜底</b>，不能替代网关层的真实限流。</li>
+     * </ul>
+     * 拿不到 IP 时返回 null，限流会放行——宁可漏限，也不能因为取不到 IP 就拒绝所有人。
+     *
+     * @return 来源 IP；取不到时为 null
+     */
+    private String currentIpOrNull() {
+        try {
+            // Sa-Token 的 SaRequest 没有直接的 getRemoteAddr()，
+            // getSource() 返回的是原始请求对象（Spring MVC 下即 HttpServletRequest）
+            Object source = SaHolder.getRequest().getSource();
+            if (source instanceof HttpServletRequest request) {
+                // 取的是 TCP 对端地址（getRemoteAddr），**不读 X-Forwarded-For 头**——
+                // 那个头是客户端可以伪造的（伪造就能绕过限流）；
+                // 生产环境若走反向代理，必须在网关层完成「真实 IP 的还原与传递」
+                return request.getRemoteAddr();
+            }
+            return null;
+        } catch (Exception e) {
+            log.warn("获取请求来源 IP 失败，本次跳过 IP 限流", e);
+            return null;
+        }
+    }
+
+    // ==================== RAG 检索 ====================
+
+    /**
+     * 检索资料，<b>失败即降级为「无资料」</b>
+     *
+     * <p>降级纪律（AC ⑥）：RAG 是<b>增强</b>不是依赖——向量服务不可用、或重启后
+     * 内存向量库还没重建，都不该让用户问不出话。<b>不新增错误码</b>，
+     * 只在日志里留痕，用户侧表现为「这次回答没有溯源」。
+     *
+     * <p>为什么抓 {@code Exception} 而不是具体异常：检索链路里有
+     * 「HTTP 超时 / 业务异常 / 解析失败 / 配置缺失」多种可能，
+     * 它们对提问链路的意义完全一致——都是「这次没有资料」。
+     *
+     * @param question 用户提问
+     * @return 检索结果；任何失败都返回空结果
+     */
+    private KnowledgeDocService.RetrievalResult retrieveSafely(String question) {
+        try {
+            return knowledgeDocService.retrieve(question);
+        } catch (Exception e) {
+            log.warn("知识库检索失败，本次无资料继续回答（不阻断提问、不新增错误码）", e);
+            return KnowledgeDocService.RetrievalResult.empty();
+        }
+    }
+
+    /**
+     * 把检索到的资料拼进本次提问
+     *
+     * <p><b>资料放 user 消息，不放 system 消息</b>（这是刻意的）：
+     * <ul>
+     *     <li>system 消息应当<b>稳定</b>——它是「你是谁、怎么答」的行为约束，
+     *     每次提问内容都不同，塞进去会让 system 随问题漂移；</li>
+     *     <li>把资料贴着问题放，模型更容易把它们当成<b>当前问题的上下文</b>，
+     *     而不是通用指令（实测对引用准确率有帮助）；</li>
+     *     <li>历史消息里存的仍是用户原话（见 {@code insertMessage}），
+     *     资料只是临时拼给本次调用的，不会污染上下文窗口。</li>
+     * </ul>
+     *
+     * @param message   用户原始提问
+     * @param retrieval 检索结果
+     * @return 送进模型的 user 消息（无命中时原样返回）
+     */
+    private String buildUserMessage(String message, KnowledgeDocService.RetrievalResult retrieval) {
+        if (!retrieval.hit()) {
+            return message;
+        }
+        return "参考资料：\n" + retrieval.contextText() + "\n\n用户问题：" + message;
     }
 
     // ==================== SSE 流式 ====================
@@ -367,36 +518,47 @@ public class AiChatServiceImpl implements AiChatService {
     /**
      * 流式主流程（在虚拟线程里执行）
      *
-     * <p>事件序列：{@code meta} → {@code delta}* → {@code done} / {@code error}。
+     * <p>事件序列：{@code meta} → {@code sources} → {@code delta}* → {@code done} / {@code error}
+     * （{@code sources} 恒发，无命中时是空数组）。
      *
      * @param request 提问请求
      * @param userId  当前登录用户 ID（由请求线程取好传进来，见 chatStream 的说明）
      * @param emitter SSE 发射器
      * @param state   中止标记（客户端断开时会被置位）
      */
-    private void streamChat(AiChatRequest request, Long userId, SseEmitter emitter, StreamState state) {
+    private void streamChat(AiChatRequest request, Long userId, String clientIp,
+                            SseEmitter emitter, StreamState state) {
         try {
+            // ① 游客 IP 限流：与同步接口同一位置、同一语义。
+            // 超限会在 try 里抛 BusinessException，被下面的 catch 转成 error 事件（HTTP 恒 200）
+            assertGuestRateLimit(userId, clientIp);
+
             PreparedChat prepared = prepareChat(request, userId);
 
-            // ① meta：先告知会话 ID。新建会话时前端只能从这里拿到它
+            // ② meta：先告知会话 ID。新建会话时前端只能从这里拿到它
             sendEvent(emitter, EVENT_META,
                     Map.of("sessionId", String.valueOf(prepared.sessionId())), state);
 
             // ② 用户消息先落库：失败或中断时它必须留下（与同步接口同一约定）
             insertMessage(prepared.sessionId(), AiMessageRoleEnum.USER, prepared.message());
 
-            // ③ 流式调用：每段增量直接推给前端
-            String answer = aiManager.chatStream(aiProperties.getSystemPrompt(), prepared.history(),
-                    prepared.message(),
+            // ③ 检索资料（RAG，）：与同步接口同一位置、同一降级策略
+            KnowledgeDocService.RetrievalResult retrieval = retrieveSafely(prepared.message());
+            // ④ sources 恒发（无命中也发空数组）：前端不必靠「等一会儿没收到」来判断有没有资料
+            sendEvent(emitter, EVENT_SOURCES, Map.of("sources", retrieval.sources()), state);
+
+            // ⑤ 流式调用：每段增量直接推给前端
+            String answer = aiManager.chatStream(prepared.history(),
+                    buildUserMessage(prepared.message(), retrieval),
                     delta -> sendEvent(emitter, EVENT_DELTA, Map.of("delta", delta), state));
 
-            // ④ 客户端已断开：不落库、不计数、也不发 done（连接都没了）
+            // ⑥ 客户端已断开：不落库、不计数、也不发 done（连接都没了）
             if (state.isAborted()) {
                 log.warn("SSE 已中断，跳过 assistant 消息与配额计数 | sessionId={}", prepared.sessionId());
                 return;
             }
 
-            // ⑤ 正常结束：三处写同一事务（与同步接口共用 persistAnswer），事务提交后再发 done
+            // ⑦ 正常结束：三处写同一事务（与同步接口共用 persistAnswer），事务提交后再发 done
             long messageId = persistAnswer(prepared, answer);
             sendEvent(emitter, EVENT_DONE, Map.of("messageId", String.valueOf(messageId)), state);
             emitter.complete();
@@ -546,27 +708,16 @@ public class AiChatServiceImpl implements AiChatService {
         ThrowUtils.throwIf(user == null, ErrorCode.NOT_LOGIN_ERROR, "登录用户不存在");
 
         int limit = aiProperties.getQueryLimit() == null ? Integer.MAX_VALUE : aiProperties.getQueryLimit();
-        int used = user.getAiQueryCount() == null ? 0 : user.getAiQueryCount();
+        // 必须是「DB 基准 + Redis 未落库增量」的合并值：
+        // 只看 DB 的话，回刷前的那些提问都不算数（表现为「问了好几次还没到上限」），
+        // 配额就成了摆设。合并读取也让预检**不依赖回刷是否发生**
+        int used = aiQueryCountManager.merge(userId, user.getAiQueryCount());
         ThrowUtils.throwIf(used >= limit, ErrorCode.TOO_MANY_REQUESTS_ERROR,
                 "提问次数已达上限（" + limit + " 次），请稍后再试");
     }
 
-    /**
-     * 配额 +1（<b>原子自增</b>，仅登录用户）
-     *
-     * <p>绝不能写成「select 出 aiQueryCount → +1 → updateById」：
-     * 两个并发请求会读到同一个旧值，各自写回 old+1，结果是「问了两次只加了一次」。
-     * 交给数据库做 {@code SET ai_query_count = ai_query_count + 1} 才是安全的。
-     *
-     * @param userId 登录用户 ID
-     */
-    private void increaseQueryCount(long userId) {
-        LambdaUpdateWrapper<SysUser> wrapper = new LambdaUpdateWrapper<>();
-        wrapper.eq(SysUser::getId, userId).setSql(SQL_INCREASE_QUERY_COUNT);
-        // 传 null 实体：MyBatis-Plus 会跳过 MetaObjectHandler 的 updateFill（拿不到实体），
-        // 这也正是我们想要的——配额变更不该改动审计字段
-        sysUserMapper.update(null, wrapper);
-    }
+    // 配额 +1 已移到 AiQueryCountManager（Redis INCR，事务外执行）：
+    // 本类不再直接 UPDATE sys_user，理由见 persistAnswer 里的注释
 
     // ==================== 消息读写 ====================
 

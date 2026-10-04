@@ -409,6 +409,7 @@ class AiSessionManageTest {
         String anonSid = sessionIdOf(anonChat);
         assertEquals(0, code(getBody("/ai/chat/history?sessionId=" + anonSid, null)));
         assertEquals(40100, code(getBody("/member/list/page", null)));
-        assertEquals(0, code(getBody("/member/list", null)));
+        // 原「/member/list 仍可匿名访问」的断言已随「团队成员不对外展示」删除——
+        // 该接口现已整体移除，访问得到 404 且响应体为空，断言集中在 StudioMemberCrudTest。
     }
 }

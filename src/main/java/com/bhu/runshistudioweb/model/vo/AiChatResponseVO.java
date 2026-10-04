@@ -5,6 +5,8 @@ import tools.jackson.databind.annotation.JsonSerialize;
 import tools.jackson.databind.ser.std.ToStringSerializer;
 
 import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * AI 提问响应
@@ -34,4 +36,15 @@ public class AiChatResponseVO implements Serializable {
      * AI 回答正文
      */
     private String answer;
+
+    /**
+     * 本次回答引用的资料来源（RAG 溯源，）
+     *
+     * <p><b>无命中时是空数组而不是 null</b>：前端写 {@code sources.map(...)} 时不必先判空。
+     * 「没有引用资料」是正常的（闲聊、或知识库为空），不该和「出错了」混在一起。
+     *
+     * <p>顺序即「资料送进模型的顺序」（相似度降序），与 {@code answer} 里事实的
+     * 出现顺序大体对应，前端按序渲染即可。
+     */
+    private List<KnowledgeSourceVO> sources = new ArrayList<>();
 }

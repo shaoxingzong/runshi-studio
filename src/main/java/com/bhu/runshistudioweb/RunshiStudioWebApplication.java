@@ -2,6 +2,7 @@ package com.bhu.runshistudioweb;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * 项目启动类
@@ -21,8 +22,17 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * 表现为接口 404、拦截器静默失效这类难查的问题。
  *
  * <p>启动后访问地址：{@code http://localhost:8080/api}（端口与 context-path 见 application.yml）
+ *
+ * <p><b>为什么加 {@code @EnableScheduling}</b>：AI 提问配额计数改为
+ * {@code Redis INCR + 定时回刷} 之后，需要有一个任务周期性地把 Redis 里的增量落回
+ * {@code sys_user.ai_query_count}（见 {@code AiQueryCountManager#flushToDb}）。
+ * Spring 的 {@code @Scheduled} <b>默认不生效</b>——必须由本注解注册
+ * {@code ScheduledAnnotationBeanPostProcessor} 才会扫描并调度它。
+ * 少了这一行不会报错，任务只是<b>静默不执行</b>：表现为「Redis 里的计数越堆越多、
+ * 但 DB 永远是 0」，直到重启丢数据才被发现。
  */
 @SpringBootApplication
+@EnableScheduling
 public class RunshiStudioWebApplication {
 
     /**

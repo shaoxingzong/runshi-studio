@@ -1,4 +1,10 @@
 spring:
+  # 本地私有配置（不进 Git）：密钥、服务商地址等敏感值写在这里，
+  # 避免污染 application-dev.yml（它是要提交的）。
+  # optional: 文件不存在也不报错——别人拉下代码无需创建它即可启动
+  config:
+    import: optional:classpath:application-local.yml
+
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/studio_db?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
@@ -51,14 +57,38 @@ studio:
     # 服务端地址，**不带** /chat/completions（由 AiManager 拼接），如 https://api.deepseek.com/v1
     # 测试可以把它指向本地 Stub 服务——这正是「base-url 必须来自配置」的原因
     base-url: ${AI_BASE_URL:}
-    # API Key：只从环境变量注入，绝不写进仓库。密钥一旦提交进 Git 等于永久泄露
+    # API Key：只从环境变量注入，绝不写进仓库。密钥一旦提交进 Git 等于永久泄露。
+    # 本地开发的真实值放 application-local.yml（不进 Git）或 IDEA 运行配置的环境变量 AI_API_KEY
     api-key: ${AI_API_KEY:}
     # 模型名
     model: ${AI_MODEL:deepseek-chat}
-    # 系统提示词：约束 AI 的身份与语气。放配置是为了「调话术不用改代码」
-    system-prompt: 你是润石工作室官网的智能助手，请用简洁友好的中文回答，不确定时明确说明。
+    # 系统提示词文件位置（classpath: 随包发布 / file: 指向服务器文件）
+    # 部署后想不改包换话术：把文件放服务器，AI_SYSTEM_PROMPT_LOCATION=file:/opt/.../system-prompt.txt
+    system-prompt-location: ${AI_SYSTEM_PROMPT_LOCATION:classpath:prompts/system-prompt.txt}
     # 单用户提问次数上限（登录用户才计数，游客不计）；命中返回 42900
     query-limit: 100
+    # RAG 检索：最多取回多少条资料块（越多越全，但 token 与噪声同步上升）
+    rag-top-k: 5
+    # RAG 检索相似度下限（**越高越严格**）：低于此分的命中直接丢弃。
+    # ⚠️ 它不是余弦相似度：LangChain4j 比较的是 relevance=(1+cosine)/2，
+    #    因此 0.5 = 正交（毫不相关），0.75 = 余弦 0.5（弱相关以上）。
+    # ⚠️ 换向量模型后必须重新校准——不同模型的分值分布不可比
+    rag-min-score: 0.75
+    # 配额增量回刷周期（毫秒，默认 60s）：，见 AiQueryCountConstant
+    query-count-flush-delay-ms: 60000
+    # ===== 游客 IP 限流=====
+    # 游客没有身份，配额无从谈起，只能按 IP 兜底；登录用户不受此限（走用户配额）
+    guest-ip-minute-limit: 5
+    guest-ip-daily-limit: 50
+    # 开关：测试环境由 surefire 统一置 false（避免既有匿名用例被误杀），
+    # 限流专项测试类用 @DynamicPropertySource 覆盖为 true
+    guest-ip-limits-enabled: ${AI_GUEST_IP_LIMITS_ENABLED:true}
+
+  # ===== 演示前端联调：跨域来源白名单 =====
+  # 逗号分隔，端口通配用 *；必须走 allowedOriginPatterns（理由见 CorsConfig 类注释）
+  # 上线换域名时只改这里或环境变量 WEB_ALLOWED_ORIGINS，不用重新打包
+  web:
+    allowed-origins: "${WEB_ALLOWED_ORIGINS:http://localhost:*,http://127.0.0.1:*}"
 
 knife4j:
   # 开启接口文档增强 UI，入口 http://localhost:8080/api/doc.html

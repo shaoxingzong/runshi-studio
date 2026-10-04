@@ -11,12 +11,7 @@ import com.bhu.runshistudioweb.model.dto.common.DeleteRequest;
 import com.bhu.runshistudioweb.model.dto.member.MemberAddRequest;
 import com.bhu.runshistudioweb.model.dto.member.MemberQueryRequest;
 import com.bhu.runshistudioweb.model.dto.member.MemberUpdateRequest;
-import com.bhu.runshistudioweb.model.dto.membercertificate.MemberCertificateQueryRequest;
-import com.bhu.runshistudioweb.model.vo.CertificateFrontVO;
-import com.bhu.runshistudioweb.model.vo.MemberDetailFrontVO;
-import com.bhu.runshistudioweb.model.vo.MemberFrontVO;
 import com.bhu.runshistudioweb.model.vo.MemberVO;
-import com.bhu.runshistudioweb.service.MemberCertificateService;
 import com.bhu.runshistudioweb.service.StudioMemberService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -29,33 +24,34 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
-
 /**
- * 成员接口：C 端（官网展示）+ 管理端（管理员增删改查）
+ * 成员接口：**只有管理端**（管理员增删改查）
  *
  * author: shaoshing
+ *
+ * <p><b>业务规则：团队成员不对外展示</b>。
+ * 本类原先还有三个 C 端匿名接口（{@code /member/list}、{@code /member/certificate/list}、
+ * {@code /member/detail}），已随「官网成员页下线」整体删除；白名单里对应的三条
+ * 精确路径也一并移除（见 SaTokenMvcConfig）。成员档案自此只作为<b>后台内部数据</b>存在。
  *
  * <p>Controller 的职责边界与 {@link UserController} 一致：只做三件事——接参、调 Service、
  * 包成 {@link BaseResponse}；业务规则全部在 Service 层，这里不写 if-else 业务分支。
  *
- * <p>两组接口的界线（本类最重要的约定）：
+ * <p>本类全部接口的鉴权：
  * <table border="1">
- *     <caption>接口分组</caption>
- *     <tr><th>分组</th><th>路径</th><th>鉴权</th></tr>
- *     <tr><td>C 端</td><td>{@code /member/list}、{@code /member/certificate/list}、{@code /member/detail}</td>
- *     <td><b>匿名可访问</b>——三条路径都以<b>精确路径</b>登记在 Sa-Token 白名单（见 SaTokenMvcConfig）：
- *     官网游客必须能看成员列表、成员详情，以及详情页里的证书</td></tr>
- *     <tr><td>管理端</td><td>{@code /member/add}、{@code /member/update}、{@code /member/delete}、
+ *     <caption>接口清单</caption>
+ *     <tr><th>路径</th><th>鉴权</th></tr>
+ *     <tr><td>{@code /member/add}、{@code /member/update}、{@code /member/delete}、
  *     {@code /member/get}、{@code /member/list/page}</td>
  *     <td>全部要求 {@code @SaCheckRole("admin")}</td></tr>
  * </table>
  * 注意：管理端维护绑定关系不在这里，而在 {@link MemberCertificateController}
  * （{@code /member-certificate/bind} 等），避免本类职责膨胀。
  *
- * <p><b>返回类型的分界是安全设计，不是风格问题</b>：C 端返回 {@link MemberFrontVO}（公开字段白名单），
- * 管理端返回 {@link MemberVO}（含 userId / sortOrder 等内部字段）。
- * 两组绝不能互换——把管理端 VO 用到公开接口上等于把账号绑定关系公开。
+ * <p><b>返回类型</b>：管理端返回 {@link MemberVO}（含 userId / sortOrder 等内部字段），
+ * 只在 admin 面前出现。脱敏的 {@code MemberFrontVO} 仍然保留，但如今唯一的对外出处是
+ * <b>项目详情</b>里的「参与成员」（{@code /project/detail}，产品确认保留）——
+ * 那是本规则下有意的唯一例外，已登记在 db/DESIGN.md 场景 L。
  *
  * <p>接口地址前缀：{@code server.servlet.context-path=/api}，完整路径形如
  * {@code http://localhost:8080/api/member/list}。
@@ -71,96 +67,18 @@ public class StudioMemberController {
     @Resource
     private StudioMemberService studioMemberService;
 
-    /**
-     * 成员的证书列表要按成员维度查，因此注入关联模块的服务。
-     *
-     * <p>依赖方向是单向的：{@code StudioMemberServiceImpl} 反过来也要依赖
-     * {@code MemberCertificateService} 做级联清理，但那是 Service 层内部的事；
-     * Controller 层引用它不会构成循环依赖（循环依赖只发生在 Bean 互相注入时，
-     * 而 MemberCertificateServiceImpl 只注入 Mapper，不依赖本模块的 Service）。
-     */
-    @Resource
-    private MemberCertificateService memberCertificateService;
-
-    // ==================== C 端：官网展示，匿名可访问 ====================
-
-    /**
-     * 官网成员列表（游客可访问，<b>真分页</b>）
-     *
-     * <p><b>契约变更</b>：本接口原来返回脱敏成员<b>数组</b>（内部截断 200 条，
-     * 那是 刻意留的过渡形态），现在返回<b>分页对象</b>
-     * {@code {records, total, size, current, pages}}，支持前端分页组件。
-     * 改契约的时机选在现在，是因为前端尚未开发、改动成本最低。
-     *
-     * <p>三处固定行为：
-     * <ul>
-     *     <li><b>排序固定</b>：置顶权重倒序 + id 倒序；请求里的 sortField / sortOrder 会被忽略——
-     *     公开接口的排序规则由产品定义，不接受任意排序字段；</li>
-     *     <li><b>分页参数生效</b>：current / pageSize 由 Service 兜底收敛
-     *     （页码 &lt; 1 视为 1，pageSize &lt; 1 视为 10、&gt; 50 收敛到 50，防匿名接口拉全表）；</li>
-     *     <li><b>枚举闭集校验</b>：teamPosition / memberStatus 传非法值时返回 40000
-     *     并列出合法取值，而不是静默返回空列表。</li>
-     * </ul>
-     *
-     * <p>注意分页元数据（total / size / current / pages）在响应里是<b>字符串</b>：
-     * 项目全局把 Long 序列化成字符串（防雪花 ID 精度丢失），这里刻意不做局部覆盖——
-     * 前端按字符串处理即可。
-     *
-     * @param memberQueryRequest 查询条件（id/姓名/届别/方向/职务/状态 + current/pageSize），允许为空
-     * @return 分页结果，记录为脱敏的 {@link MemberFrontVO}
-     */
-    @GetMapping("/list")
-    @Operation(summary = "官网成员列表", description = "匿名可访问；支持按届别/方向/职务/状态筛选 + 真分页，固定按置顶权重倒序")
-    public BaseResponse<Page<MemberFrontVO>> listFrontMembers(MemberQueryRequest memberQueryRequest) {
-        return ResultUtils.success(studioMemberService.listFrontMembers(memberQueryRequest));
-    }
-
-    /**
-     * 官网：某位成员持有的证书列表（游客可访问）
-     *
-     * <p><b>为什么用 {@code ?memberId=} 而不是 RESTful 的 {@code /member/{id}/certificate/list}</b>：
-     * 本项目的 Sa-Token 白名单是**精确路径匹配**的纪律，扁平路径可以用精确串
-     * {@code /member/certificate/list} 登记；而路径参数写法必须登记
-     * {@code /member/**} 之类的通配符，等于为整个成员模块开了一道匹配面——
-     * 将来新增一个管理端接口若恰好落在通配范围内，就会被意外放行。
-     * 另外这也与项目一贯的「GET + 查询参数」风格保持一致。
-     *
-     * <p>返回的是<b>脱敏</b>的 {@link CertificateFrontVO}：不含置顶权重与审计字段，
-     * 与管理端接口 {@code /member-certificate/certificate/list} 返回的
-     * {@code CertificateVO} 有明确区别。
-     *
-     * @param query 查询条件（memberId 必填）
-     * @return 该成员持有的证书列表（按 sort_order → award_date → id 倒序）
-     */
-    @GetMapping("/certificate/list")
-    @Operation(summary = "官网成员证书列表", description = "匿名可访问；按成员查询，返回脱敏后的证书")
-    public BaseResponse<List<CertificateFrontVO>> listMemberCertificates(MemberCertificateQueryRequest query) {
-        // 用包装类型接参 + 显式判空：避免「没传 memberId」变成 50000 系统错误
-        ThrowUtils.throwIf(query == null || query.getMemberId() == null,
-                ErrorCode.PARAMS_ERROR, "成员 id 不能为空");
-        return ResultUtils.success(memberCertificateService.listFrontCertificatesByMember(query.getMemberId()));
-    }
-
-    /**
-     * 官网：成员详情（游客可访问，<b>聚合接口</b>）
-     *
-     * <p>一次返回「基础档案 + 证书 + 项目」三段，省掉前端为渲染一个详情页
-     * 并发调三个接口；服务端也只需要 3 次数据库查询（没有 N+1）。
-     *
-     * <p>三段全部是 C 端脱敏 VO（{@code MemberFrontVO / CertificateFrontVO / ProjectFrontVO}）：
-     * 不含 userId、leaderId、sortOrder、content 与任何审计字段。
-     *
-     * @param id 成员 ID
-     * @return 成员详情；证书 / 项目为空时是空数组而不是 null
-     */
-    @GetMapping("/detail")
-    @Operation(summary = "官网成员详情", description = "匿名可访问；返回档案 + 证书 + 项目三段，成员不存在返回 40400")
-    public BaseResponse<MemberDetailFrontVO> getMemberDetail(@RequestParam("id") long id) {
-        ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "id 不合法");
-        return ResultUtils.success(studioMemberService.getFrontMemberDetail(id));
-    }
-
     // ==================== 管理端：全部要求 admin 角色 ====================
+
+    // ⚠️ 原「C 端：官网展示，匿名可访问」的三个接口（GET /member/list、
+    // /member/certificate/list、/member/detail）已在「团队成员不对外展示」的规则下整体删除：
+    //   - 白名单中的三条精确路径一并移除（见 SaTokenMvcConfig）；
+    //   - 官网成员页与成员详情页同步下线（web/ 与 static/ 两套前端）；
+    //   - Service 侧配套方法（listFrontMembers / getFrontMemberDetail /
+    //     listFrontCertificatesByMember）与 MemberDetailFrontVO 一并删除。
+    // 成员档案自此只作为**后台内部数据**：读取走下面的 /member/list/page 与 /member/get。
+    //
+    // 一处有意保留的例外：项目详情（/project/detail）仍返回参与成员，用于项目介绍
+    // （产品确认保留），见 db/DESIGN.md 场景 L。
 
     /**
      * 管理员新增成员档案

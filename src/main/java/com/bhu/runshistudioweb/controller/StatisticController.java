@@ -39,12 +39,15 @@ public class StatisticController {
     private StatisticService statisticService;
 
     /**
-     * 官网首页大盘：团队人数、证书数量，以及证书的级别 / 类型分布（供图表渲染）
+     * 官网首页大盘：证书数量，以及证书的级别 / 类型分布（供图表渲染）
+     *
+     * <p>⚠️ 成员人数（总数 / 在读 / 已毕业）已随「团队成员不对外展示」移除——
+     * 本接口匿名可访问，对外暴露团队人数同样属于展示成员信息。
      *
      * @return 大盘统计；计数字段是 JSON 数字（VO 用 Integer，避开全局的 Long → 字符串规则）
      */
     @GetMapping("/overview")
-    @Operation(summary = "官网首页大盘", description = "匿名可访问；成员/证书总数与级别、类型分布，空维度补 0")
+    @Operation(summary = "官网首页大盘", description = "匿名可访问；证书总数与级别、类型分布，空维度补 0")
     public BaseResponse<StatisticOverviewVO> getOverview() {
         return ResultUtils.success(statisticService.getOverview());
     }

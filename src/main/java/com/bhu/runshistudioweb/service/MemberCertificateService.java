@@ -2,7 +2,6 @@ package com.bhu.runshistudioweb.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
 import com.bhu.runshistudioweb.model.entity.StudioMemberCertificate;
-import com.bhu.runshistudioweb.model.vo.CertificateFrontVO;
 import com.bhu.runshistudioweb.model.vo.CertificateVO;
 import com.bhu.runshistudioweb.model.vo.MemberVO;
 
@@ -87,13 +86,10 @@ public interface MemberCertificateService extends IService<StudioMemberCertifica
      */
     List<MemberVO> listMembersByCertificate(long certificateId);
 
-    /**
-     * 查某成员持有的全部证书（<b>C 端脱敏视图</b>，官网展示用）
-     *
-     * @param memberId 成员 ID
-     * @return 脱敏后的证书列表；成员不存在时抛 40400
-     */
-    List<CertificateFrontVO> listFrontCertificatesByMember(long memberId);
+    // 原 listFrontCertificatesByMember(long)（C 端「某成员的证书」，供匿名接口调用）
+    // 已随「团队成员不对外展示」删除：它以成员为入口、只服务于成员详情页，
+    // 成员页下线后不再有任何调用方。证书对外展示走 CertificateService.listFrontCertificates
+    // ——那条是证书自身维度，不含成员信息。
 
     // ==================== 级联清理：仅供主表 delete 在同一事务内调用 ====================
 

@@ -47,22 +47,22 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
             // ===== C 端公开接口（匿名可访问，产品要求游客也能用）=====
             "/user/register",   // 注册：还没有账号的人必须能访问
             "/user/login",      // 登录：未登录的人必须能访问
-            // 官网成员列表：游客浏览官网时就要看到成员页，不能要求先登录。
-            // 只放行这一个「读」路径且只返回脱敏 VO（见 MemberFrontVO）；
-            // 同前缀的管理端接口（/member/add、/member/list/page 等）都不在此列，不会被误放行
-            "/member/list",
-            // 官网「某成员的证书」：成员详情页要展示他拿过哪些证书，游客可见。
-            // 同样只放行这一个精确路径，返回的是脱敏的 CertificateFrontVO；
-            // 注意别写成 /member/**——那样会把 /member/list/page 等管理端接口一起放行
-            "/member/certificate/list",
-            // 官网「成员详情」页：档案 + 证书 + 项目三合一。
-            // 精确路径：管理端的成员详情是 /member/get（要求 admin），两者不能混
-            "/member/detail",
+            // ⚠️ 业务规则：**团队成员不对外展示**（成员档案只作为后台内部数据）。
+            // 原先匿名放行的三条 /member/* 接口（/member/list、/member/certificate/list、
+            // /member/detail）已随「官网成员页下线」一并删除，这里**不留任何 /member/* 路径**。
+            // 成员只通过管理端接口读取（/member/list/page、/member/get），均要求 admin。
+            //
+            // 一处**有意的例外**：项目详情 /project/detail 仍返回参与成员（用于项目介绍，
+            // 已由产品确认保留），因此匿名访客能通过项目页看到成员姓名/头像。
+            // 这是本规则下唯一的成员信息出口，已登记在 db/DESIGN.md 场景 L。
             // 荣誉证书列表：官网「荣誉墙」页（接口实现见 CertificateController）
+            // 证书本身**不含任何成员信息**（CertificateFrontVO 只有 id/title/级别/类型/日期/图片），
+            // 因此可以对外；「某成员的证书」那条（带成员维度）已随成员页一起下线
             "/certificate/list",
-            // 官网首页「大盘数字」：团队人数、证书数与分布，游客进入首页就要看到。
-            // 必须写**精确路径**——写成 /statistic/** 会把将来可能新增的管理端统计接口
-            // （可能含敏感数据）一起放行。本期统计接口只有这一个
+            // 官网首页「大盘数字」：证书数与分布，游客进入首页就要看到。
+            // ⚠️ 成员人数（memberTotal / memberInTeam / memberGraduated）已随本规则移除，
+            // 首页大盘只剩证书维度。必须写**精确路径**——写成 /statistic/** 会把将来
+            // 可能新增的管理端统计接口（可能含敏感数据）一起放行。本期统计接口只有这一个
             "/statistic/overview",
             // 官网「项目案例」页：列表与详情。两条都要**精确登记**：
             //   /project/list        → C 端列表（脱敏，不含 content）
@@ -87,6 +87,13 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
             // 上传后的图片访问路径：官网展示成员头像/证书图片时游客必须能看到。
             // 注意这是「读」的路径；「写」的路径 /file/upload 不在这里，仍然要求登录
             "/uploads/**",
+
+            // ⚠️ 原「前端静态资源」四条（/index.html、/js/**、/css/**、/vendor/**）已删除。
+            // 原因：随 jar 发布的旧无构建前端（src/main/resources/static）已整体移除——
+            // 两套前端并存会让「改了 A 却看的是 B」，而且旧前端的 AI 助手走的是同步接口，
+            // 看起来就像流式没生效。前端现在是独立工程 web/，由 Nginx（生产）或
+            // Vite（开发 :5173）托管，**请求根本不经过后端**。
+            // 因此这里只保留真正需要匿名访问的静态资源：上传的图片 /uploads/**。
 
             // ===== 接口文档（Knife4j / OpenAPI）=====
             // 注意：生产环境更稳妥的做法是直接关闭文档（knife4j.enable=false），

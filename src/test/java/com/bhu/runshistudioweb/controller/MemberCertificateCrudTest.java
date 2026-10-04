@@ -219,36 +219,18 @@ class MemberCertificateCrudTest {
         assertEquals("证书不存在", message(noCert));
 
         // 查询接口缺参数：必须是 40000，不能被兜底成 50000
-        assertEquals(40000, code(getBody("/member/certificate/list", token)), "缺 memberId 应返回 40000");
+        // （原 /member/certificate/list 的缺参用例已随该 C 端接口下线删除，）
         assertEquals(40000, code(getBody("/member-certificate/member/list", token)), "缺 certificateId 应返回 40000");
     }
 
-    // ==================== C 端 ====================
+    // ==================== 排序（原 C 端用例改用管理端接口） ====================
 
+    // 原有两个 C 端用例（「匿名可访问 + 脱敏」「C 端排序」）已随 /member/certificate/list
+    // 整体删除。排序这条行为本身仍值得守住，
+    // 因此改用管理端同名接口 /member-certificate/certificate/list 继续覆盖——
+    // 两端共用同一套取数逻辑，证明「排序规则没有因下线而改变」。
     @Test
-    @DisplayName("C 端：匿名可访问且脱敏；同名管理端接口必须仍要求登录")
-    void frontEndpointIsAnonymousAndSanitized() throws Exception {
-        long memberId = addMember("C端成员");
-        long certificateId = addCertificate("C端证书", 7);
-        postJson("/member-certificate/bind",
-                "{\"memberId\":" + memberId + ",\"certificateId\":" + certificateId + "}", token);
-
-        // 匿名访问：不带 token
-        String front = getBody("/member/certificate/list?memberId=" + memberId, null);
-        assertEquals(0, code(front), "C 端证书列表应匿名可访问（已加白名单）：" + front);
-        assertTrue(front.contains("C端证书"));
-        assertFalse(front.contains("sortOrder"), "C 端返回了置顶权重：" + front);
-        assertFalse(front.contains("createdAt"), "C 端返回了审计时间：" + front);
-
-        // 管理端同名接口仍然受保护
-        assertEquals(40100, code(getBody("/member-certificate/certificate/list?memberId=" + memberId, null)));
-        // 普通游客也不能绑定
-        assertEquals(40100, code(postJson("/member-certificate/bind",
-                "{\"memberId\":" + memberId + ",\"certificateId\":" + certificateId + "}", null)));
-    }
-
-    @Test
-    @DisplayName("排序：置顶权重高的证书排在前面")
+    @DisplayName("排序：置顶权重高的证书排在前面（管理端接口）")
     void sortedBySortOrderThenAwardDate() throws Exception {
         long memberId = addMember("排序成员");
         long lowCertId = addCertificate("低权重证书", 1);
@@ -258,9 +240,10 @@ class MemberCertificateCrudTest {
         postJson("/member-certificate/bind",
                 "{\"memberId\":" + memberId + ",\"certificateId\":" + highCertId + "}", token);
 
-        String front = getBody("/member/certificate/list?memberId=" + memberId, null);
-        assertTrue(front.indexOf("高权重证书") < front.indexOf("低权重证书"),
-                "默认排序应是 sort_order 倒序，实际：" + front);
+        String list = getBody("/member-certificate/certificate/list?memberId=" + memberId, token);
+        assertEquals(0, code(list), "管理端证书列表应可访问：" + list);
+        assertTrue(list.indexOf("高权重证书") < list.indexOf("低权重证书"),
+                "默认排序应是 sort_order 倒序，实际：" + list);
     }
 
     // ==================== 级联清理 ====================
