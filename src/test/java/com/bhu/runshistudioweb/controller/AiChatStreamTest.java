@@ -75,7 +75,7 @@ class AiChatStreamTest {
     @Resource
     private JdbcTemplate jdbcTemplate;
 
-    /** 配额计数走 Redis，测试里读「用量」必须取合并值（DB 基准 + Redis 增量） */
+    /** 起配额计数走 Redis，测试里读「用量」必须取合并值（DB 基准 + Redis 增量） */
     @Resource
     private AiQueryCountManager aiQueryCountManager;
 
@@ -224,7 +224,7 @@ class AiChatStreamTest {
     private int queryCountOf(String account) {
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT ai_query_count FROM sys_user WHERE user_account=?", Integer.class, account);
-        // 计数先进 Redis、由定时任务回刷 DB：
+        // 起计数先进 Redis、由定时任务回刷 DB：
         // 只读 DB 会读到回刷前的旧值，必须用「DB 基准 + Redis 增量」的合并值
         Long userId = jdbcTemplate.queryForObject(
                 "SELECT id FROM sys_user WHERE user_account=?", Long.class, account);

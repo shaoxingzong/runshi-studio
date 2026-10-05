@@ -219,7 +219,7 @@ class MemberCertificateCrudTest {
         assertEquals("证书不存在", message(noCert));
 
         // 查询接口缺参数：必须是 A0401，不能被兜底成 B0001
-        // （原 /member/certificate/list 的缺参用例已随该 C 端接口下线删除，）
+        // （原 /member/certificate/list 的缺参用例已随该 C 端接口下线删除）
         assertEquals("A0401", code(getBody("/member-certificate/member/list", token)), "缺 certificateId 应返回 A0401");
     }
 

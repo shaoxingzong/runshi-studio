@@ -19,7 +19,7 @@ import java.io.Serializable;
  *
  * <p><b>管理端与 C 端对分页 / 排序参数的用法</b>（同一个 DTO 各取所需）：
  * <ul>
- *     <li><b>分页参数 {@code current / pageSize}：两端都使用</b>（C 端自 升级为真分页）。
+ *     <li><b>分页参数 {@code current / pageSize}：两端都使用</b>（C 端自 起升级为真分页）。
  *     非法值不在 DTO 报错，由 Service 兜底纠正：页码 &lt; 1 视为 1，pageSize &lt; 1 视为 10、
  *     &gt; 50 收敛到 50（匿名接口必须防「一次拉全表」）；</li>
  *     <li><b>排序参数 {@code sortField / sortOrder}：仅管理端使用</b>，

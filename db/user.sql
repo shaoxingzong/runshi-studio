@@ -202,7 +202,7 @@ CREATE TABLE `studio_knowledge_chunk` (
 
 -- 11. 考勤签到记录表
 -- 记录不可删：签到是审计凭证，逻辑删除字段只为「极端误操作由 DBA 手工处理」保留，
--- 应用层不提供任何删除 / 修改接口（）。
+-- 应用层不提供任何删除 / 修改接口（见）。
 -- attendance_date 是冗余列：由 check_in_at 按 Asia/Shanghai 派生后单独存一列，
 -- 目的是让「按天查询」能走 idx_date_lan_time；若写成 DATE(check_in_at) 会导致索引失效。
 DROP TABLE IF EXISTS `studio_attendance`;

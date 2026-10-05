@@ -95,7 +95,7 @@ public class SysUser implements Serializable {
     /**
      * AI 查询次数（<b>基准值</b>，不是实时用量）
      *
-     * <p>它不再是「每次提问都要写」的热点行（风险 R1 已收口）：
+     * <p> 起它不再是「每次提问都要写」的热点行（风险 R1 已收口）：
      * 提问的增量先进 Redis（{@code INCR}，在数据库事务外），
      * 由定时任务批量回刷到本字段。
      *
