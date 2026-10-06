@@ -433,7 +433,9 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         // 注意：这里必须明确告知「账号已存在」，不能像登录那样统一成「账号或密码错误」——
         // 注册的对手是普通用户（需要明确反馈才能完成注册），登录的对手是攻击者（提示差异是他唯一的探测手段）。
         // 注册接口本身就是账号存在性探测器，这是它的功能；防的是「被批量扫描」，
-        // 靠限流 + 验证码（见 ratelimiter 包），而不是靠隐藏提示。
+        // 靠限流 + 验证码，而不是靠隐藏提示。
+        // 注：注册限流目前尚未接入；将来要加可直接复用 AiRateLimitManager 的 Lua 双窗口模式
+        // （游客提问限流已是该实现），不必另起一套
         ThrowUtils.throwIf(count > 0, ErrorCode.PARAMS_ERROR, "账号已存在");
     }
 

@@ -24,3 +24,10 @@ logging:
   level:
     # 开发时打印 SQL 与调试日志
     com.bhu.runshistudioweb: debug
+
+studio:
+  attendance:
+    # 开发期**占位**网段：查到工作室真实网段后改这一行即可（改完无需重启其它配置）。
+    # 多个网段可并列写多行；命中任意一个即判为内网
+    lan-cidrs:
+      - 192.168.1.0/24

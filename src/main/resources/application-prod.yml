@@ -3,7 +3,7 @@
 #
 # 两类差异：
 #   ① <b>密钥类</b>：写成 ${XXX} **不带默认值**——缺了就启动失败。
-#      这比「带着空值启动、运行时才 50001」好排查得多。
+#      这比「带着空值启动、运行时才 B0001」好排查得多。
 #   ② <b>路径 / 日志类</b>：改成 Linux 下的绝对路径、日志写文件。
 #
 # 公共配置（大部分 AI 参数 / Sa-Token / MyBatis-Plus / 接口文档默认关闭等）
@@ -33,6 +33,15 @@ studio:
     api-key: ${AI_API_KEY}
     model: ${AI_MODEL}
     embedding-model: ${AI_EMBEDDING_MODEL}
+
+  attendance:
+    # ⚠️ 生产必须配置真实工作室网段：留空不会启动失败，
+    #    但启动日志会打一条 warn，且**所有签到都记为外网**（安全侧默认，不误发通行证）。
+    # 注入方式：ATTENDANCE_LAN_CIDRS=192.168.1.0/24，多个网段用逗号分隔
+    lan-cidrs: ${ATTENDANCE_LAN_CIDRS:}
+    # Nginx 与应用同机时默认值即可；Nginx 在独立机器上时填入它的地址，
+    # 否则所有请求都会按 Nginx 自己的 IP 判定，结果是全员外网
+    trusted-proxies: ${ATTENDANCE_TRUSTED_PROXIES:127.0.0.1,::1}
 
   web:
     # 同域部署（Nginx 代理 /api）无需跨域；跨域时填真实域名

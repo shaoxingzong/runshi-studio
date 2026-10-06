@@ -33,7 +33,7 @@ spring:
       password: 改成你的Redis口令
 
 # ===== 以下只有要用「AI 助手 / RAG 知识库」时才需要 =====
-# 不填也能启动：应用照常运行，只是调用 AI 时返回 50001「AI 服务暂时不可用」
+# 不填也能启动：应用照常运行，只是调用 AI 时返回 C0200「AI 服务暂时不可用」
 studio:
   ai:
     # OpenAI 兼容地址（不带 /chat/completions，由 AiManager 拼接）。

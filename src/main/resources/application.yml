@@ -77,7 +77,7 @@ studio:
   # ===== AI 咨询（OpenAI 兼容协议，服务商可替换）=====
   ai:
     # 以下四项在生产被覆盖为「必填」；本地留空时应用照常启动，
-    # 只有真正调用 AI 时返回 50001「AI 服务暂时不可用」
+    # 只有真正调用 AI 时返回 C0200「AI 服务暂时不可用」
     base-url: ${AI_BASE_URL:}                       # 不带 /chat/completions，由 AiManager 拼接
     api-key: ${AI_API_KEY:}
     model: ${AI_MODEL:deepseek-chat}
@@ -85,7 +85,7 @@ studio:
     # 想不改包换话术：设为 file:/opt/.../system-prompt.txt
     system-prompt-location: ${AI_SYSTEM_PROMPT_LOCATION:classpath:prompts/system-prompt.txt}
 
-    # 单用户提问次数上限（登录用户才计数，游客不计）；命中返回 42900
+    # 单用户提问次数上限（登录用户才计数，游客不计）；命中返回 A0501
     query-limit: 100
     # RAG 检索：最多取回多少条资料块（越多越全，但 token 与噪声同步上升）
     rag-top-k: 5
@@ -101,6 +101,26 @@ studio:
     guest-ip-minute-limit: 5
     guest-ip-daily-limit: 50
     guest-ip-limits-enabled: ${AI_GUEST_IP_LIMITS_ENABLED:true}
+
+  # ===== 考勤签到 =====
+  attendance:
+    # 工作室局域网网段：命中任一即判为「内网签到」。
+    # 留空时应用照常启动，但启动日志会打一条 warn，且**所有签到都记为外网**——
+    # 这是刻意选的安全侧默认：宁可记录不准，也不能把未知地址当成内网发通行证。
+    # 取值方式：在工作室电脑上执行 ipconfig，用 IPv4 地址 + 子网掩码推出
+    # （掩码 255.255.255.0 对应 /24）。真实网段由 dev / prod 环境覆盖，这里刻意留空
+    lan-cidrs: []
+    # 可信反向代理：只有 TCP 对端是这些地址时，才采信 X-Real-IP / X-Forwarded-For。
+    # ⚠️ 这是防「伪造内网签到」的安全根基——请求头是客户端可以任意伪造的，
+    #    少了这道判断，任何人加一个 X-Real-IP: 192.168.1.5 就能让自己「在工作室签到」。
+    # 默认只信本机（即 Nginx 与应用同机这一最常见形态）；Nginx 在别的机器上时，
+    # 必须把它的地址加进来，否则所有请求都会按 Nginx 自己的 IP 判定
+    trusted-proxies:
+      - 127.0.0.1
+      - "::1"
+    # 同一用户两次签到之间的最小间隔（秒），挡的是误触与连点，不是恶意刷接口
+    # （要刷得有账号，且记录挂在真实账号上可审计）。设为 <= 0 表示不做间隔限制
+    min-interval-seconds: 60
 
   web:
     # 跨域来源白名单：逗号分隔，端口通配用 *；必须走 allowedOriginPatterns（见 CorsConfig）
