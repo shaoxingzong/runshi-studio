@@ -5,6 +5,7 @@ import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
+import com.bhu.runshistudioweb.exception.BusinessException;
 import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.exception.ThrowUtils;
 import com.bhu.runshistudioweb.manager.AiQueryCountManager;
@@ -20,6 +21,7 @@ import com.bhu.runshistudioweb.service.UserService;
 import com.bhu.runshistudioweb.utils.PasswordUtils;
 import jakarta.annotation.Resource;
 import org.springframework.beans.BeanUtils;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 import java.util.Objects;
@@ -119,9 +121,23 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         // userStatus / aiQueryCount / deletedAt 留空即可：
         // 它们在 DDL 中都有 DEFAULT（0），MyBatis-Plus 插入时会跳过 null 字段，由数据库默认值兜底
 
-        boolean saveResult = this.save(sysUser);
-        // save 返回 false 说明插入没成功（如唯一索引冲突），必须显式判断，
-        // 否则会把「没存进去」当成注册成功返回给前端
+        // 用 try / catch 接唯一索引冲突，而不是靠返回值判断：
+        // MyBatis-Plus 遇到唯一索引冲突时是**抛 DuplicateKeyException**，不会返回 false。
+        // 早先这里只有 `if (!saveResult)`，且注释假设「冲突会让 save 返回 false」——
+        // 于是并发注册那条路径从来没人接住，一路冒到全局兜底变成 B0001「系统错误」。
+        // 现在的分工：catch 负责并发竞态（唯一索引是最后一道防线，它以异常形式报错），
+        // 下面的 throwIf 负责「返回 false 但没有抛异常」的其它失败情况
+        boolean saveResult;
+        try {
+            saveResult = this.save(sysUser);
+        } catch (DuplicateKeyException e) {
+            // 并发竞态：两个请求同时通过了上面的存在性检查（互相都还没写库），
+            // 后到的那条被唯一索引 uk_account_deleted 拦下，走到这里。
+            // 必须换成与正常路径一致的可读提示：「账号已存在」本来就是注册接口的标准反馈
+            // （见 assertAccountNotExists），并发时返回它不会泄露任何额外信息，
+            // 却能让用户知道该换账号重试，而不是收到一句无从下手的「系统错误」
+            throw new BusinessException(ErrorCode.PARAMS_ERROR, "账号已存在");
+        }
         ThrowUtils.throwIf(!saveResult, ErrorCode.SYSTEM_ERROR, "注册失败，数据库异常");
 
         // save 成功后 MyBatis-Plus 会把雪花 ID 回填到实体，这里直接取即可

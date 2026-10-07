@@ -348,6 +348,38 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
         return memberFrontVO;
     }
 
+    // ==================== 考勤模块依赖：按登录账号查在队成员 ====================
+
+    /**
+     * 按绑定的登录账号查在队成员（接口契约见 StudioMemberService）
+     *
+     * <p>条件有两条，缺一不可：
+     * <ul>
+     *     <li>{@code user_id = ?}：成员必须绑定了这个登录账号（未绑定的档案 user_id 是 NULL）；</li>
+     *     <li>{@code member_status = 0}：<b>在队</b>。毕业/离队（1）的成员不再有考勤资格，
+     *     但他们既不报错也不该静默通过——这个条件就是那道门槛。</li>
+     * </ul>
+     * 第三重条件 {@code deleted_at = 0} 由 {@code @TableLogic} 自动追加，不需要手写。
+     *
+     * @param userId 登录账号 ID，为 null 返回 null
+     * @return 在队成员档案；查不到返回 null
+     */
+    @Override
+    public StudioMember getActiveMemberByUserId(Long userId) {
+        if (userId == null) {
+            return null;
+        }
+        LambdaQueryWrapper<StudioMember> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(StudioMember::getUserId, userId)
+                .eq(StudioMember::getMemberStatus, MemberStatusEnum.IN_TEAM.getValue());
+
+        // getOne 的第二个参数传 false：命中多条时不抛 TooManyResultsException，取第一条返回。
+        // 唯一索引 uk_userid_deleted 本已保证「同一账号最多一条未删除档案」，
+        // 这里只是防御「手工改库造成脏数据」时接口直接 500——宁可返回一条，
+        // 也要比整个签到功能挂掉好
+        return this.getOne(wrapper, false);
+    }
+
     // ==================== 私有工具方法 ====================
 
     /**

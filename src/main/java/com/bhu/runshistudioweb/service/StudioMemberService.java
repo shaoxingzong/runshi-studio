@@ -120,4 +120,25 @@ public interface StudioMemberService extends IService<StudioMember> {
      * @return 脱敏后的 VO；入参为 null 时返回 null
      */
     MemberFrontVO getMemberFrontVO(StudioMember member);
+
+    // ==================== 考勤模块依赖：按登录账号查在队成员 ====================
+
+    /**
+     * 按绑定的登录账号 ID 查询<b>在队</b>的成员档案
+     *
+     * <p><b>为什么考勤要的是这个方法，而不是复用 {@link #getMemberById}</b>：
+     * 考勤的准入规则是「当前登录账号是不是被管理员标记过的工作室成员」，
+     * 判定链条是 {@code sys_user.id → studio_member.user_id}，
+     * 且必须是<b>在队</b>（member_status = 0）状态——毕业/离队的成员不再参与考勤。
+     * {@link #getMemberById} 是按成员档案主键查，答不上这个问题。
+     *
+     * <p>注意它与 {@code sys_user.user_role} 的关系：角色里也有 {@code member} 取值，
+     * 但那是权限标签，可能与档案不同步。<b>成员身份的权威是 studio_member 表</b>，
+     * 因此这里查表而不是查角色。
+     *
+     * @param userId 登录账号 ID，为 null 时直接返回 null（未登录 / 无绑定）
+     * @return 在队的成员档案；查不到返回 <b>null</b>（不是抛异常——
+     *         调用方要拿「查不到」这件事来生成 A0301 无权限提示，而不是让它炸掉）
+     */
+    StudioMember getActiveMemberByUserId(Long userId);
 }
