@@ -15,13 +15,13 @@ import com.bhu.runshistudioweb.model.vo.MemberVO;
 import com.bhu.runshistudioweb.service.StudioMemberService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -59,13 +59,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/member")
 @Tag(name = "成员模块", description = "官网成员展示（匿名可访问）与管理员成员管理")
+@RequiredArgsConstructor
 public class StudioMemberController {
 
     /**
-     * 用 @Resource 而不是 @Autowired：按名称注入，装配失败时的报错信息更直观
+     * 构造器注入（{@code @RequiredArgsConstructor} + {@code final}）：装配后不可变，
+     * 依赖缺失在启动期就失败，而不是等到真正调用时才 NPE
      */
-    @Resource
-    private StudioMemberService studioMemberService;
+    private final StudioMemberService studioMemberService;
 
     // ==================== 管理端：全部要求 admin 角色 ====================
 

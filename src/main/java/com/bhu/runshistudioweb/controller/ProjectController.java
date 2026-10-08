@@ -17,13 +17,13 @@ import com.bhu.runshistudioweb.model.vo.ProjectVO;
 import com.bhu.runshistudioweb.service.StudioProjectService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -57,10 +57,10 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "项目案例模块", description = "官网项目展示（匿名可访问）与管理员项目管理")
 @RestController
 @RequestMapping("/project")
+@RequiredArgsConstructor
 public class ProjectController {
 
-    @Resource
-    private StudioProjectService studioProjectService;
+    private final StudioProjectService studioProjectService;
 
     // ==================== C 端：官网展示，匿名可访问 ====================
 

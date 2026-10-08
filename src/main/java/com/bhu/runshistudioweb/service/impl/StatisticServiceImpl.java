@@ -7,7 +7,7 @@ import com.bhu.runshistudioweb.model.enums.CertificateLevelEnum;
 import com.bhu.runshistudioweb.model.enums.CertificateTypeEnum;
 import com.bhu.runshistudioweb.model.vo.StatisticOverviewVO;
 import com.bhu.runshistudioweb.service.StatisticService;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
@@ -59,6 +59,7 @@ import java.util.Map;
  * 接口路径与响应结构都不用改；管理端若将来需要人数统计，应另开一个要求 admin 的接口。
  */
 @Service
+@RequiredArgsConstructor
 public class StatisticServiceImpl implements StatisticService {
 
     /**
@@ -72,8 +73,7 @@ public class StatisticServiceImpl implements StatisticService {
     private static final String AWARD_LEVEL_COLUMN = "award_level";
     private static final String AWARD_TYPE_COLUMN = "award_type";
 
-    @Resource
-    private StudioCertificateMapper studioCertificateMapper;
+    private final StudioCertificateMapper studioCertificateMapper;
 
     /**
      * 查询官网首页大盘：共 3 条查询，顺序即实现顺序

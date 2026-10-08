@@ -29,8 +29,9 @@ import static org.mockito.Mockito.when;
  *
  * author: shaoshing
  *
- * <p>这里直接 {@code new GlobalExceptionHandler()} 调用方法，不启动 Spring 容器：
- * 被测逻辑是纯映射（异常 → 响应体），没有依赖需要注入，用普通单元测试跑得更快、更稳。
+ * <p>这里直接 {@code new GlobalExceptionHandler(...)} 调用方法，不启动 Spring 容器：
+ * 被测逻辑是纯映射（异常 → 响应体），唯一的依赖（上传大小上限）由构造器直接传入，
+ * 用普通单元测试跑得更快、更稳。
  * 容器层面的装配（@RestControllerAdvice 是否生效）由集成测试覆盖。
  *
  * <p>Sa-Token 那 4 个用例的价值在于「防止被兜底吞掉」：
@@ -39,7 +40,8 @@ import static org.mockito.Mockito.when;
  */
 class GlobalExceptionHandlerTest {
 
-    private final GlobalExceptionHandler handler = new GlobalExceptionHandler();
+    // 10MB 与 application.yml 的 spring.servlet.multipart.max-file-size 默认值一致
+    private final GlobalExceptionHandler handler = new GlobalExceptionHandler("10MB");
 
     @Test
     @DisplayName("业务异常：透传原始错误码与提示信息")

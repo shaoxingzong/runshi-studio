@@ -16,13 +16,13 @@ import com.bhu.runshistudioweb.model.vo.CertificateVO;
 import com.bhu.runshistudioweb.service.CertificateService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -54,10 +54,10 @@ import java.util.List;
 @Tag(name = "证书模块", description = "荣誉证书的管理与官网展示")
 @RestController
 @RequestMapping("/certificate")
+@RequiredArgsConstructor
 public class CertificateController {
 
-    @Resource
-    private CertificateService certificateService;
+    private final CertificateService certificateService;
 
     // ==================== 管理端：全部要求 admin 角色 ====================
 

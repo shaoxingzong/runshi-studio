@@ -14,9 +14,9 @@ import com.bhu.runshistudioweb.model.entity.StudioMemberCertificate;
 import com.bhu.runshistudioweb.model.vo.CertificateVO;
 import com.bhu.runshistudioweb.model.vo.MemberVO;
 import com.bhu.runshistudioweb.service.MemberCertificateService;
-import jakarta.annotation.Resource;
 import org.springframework.beans.BeanUtils;
 import org.springframework.dao.DuplicateKeyException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -54,17 +54,16 @@ import java.util.List;
  * 追加 {@code id} 作为最终键，保证前两个键都相同时分页次序稳定（不会翻页时乱序）。
  */
 @Service
+@RequiredArgsConstructor
 public class MemberCertificateServiceImpl extends ServiceImpl<StudioMemberCertificateMapper, StudioMemberCertificate>
         implements MemberCertificateService {
 
     /**
      * 只注入 Mapper，不注入主表 Service（原因见类注释的「依赖方向铁律」）
      */
-    @Resource
-    private StudioMemberMapper studioMemberMapper;
+    private final StudioMemberMapper studioMemberMapper;
 
-    @Resource
-    private StudioCertificateMapper studioCertificateMapper;
+    private final StudioCertificateMapper studioCertificateMapper;
 
     // ==================== 写操作 ====================
 

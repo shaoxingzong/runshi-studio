@@ -19,13 +19,13 @@ import com.bhu.runshistudioweb.model.vo.UserVO;
 import com.bhu.runshistudioweb.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -62,13 +62,14 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/user")
 @Tag(name = "用户模块", description = "用户注册、登录、注销、当前用户查询，以及管理员用户管理")
+@RequiredArgsConstructor
 public class UserController {
 
     /**
-     * 用 @Resource 而不是 @Autowired：按名称注入，装配失败时的报错信息更直观
+     * 构造器注入（{@code @RequiredArgsConstructor} + {@code final}）：装配后不可变，
+     * 依赖缺失在启动期就失败，而不是等到真正调用时才 NPE
      */
-    @Resource
-    private UserService userService;
+    private final UserService userService;
 
     // ==================== C 端：用户自己 ====================
 

@@ -15,7 +15,6 @@ import com.bhu.runshistudioweb.model.vo.AiSessionVO;
 import com.bhu.runshistudioweb.service.AiChatService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,6 +22,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -56,10 +56,10 @@ import java.util.List;
 @Tag(name = "AI 咨询模块", description = "官网 AI 咨询：提问与历史记录（匿名可访问）")
 @RestController
 @RequestMapping("/ai")
+@RequiredArgsConstructor
 public class AiChatController {
 
-    @Resource
-    private AiChatService aiChatService;
+    private final AiChatService aiChatService;
 
     /**
      * AI 提问（匿名可用）

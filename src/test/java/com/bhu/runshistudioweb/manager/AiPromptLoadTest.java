@@ -36,9 +36,8 @@ class AiPromptLoadTest {
     private AiManager managerWith(String location) {
         AiProperties properties = new AiProperties();
         properties.setSystemPromptLocation(location);
-        AiManager manager = new AiManager();
-        ReflectionTestUtils.setField(manager, "aiProperties", properties);
-        ReflectionTestUtils.setField(manager, "resourceLoader", new DefaultResourceLoader());
+        // 构造器注入后不再需要 setField：依赖在构造时一次性给全，顺序与字段声明一致
+        AiManager manager = new AiManager(properties, new DefaultResourceLoader());
         manager.initModels();
         return manager;
     }

@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.bhu.runshistudioweb.constant.AiQueryCountConstant;
 import com.bhu.runshistudioweb.mapper.SysUserMapper;
 import com.bhu.runshistudioweb.model.entity.SysUser;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.Cursor;
 import org.springframework.data.redis.core.RedisCallback;
@@ -47,6 +47,7 @@ import java.util.List;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class AiQueryCountManager {
 
     /**
@@ -60,11 +61,9 @@ public class AiQueryCountManager {
      * 计数必须用 StringRedisTemplate：value 是裸字符串，INCR / GETDEL 才能工作
      * （用项目默认的 JSON RedisTemplate 会让 INCR 报 "value is not an integer"，原因见类注释）
      */
-    @Resource
-    private StringRedisTemplate stringRedisTemplate;
+    private final StringRedisTemplate stringRedisTemplate;
 
-    @Resource
-    private SysUserMapper sysUserMapper;
+    private final SysUserMapper sysUserMapper;
 
     /**
      * 计数 +1（<b>事务外调用</b>，Redis 是外部系统，不进数据库事务）

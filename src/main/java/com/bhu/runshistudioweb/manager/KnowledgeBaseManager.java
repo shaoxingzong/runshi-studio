@@ -14,7 +14,7 @@ import dev.langchain4j.store.embedding.EmbeddingMatch;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -56,6 +56,7 @@ import java.util.List;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class KnowledgeBaseManager {
 
     /**
@@ -65,11 +66,9 @@ public class KnowledgeBaseManager {
      */
     private final InMemoryEmbeddingStore<TextSegment> embeddingStore = new InMemoryEmbeddingStore<>();
 
-    @Resource
-    private AiProperties aiProperties;
+    private final AiProperties aiProperties;
 
-    @Resource
-    private AiManager aiManager;
+    private final AiManager aiManager;
 
     /**
      * 切分正文

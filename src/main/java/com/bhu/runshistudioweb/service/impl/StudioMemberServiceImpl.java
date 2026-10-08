@@ -22,9 +22,9 @@ import com.bhu.runshistudioweb.model.vo.ProjectFrontVO;
 import com.bhu.runshistudioweb.service.MemberCertificateService;
 import com.bhu.runshistudioweb.service.MemberProjectService;
 import com.bhu.runshistudioweb.service.StudioMemberService;
-import jakarta.annotation.Resource;
 import org.springframework.beans.BeanUtils;
 import org.springframework.dao.DuplicateKeyException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -60,6 +60,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 受检异常（如 SQLException 的包装）不回滚，显式声明才能覆盖全部情况。
  */
 @Service
+@RequiredArgsConstructor
 public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, StudioMember>
         implements StudioMemberService {
 
@@ -78,8 +79,7 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
      * 成员档案与登录账号的绑定关系维护在 studio_member.user_id 上，
      * 校验「账号是否存在」需要查 sys_user，故注入它的 Mapper
      */
-    @Resource
-    private SysUserMapper sysUserMapper;
+    private final SysUserMapper sysUserMapper;
 
     /**
      * 成员-证书关联服务：删除成员时要级联清理关联关系
@@ -87,8 +87,7 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
      * <p>依赖方向是单向的（本类 → 关联服务），不会构成循环依赖：
      * {@code MemberCertificateServiceImpl} 只注入 Mapper，不依赖本类。
      */
-    @Resource
-    private MemberCertificateService memberCertificateService;
+    private final MemberCertificateService memberCertificateService;
 
     /**
      * 成员-项目关联服务：删除成员时同样要级联清理
@@ -96,8 +95,7 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
      * <p>与上面同一个道理：{@code MemberProjectServiceImpl} 只注入 Mapper，
      * 它自己不会被本类依赖回去，因此不构成循环依赖。
      */
-    @Resource
-    private MemberProjectService memberProjectService;
+    private final MemberProjectService memberProjectService;
 
     // ==================== 管理端：调用方必须已通过 @SaCheckRole("admin") ====================
 

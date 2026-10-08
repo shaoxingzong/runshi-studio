@@ -13,12 +13,12 @@ import com.bhu.runshistudioweb.model.vo.MemberVO;
 import com.bhu.runshistudioweb.service.MemberCertificateService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -44,10 +44,10 @@ import java.util.List;
 @Tag(name = "成员证书关联", description = "管理员维护成员与证书的绑定关系")
 @RestController
 @RequestMapping("/member-certificate")
+@RequiredArgsConstructor
 public class MemberCertificateController {
 
-    @Resource
-    private MemberCertificateService memberCertificateService;
+    private final MemberCertificateService memberCertificateService;
 
     /**
      * 绑定成员与证书

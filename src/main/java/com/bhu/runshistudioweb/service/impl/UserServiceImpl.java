@@ -19,9 +19,9 @@ import com.bhu.runshistudioweb.model.vo.LoginUserVO;
 import com.bhu.runshistudioweb.model.vo.UserVO;
 import com.bhu.runshistudioweb.service.UserService;
 import com.bhu.runshistudioweb.utils.PasswordUtils;
-import jakarta.annotation.Resource;
 import org.springframework.beans.BeanUtils;
 import org.springframework.dao.DuplicateKeyException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.Objects;
@@ -44,6 +44,7 @@ import java.util.Objects;
  * 否则中途失败会留下「有账号无档案」的脏数据。
  */
 @Service
+@RequiredArgsConstructor
 public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> implements UserService {
 
     /**
@@ -77,8 +78,7 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
      * <p>只用于「读出合并值」：登录信息里的 {@code aiQueryCount} 必须是
      * 「DB 基准 + Redis 未落库增量」，否则用户刚问完就看不出数字变化。
      */
-    @Resource
-    private AiQueryCountManager aiQueryCountManager;
+    private final AiQueryCountManager aiQueryCountManager;
 
     // ==================== C 端：用户自己 ====================
 

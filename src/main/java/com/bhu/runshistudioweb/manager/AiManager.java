@@ -24,9 +24,9 @@ import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiStreamingChatModel;
 import dev.langchain4j.model.output.Response;
 import jakarta.annotation.PostConstruct;
-import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ResourceLoader;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
@@ -87,6 +87,7 @@ import java.util.function.Consumer;
  */
 @Slf4j
 @Component
+@RequiredArgsConstructor
 public class AiManager {
 
     /**
@@ -111,8 +112,7 @@ public class AiManager {
     /** 对外统一的失败文案：不复述底层细节（超时、限流、解析失败在用户眼里是同一件事） */
     private static final String AI_UNAVAILABLE_MESSAGE = "AI 服务暂时不可用，请稍后重试";
 
-    @Resource
-    private AiProperties aiProperties;
+    private final AiProperties aiProperties;
 
     /**
      * 资源加载器：用来读取系统提示词文件
@@ -120,8 +120,7 @@ public class AiManager {
      * <p>它同时支持 {@code classpath:} 与 {@code file:} 两种前缀，
      * 因此「随包发布」和「指向服务器文件」两种部署方式不用改代码，只改配置
      */
-    @Resource
-    private ResourceLoader resourceLoader;
+    private final ResourceLoader resourceLoader;
 
     /**
      * 系统提示词内容：启动时从 {@link AiProperties#getSystemPromptLocation()} 读一次，之后不变

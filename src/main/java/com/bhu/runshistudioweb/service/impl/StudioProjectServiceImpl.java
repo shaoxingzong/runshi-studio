@@ -18,8 +18,8 @@ import com.bhu.runshistudioweb.model.vo.ProjectFrontVO;
 import com.bhu.runshistudioweb.model.vo.ProjectVO;
 import com.bhu.runshistudioweb.service.MemberProjectService;
 import com.bhu.runshistudioweb.service.StudioProjectService;
-import jakarta.annotation.Resource;
 import org.springframework.beans.BeanUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.type.TypeReference;
@@ -52,6 +52,7 @@ import java.util.List;
  * （{@code MemberProjectServiceImpl} 只注入 Mapper），因此不会循环依赖。
  */
 @Service
+@RequiredArgsConstructor
 public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, StudioProject>
         implements StudioProjectService {
 
@@ -73,22 +74,19 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
      * 校验「队长是否存在」需要查 studio_member，故注入它的 Mapper。
      * 注意查的是成员主表而不是关联表：{@code leader_id} 是权威源
      */
-    @Resource
-    private StudioMemberMapper studioMemberMapper;
+    private final StudioMemberMapper studioMemberMapper;
 
     /**
      * 成员-项目关联服务：负责队长同步与级联清理
      * <p>依赖方向单向（本类 → 关联服务），不构成循环依赖
      */
-    @Resource
-    private MemberProjectService memberProjectService;
+    private final MemberProjectService memberProjectService;
 
     /**
      * 用于 tech_stack 的 JSON 序列化 / 反序列化。
      * <p>用容器里的实例（Boot 4 自动配置 + JsonConfig 定制），不自己 new
      */
-    @Resource
-    private JsonMapper jsonMapper;
+    private final JsonMapper jsonMapper;
 
     // ==================== 管理端 ====================
 

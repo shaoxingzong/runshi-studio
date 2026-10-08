@@ -17,9 +17,9 @@ import com.bhu.runshistudioweb.model.vo.MemberVO;
 import com.bhu.runshistudioweb.model.vo.ProjectFrontVO;
 import com.bhu.runshistudioweb.model.vo.ProjectVO;
 import com.bhu.runshistudioweb.service.MemberProjectService;
-import jakarta.annotation.Resource;
 import org.springframework.beans.BeanUtils;
 import org.springframework.dao.DuplicateKeyException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
@@ -50,14 +50,13 @@ import java.util.Objects;
  * 本类的 {@code unbindMember} 负责守卫它——当前队长不允许被解绑。
  */
 @Service
+@RequiredArgsConstructor
 public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMapper, StudioMemberProject>
         implements MemberProjectService {
 
-    @Resource
-    private StudioProjectMapper studioProjectMapper;
+    private final StudioProjectMapper studioProjectMapper;
 
-    @Resource
-    private StudioMemberMapper studioMemberMapper;
+    private final StudioMemberMapper studioMemberMapper;
 
     /**
      * 用于 tech_stack（JSON 字符串）的解析。
@@ -65,8 +64,7 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
      * <p>用容器里的 {@code JsonMapper}（Boot 4 Jackson 3 自动配置，且已被 {@code JsonConfig} 定制），
      * 不自己 {@code new} 一个：自建的实例不共享全局配置，时间格式、null 策略都可能与接口不一致。
      */
-    @Resource
-    private JsonMapper jsonMapper;
+    private final JsonMapper jsonMapper;
 
     // ==================== 写操作 ====================
 

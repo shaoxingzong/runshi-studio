@@ -32,9 +32,10 @@ import com.bhu.runshistudioweb.model.vo.KnowledgeSyncAllVO;
 import com.bhu.runshistudioweb.service.KnowledgeDocService;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingMatch;
-import jakarta.annotation.Resource;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -97,6 +98,7 @@ import static com.bhu.runshistudioweb.service.KnowledgeDocService.RetrievalResul
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class KnowledgeDocServiceImpl implements KnowledgeDocService {
 
     /** 索引状态：已索引 */
@@ -142,38 +144,39 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
     /** 向量化失败的对外文案：与对话接口保持一致，不暴露服务商细节 */
     private static final String EMBEDDING_UNAVAILABLE_MESSAGE = "AI 服务暂时不可用，请稍后重试";
 
-    @Resource
-    private StudioKnowledgeDocMapper docMapper;
+    private final StudioKnowledgeDocMapper docMapper;
 
-    @Resource
-    private StudioKnowledgeChunkMapper chunkMapper;
+    private final StudioKnowledgeChunkMapper chunkMapper;
 
-    @Resource
-    private KnowledgeBaseManager knowledgeBaseManager;
+    private final KnowledgeBaseManager knowledgeBaseManager;
 
     /**
      * 检索参数（topK / minScore）来自配置：阈值必须可调，
      * 因为它依赖具体向量模型的分值分布，换模型就要重新校准
      */
-    @Resource
-    private AiProperties aiProperties;
+    private final AiProperties aiProperties;
 
     // 三个业务来源：只注入 Mapper，不注入各自的 Service——避免任何潜在的循环依赖
-    @Resource
-    private StudioProjectMapper studioProjectMapper;
+    private final StudioProjectMapper studioProjectMapper;
 
-    @Resource
-    private StudioMemberMapper studioMemberMapper;
+    private final StudioMemberMapper studioMemberMapper;
 
-    @Resource
-    private StudioCertificateMapper studioCertificateMapper;
+    private final StudioCertificateMapper studioCertificateMapper;
+
+    /** 事务管理器：容器里没有 TransactionTemplate bean，靠它自行构造（与 AiChatServiceImpl 同一套路） */
+    private final PlatformTransactionManager transactionManager;
 
     /**
-     * 与 AI 模块同样：Boot 4 容器里没有 {@code TransactionTemplate} bean，自行构造
+     * 事务模板：由 {@code transactionManager} 在依赖注入完成后构造
+     *
+     * <p>它<b>不能</b>声明成 final：Lombok 生成的构造器只做「参数 → 字段」的直接赋值，
+     * 表达不了「由另一个参数二次构造」；写成 final 会被当成构造器参数，
+     * 而容器里并不存在 TransactionTemplate 这个 bean，启动即失败。
      */
-    private final TransactionTemplate transactionTemplate;
+    private TransactionTemplate transactionTemplate;
 
-    public KnowledgeDocServiceImpl(PlatformTransactionManager transactionManager) {
+    @PostConstruct
+    void initTransactionTemplate() {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 

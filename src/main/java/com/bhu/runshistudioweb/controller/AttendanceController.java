@@ -9,11 +9,11 @@ import com.bhu.runshistudioweb.model.vo.AttendanceMeVO;
 import com.bhu.runshistudioweb.service.AttendanceService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -41,6 +41,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/attendance")
 @Tag(name = "考勤模块", description = "工作室成员签到、今日出勤看板与个人历史")
+@RequiredArgsConstructor
 public class AttendanceController {
 
     /** Nginx 惯用配置 {@code proxy_set_header X-Real-IP $remote_addr;} 对应的头名 */
@@ -51,8 +52,7 @@ public class AttendanceController {
 
     private static final String HEADER_USER_AGENT = "User-Agent";
 
-    @Resource
-    private AttendanceService attendanceService;
+    private final AttendanceService attendanceService;
 
     /**
      * 成员签到

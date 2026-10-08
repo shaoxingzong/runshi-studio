@@ -5,10 +5,10 @@ import com.bhu.runshistudioweb.common.ResultUtils;
 import com.bhu.runshistudioweb.manager.FileManager;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -29,10 +29,10 @@ import org.springframework.web.multipart.MultipartFile;
 @Tag(name = "文件管理")
 @RestController
 @RequestMapping("/file")
+@RequiredArgsConstructor
 public class FileController {
 
-    @Resource
-    private FileManager fileManager;
+    private final FileManager fileManager;
 
     /**
      * 文件上传

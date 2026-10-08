@@ -17,8 +17,8 @@ import com.bhu.runshistudioweb.model.vo.CertificateFrontVO;
 import com.bhu.runshistudioweb.model.vo.CertificateVO;
 import com.bhu.runshistudioweb.service.CertificateService;
 import com.bhu.runshistudioweb.service.MemberCertificateService;
-import jakarta.annotation.Resource;
 import org.springframework.beans.BeanUtils;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,6 +49,7 @@ import java.util.List;
  * Spring 默认只回滚 RuntimeException，显式声明才能覆盖受检异常。
  */
 @Service
+@RequiredArgsConstructor
 public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper, StudioCertificate>
         implements CertificateService {
 
@@ -68,8 +69,7 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
      * <p>依赖方向单向（本类 → 关联服务），不构成循环依赖：
      * {@code MemberCertificateServiceImpl} 只注入 Mapper，不依赖本类。
      */
-    @Resource
-    private MemberCertificateService memberCertificateService;
+    private final MemberCertificateService memberCertificateService;
 
     // ==================== 管理端 ====================
 

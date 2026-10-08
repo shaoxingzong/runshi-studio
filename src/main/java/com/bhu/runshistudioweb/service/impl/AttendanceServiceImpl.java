@@ -20,8 +20,8 @@ import com.bhu.runshistudioweb.model.vo.AttendanceCheckInVO;
 import com.bhu.runshistudioweb.model.vo.AttendanceMeVO;
 import com.bhu.runshistudioweb.service.AttendanceService;
 import com.bhu.runshistudioweb.service.StudioMemberService;
-import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.sql.Timestamp;
@@ -53,6 +53,7 @@ import java.util.Map;
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class AttendanceServiceImpl extends ServiceImpl<StudioAttendanceMapper, StudioAttendance>
         implements AttendanceService {
 
@@ -87,22 +88,18 @@ public class AttendanceServiceImpl extends ServiceImpl<StudioAttendanceMapper, S
                     .thenComparing(v -> v.getCheckInAt() == null ? LocalDateTime.MAX : v.getCheckInAt())
                     .thenComparing(AttendanceBoardVO::getUserName);
 
-    @Resource
-    private StudioMemberService studioMemberService;
+    private final StudioMemberService studioMemberService;
 
     /**
      * 直接注入 Mapper 而不是走 Service：这里要的是「按条件取实体列表」，
      * 而 {@code StudioMemberService} 对外只提供 VO 视图（成员档案已不对 C 端展示）。
      * 跨模块注入 Mapper 在项目里已有先例（StudioMemberServiceImpl 注入 SysUserMapper）
      */
-    @Resource
-    private StudioMemberMapper studioMemberMapper;
+    private final StudioMemberMapper studioMemberMapper;
 
-    @Resource
-    private ClientIpManager clientIpManager;
+    private final ClientIpManager clientIpManager;
 
-    @Resource
-    private AttendanceProperties attendanceProperties;
+    private final AttendanceProperties attendanceProperties;
 
     // ==================== 对外方法 ====================
 

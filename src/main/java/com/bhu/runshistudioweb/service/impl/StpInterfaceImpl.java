@@ -4,7 +4,7 @@ import cn.dev33.satoken.stp.StpInterface;
 import cn.hutool.core.convert.Convert;
 import com.bhu.runshistudioweb.mapper.SysUserMapper;
 import com.bhu.runshistudioweb.model.entity.SysUser;
-import jakarta.annotation.Resource;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -33,13 +33,13 @@ import java.util.List;
  * 并在「修改用户角色」的地方主动删除该 key，否则角色变更后会继续拿着旧角色）。
  */
 @Service
+@RequiredArgsConstructor
 public class StpInterfaceImpl implements StpInterface {
 
     /** 用户状态：0-正常（与 db/user.sql 中 user_status 的取值保持一致：0-正常，1-封禁） */
     private static final int USER_STATUS_NORMAL = 0;
 
-    @Resource
-    private SysUserMapper sysUserMapper;
+    private final SysUserMapper sysUserMapper;
 
     /**
      * 查询该账号拥有的权限点集合

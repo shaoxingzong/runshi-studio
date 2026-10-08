@@ -12,13 +12,13 @@ import com.bhu.runshistudioweb.model.vo.ProjectVO;
 import com.bhu.runshistudioweb.service.MemberProjectService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -49,10 +49,10 @@ import java.util.List;
 @Tag(name = "成员项目关联", description = "管理员维护项目与参与成员的关联关系")
 @RestController
 @RequestMapping("/member-project")
+@RequiredArgsConstructor
 public class MemberProjectController {
 
-    @Resource
-    private MemberProjectService memberProjectService;
+    private final MemberProjectService memberProjectService;
 
     /**
      * 绑定成员到项目（管理员显式添加）

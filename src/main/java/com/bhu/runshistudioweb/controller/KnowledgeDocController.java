@@ -18,11 +18,11 @@ import com.bhu.runshistudioweb.model.vo.KnowledgeSyncAllVO;
 import com.bhu.runshistudioweb.service.KnowledgeDocService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -52,10 +52,10 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "知识库文档模块", description = "管理员手工录入与业务来源同步（RAG 入库）")
 @RestController
 @RequestMapping("/knowledge/doc")
+@RequiredArgsConstructor
 public class KnowledgeDocController {
 
-    @Resource
-    private KnowledgeDocService knowledgeDocService;
+    private final KnowledgeDocService knowledgeDocService;
 
     /**
      * 手工录入一篇文档（每次都新建，不幂等）

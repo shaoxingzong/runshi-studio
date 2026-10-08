@@ -4,6 +4,7 @@ import com.bhu.runshistudioweb.exception.BusinessException;
 import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.exception.ThrowUtils;
 import org.springframework.beans.factory.annotation.Value;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -42,6 +43,7 @@ import java.util.UUID;
  * （NTFS 下同一目录文件上万后，列举与删除都会明显变慢）。
  */
 @Component
+@RequiredArgsConstructor
 public class FileManager {
 
     /**
@@ -49,7 +51,7 @@ public class FileManager {
      * （与 {@code WebMvcConfig} 中的静态资源映射必须是同一个值，否则文件存得进去、却访问不到）
      */
     @Value("${studio.file.root-dir}")
-    private String rootDir;
+    private final String rootDir;
 
     /**
      * 文件上传 (校验 -> 落盘 -> 返回相对访问路径)

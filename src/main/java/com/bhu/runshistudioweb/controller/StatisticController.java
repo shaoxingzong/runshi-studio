@@ -6,9 +6,9 @@ import com.bhu.runshistudioweb.model.vo.StatisticOverviewVO;
 import com.bhu.runshistudioweb.service.StatisticService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -33,10 +33,10 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "统计模块", description = "官网首页大盘数据（匿名可访问）")
 @RestController
 @RequestMapping("/statistic")
+@RequiredArgsConstructor
 public class StatisticController {
 
-    @Resource
-    private StatisticService statisticService;
+    private final StatisticService statisticService;
 
     /**
      * 官网首页大盘：证书数量，以及证书的级别 / 类型分布（供图表渲染）

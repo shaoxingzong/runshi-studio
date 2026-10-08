@@ -29,9 +29,10 @@ import com.bhu.runshistudioweb.model.vo.AiMessageVO;
 import com.bhu.runshistudioweb.model.vo.AiSessionVO;
 import com.bhu.runshistudioweb.service.AiChatService;
 import com.bhu.runshistudioweb.service.KnowledgeDocService;
+import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
-import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
@@ -80,6 +81,7 @@ import java.util.concurrent.Executors;
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class AiChatServiceImpl implements AiChatService {
 
     /** 会话不存在 / 无权访问的统一提示：两种情况共用一句，不暴露存在性 */
@@ -122,17 +124,13 @@ public class AiChatServiceImpl implements AiChatService {
     private static final String EVENT_DONE = "done";
     private static final String EVENT_ERROR = "error";
 
-    @Resource
-    private StudioAiSessionMapper studioAiSessionMapper;
+    private final StudioAiSessionMapper studioAiSessionMapper;
 
-    @Resource
-    private StudioAiMessageMapper studioAiMessageMapper;
+    private final StudioAiMessageMapper studioAiMessageMapper;
 
-    @Resource
-    private SysUserMapper sysUserMapper;
+    private final SysUserMapper sysUserMapper;
 
-    @Resource
-    private AiManager aiManager;
+    private final AiManager aiManager;
 
     /**
      * 提问配额计数（Redis INCR + 定时回刷，）
@@ -140,19 +138,16 @@ public class AiChatServiceImpl implements AiChatService {
      * <p>它替代了原来的 {@code UPDATE sys_user SET ai_query_count = ai_query_count + 1}：
      * 计数从「每次提问一次 DB 写」变成「Redis 内存自增 + 批量回刷」。
      */
-    @Resource
-    private AiQueryCountManager aiQueryCountManager;
+    private final AiQueryCountManager aiQueryCountManager;
 
     /**
      * 游客 IP 限流
      *
      * <p>只在「未登录」时生效，且位于最外层（配额预检与检索之前）。
      */
-    @Resource
-    private AiRateLimitManager aiRateLimitManager;
+    private final AiRateLimitManager aiRateLimitManager;
 
-    @Resource
-    private AiProperties aiProperties;
+    private final AiProperties aiProperties;
 
     /**
      * 知识库检索：提问前先检索资料注入模型（RAG，）
@@ -160,15 +155,23 @@ public class AiChatServiceImpl implements AiChatService {
      * <p>依赖方向是单向的：{@code KnowledgeDocServiceImpl} 只注入 Mapper 与配置，
      * 不依赖本类，因此不构成循环。
      */
-    @Resource
-    private KnowledgeDocService knowledgeDocService;
+    private final KnowledgeDocService knowledgeDocService;
 
     /** SSE 事件负载的 JSON 序列化：复用容器里被 JsonConfig 定制过的那个 JsonMapper */
-    @Resource
-    private JsonMapper jsonMapper;
+    private final JsonMapper jsonMapper;
 
-    /** 见类注释：容器里没有 TransactionTemplate bean，这里自行构造 */
-    private final TransactionTemplate transactionTemplate;
+    /** 事务管理器：容器里没有 TransactionTemplate bean，靠它自行构造（见类注释） */
+    private final PlatformTransactionManager transactionManager;
+
+    /**
+     * 事务模板：由 {@code transactionManager} 在依赖注入完成后构造
+     *
+     * <p>它<b>不能</b>声明成 final：Lombok 生成的构造器只做「参数 → 字段」的直接赋值，
+     * 表达不了「由另一个参数二次构造」；写成 final 会让它被当成构造器参数，
+     * 而容器里并不存在 TransactionTemplate 这个 bean，启动即失败。
+     * 放到 {@code @PostConstruct} 里赋值，此时构造器注入已完成，取值安全。
+     */
+    private TransactionTemplate transactionTemplate;
 
     /**
      * SSE 专用线程池：<b>虚拟线程</b>（Java 21）
@@ -183,7 +186,8 @@ public class AiChatServiceImpl implements AiChatService {
      */
     private final ExecutorService streamExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
-    public AiChatServiceImpl(PlatformTransactionManager transactionManager) {
+    @PostConstruct
+    void initTransactionTemplate() {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 

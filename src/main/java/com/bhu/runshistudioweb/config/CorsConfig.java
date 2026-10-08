@@ -1,6 +1,7 @@
 package com.bhu.runshistudioweb.config;
 
 import cn.hutool.core.util.StrUtil;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -35,6 +36,7 @@ import java.util.List;
  * 默认值已覆盖本地两种回环地址，不配置也能直接用。
  */
 @Configuration
+@RequiredArgsConstructor
 public class CorsConfig {
 
     /**
@@ -44,7 +46,7 @@ public class CorsConfig {
      * 但不匹配其它域名——它不是「允许所有来源」
      */
     @Value("${studio.web.allowed-origins:http://localhost:*,http://127.0.0.1:*}")
-    private String allowedOrigins;
+    private final String allowedOrigins;
 
     /**
      * 注册跨域过滤器
