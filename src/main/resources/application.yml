@@ -122,6 +122,14 @@ studio:
     # （要刷得有账号，且记录挂在真实账号上可审计）。设为 <= 0 表示不做间隔限制
     min-interval-seconds: 60
 
+  # ===== 帖子模块 =====
+  post:
+    # 敏感词库位置：支持 classpath: 与 file: 两种前缀。
+    # 词库是需要经常增补的运营数据，部署后建议指向服务器文件
+    # （file:/data/runshi-studio/sensitive-words.txt），加词就不必重新发版。
+    # 文件缺失时降级为「不启用过滤」并打 warn，不会阻断启动（宁可漏拦，不可误杀）
+    sensitive-words-location: ${POST_SENSITIVE_WORDS_LOCATION:classpath:sensitive-words.txt}
+
   web:
     # 跨域来源白名单：逗号分隔，端口通配用 *；必须走 allowedOriginPatterns（见 CorsConfig）
     allowed-origins: ${WEB_ALLOWED_ORIGINS:http://localhost:*,http://127.0.0.1:*}
