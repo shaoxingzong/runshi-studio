@@ -223,3 +223,85 @@ CREATE TABLE `studio_attendance` (
                                           KEY `idx_user_time` (`user_id`, `check_in_at`),
                                           KEY `idx_date_lan_time` (`attendance_date`, `in_lan`, `check_in_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='考勤签到记录表';
+
+-- 12. 帖子主表
+-- 内容形态是「CSDN 式」：标题 + Markdown 正文，图片以 ![](url) 内嵌在 content 里，
+-- 因此**不建图片关联表**——图片在正文流中的位置由 Markdown 决定，关联表表达不了。
+-- 列表缩略图用 cover_image 单独存（入库时自动取正文首图）。
+-- 增量脚本：db/migration/20261009_add_post.sql
+DROP TABLE IF EXISTS `studio_post`;
+CREATE TABLE `studio_post` (
+    `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
+    `title` varchar(128) NOT NULL COMMENT '帖子标题',
+    `summary` varchar(512) DEFAULT NULL COMMENT '摘要（列表展示；为空时由正文前若干字兜底）',
+    `cover_image` varchar(512) DEFAULT NULL COMMENT '封面图 URL（列表缩略图；入库时自动取正文首图，可覆盖）',
+    `content` text NOT NULL COMMENT '正文（Markdown；图片内嵌其中，不另建图片表）',
+    `author_id` bigint NOT NULL COMMENT '发帖人 ID（关联 sys_user.id；只有绑定的在队成员能发帖）',
+    `status` tinyint NOT NULL DEFAULT '0' COMMENT '审核状态：0-待审, 1-已通过, 2-已驳回（取值须与 AuditStatusEnum 一致）',
+    `reject_reason` varchar(256) DEFAULT NULL COMMENT '驳回理由（给用户看；仅 status=2 时有意义）',
+    `audit_by` bigint DEFAULT NULL COMMENT '审核人 ID（管理员）',
+    `audit_at` datetime DEFAULT NULL COMMENT '审核时间',
+    `view_count` int NOT NULL DEFAULT '0' COMMENT '浏览量',
+    `comment_count` int NOT NULL DEFAULT '0' COMMENT '评论数（冗余，避免列表页 N+1）',
+    `pinned` tinyint NOT NULL DEFAULT '0' COMMENT '是否置顶：0-否, 1-是',
+    `created_at` datetime NOT NULL COMMENT '创建时间（MyBatis-Plus 自动填充）',
+    `updated_at` datetime NOT NULL COMMENT '更新时间（MyBatis-Plus 自动填充）',
+    `created_by` bigint NOT NULL DEFAULT '0' COMMENT '创建人 ID（MyBatis-Plus 自动填充）',
+    `updated_by` bigint NOT NULL DEFAULT '0' COMMENT '修改人 ID（MyBatis-Plus 自动填充）',
+    `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT '逻辑删除毫秒时间戳（0-未删除，非0-已删除）',
+    PRIMARY KEY (`id`),
+    KEY `idx_status_pinned_time` (`status`, `pinned`, `created_at`),
+    KEY `idx_status_time` (`status`, `created_at`),
+    KEY `idx_author_time` (`author_id`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='帖子表';
+
+-- 13. 帖子评论表（楼中楼）
+-- parent_id 为 NULL 表示直接评论帖子，非 NULL 表示回复某条评论（只支持两层）。
+-- 读取时一次查完整个帖子的评论后在内存挂树，因此**不为 parent_id 建索引**——
+-- 它只参与内存分组，不进 WHERE 条件。
+DROP TABLE IF EXISTS `studio_post_comment`;
+CREATE TABLE `studio_post_comment` (
+    `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
+    `post_id` bigint NOT NULL COMMENT '所属帖子 ID（关联 studio_post.id）',
+    `author_id` bigint NOT NULL COMMENT '评论人 ID（关联 sys_user.id；登录用户即可评论，不限成员）',
+    `parent_id` bigint DEFAULT NULL COMMENT '父评论 ID（楼中楼）；NULL 表示直接评论帖子',
+    `content` varchar(1000) NOT NULL COMMENT '评论正文（纯文本，最长 1000 字符）',
+    `floor` int DEFAULT NULL COMMENT '楼层号（顶层评论从 1 递增；回复某条评论时为 NULL）',
+    `status` tinyint NOT NULL DEFAULT '0' COMMENT '审核状态：0-待审, 1-已通过, 2-已驳回（与帖子共用 AuditStatusEnum）',
+    `reject_reason` varchar(256) DEFAULT NULL COMMENT '驳回理由（给用户看；仅 status=2 时有意义）',
+    `audit_by` bigint DEFAULT NULL COMMENT '审核人 ID（管理员）',
+    `audit_at` datetime DEFAULT NULL COMMENT '审核时间',
+    `deleted_by` bigint DEFAULT NULL COMMENT '删除人 ID（管理员删除评论时的审计字段）',
+    `created_at` datetime NOT NULL COMMENT '创建时间',
+    `updated_at` datetime NOT NULL COMMENT '更新时间',
+    `created_by` bigint NOT NULL DEFAULT '0' COMMENT '创建人 ID',
+    `updated_by` bigint NOT NULL DEFAULT '0' COMMENT '修改人 ID',
+    `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT '逻辑删除毫秒时间戳',
+    PRIMARY KEY (`id`),
+    KEY `idx_post_status_id` (`post_id`, `status`, `id`),
+    KEY `idx_status_time` (`status`, `created_at`),
+    KEY `idx_author_time` (`author_id`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='帖子评论表（楼中楼）';
+
+-- 14. 内容举报表
+-- 举报是「免审内容」的兜底：被信任用户发布的内容自动通过、不经人工，仍需反馈通道。
+DROP TABLE IF EXISTS `studio_post_report`;
+CREATE TABLE `studio_post_report` (
+    `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
+    `target_type` varchar(16) NOT NULL COMMENT '举报目标类型：post-帖子, comment-评论（取值须与 ReportTargetTypeEnum 一致）',
+    `target_id` bigint NOT NULL COMMENT '举报目标 ID（指向对应业务表主键）',
+    `reporter_id` bigint NOT NULL COMMENT '举报人 ID（关联 sys_user.id）',
+    `reason` varchar(256) NOT NULL COMMENT '举报理由（举报人填写）',
+    `status` tinyint NOT NULL DEFAULT '0' COMMENT '处理状态：0-待处理, 1-已处置, 2-举报不成立（取值须与 ReportStatusEnum 一致）',
+    `handle_by` bigint DEFAULT NULL COMMENT '处理人 ID（管理员）',
+    `handle_at` datetime DEFAULT NULL COMMENT '处理时间',
+    `handle_result` varchar(256) DEFAULT NULL COMMENT '处理结果说明（给内部复盘用）',
+    `created_at` datetime NOT NULL COMMENT '创建时间',
+    `updated_at` datetime NOT NULL COMMENT '更新时间',
+    `created_by` bigint NOT NULL DEFAULT '0' COMMENT '创建人 ID',
+    `updated_by` bigint NOT NULL DEFAULT '0' COMMENT '修改人 ID',
+    `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT '逻辑删除毫秒时间戳',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_target_reporter` (`target_type`, `target_id`, `reporter_id`, `deleted_at`),
+    KEY `idx_status_time` (`status`, `created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='内容举报表';
