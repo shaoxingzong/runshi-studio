@@ -24,15 +24,27 @@ import org.springframework.stereotype.Component;
 public class PostProperties {
 
     /**
-     * 敏感词库文件位置，默认 {@code classpath:sensitive-words.txt}
+     * 是否启用 AI 内容审核（三分法：安全放行 / 违规驳回 / 灰色转人工）
      *
-     * <p>与 AI 提示词（{@link AiProperties#getSystemPromptLocation()}）同一套路：
-     * 支持 {@code classpath:} 与 {@code file:} 两种前缀，
-     * 因此「随包发布」和「指向服务器文件」两种部署方式不用改代码，只改配置——
-     * 词库是要经常增补的东西，放在包里意味着每次加词都要重新发版。
+     * <p>关闭（false）时所有提交的内容一律<b>直接转人工审核</b>，完全不调用模型。
+     * 它有两个用途：一是本地开发不配 AI Key 时也能跑通发帖流程，
+     * 二是线上模型出故障时的紧急降级开关（改配置重启即可，不必改代码）。
      *
-     * <p>文件缺失时的行为是<b>降级为不启用敏感词过滤</b>并打 warn，不是启动失败：
-     * 见 {@code SensitiveWordManager} 的「安全侧降级」说明。
+     * <p>与 {@code AiRateLimitManager} 的降级纪律是同一条原则：
+     * <b>防护手段不能反过来变成故障源</b>——模型不可用时宁可让管理员多看几条，
+     * 也不能不让用户发帖、更不能把风险内容直接放行。
      */
-    private String sensitiveWordsLocation = "classpath:sensitive-words.txt";
+    private boolean aiAuditEnabled = true;
+
+    /**
+     * 送审正文的最大长度（超出部分截断后再交给模型）
+     *
+     * <p>两个原因：一是长文的 token 消耗大，二是模型有上下文窗口上限。
+     * 截断只发生在<b>送审</b>这一步，<b>入库的正文不受任何影响</b>——
+     * 用户看到的仍是完整内容，不存在「发了长文结果被存成一半」的情况。
+     *
+     * <p>截断后会在送审消息里注明「以下为节选」，让模型知道它看到的是片段，
+     * 免得它因为「文章看起来没头没尾」而误判成灌水。
+     */
+    private int auditContentMaxLength = 2000;
 }

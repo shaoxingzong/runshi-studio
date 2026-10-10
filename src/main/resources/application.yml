@@ -124,11 +124,14 @@ studio:
 
   # ===== 帖子模块 =====
   post:
-    # 敏感词库位置：支持 classpath: 与 file: 两种前缀。
-    # 词库是需要经常增补的运营数据，部署后建议指向服务器文件
-    # （file:/data/runshi-studio/sensitive-words.txt），加词就不必重新发版。
-    # 文件缺失时降级为「不启用过滤」并打 warn，不会阻断启动（宁可漏拦，不可误杀）
-    sensitive-words-location: ${POST_SENSITIVE_WORDS_LOCATION:classpath:sensitive-words.txt}
+    # 是否启用 AI 内容审核（三分法）：AI 判「安全」自动放行、判「违规」自动驳回，
+    # 判「灰色」或 AI 不可用时一律转人工。
+    # 关闭后所有内容直接进人工队列——本地不配 AI Key 也能跑通发帖流程，
+    # 也是线上模型故障时的紧急降级开关（改配置重启即可，不用改代码）
+    ai-audit-enabled: ${POST_AI_AUDIT_ENABLED:true}
+    # 送审正文的最大长度，超出部分截断后再交给模型。
+    # 只影响「送审」这一步，入库与展示的正文始终是完整的
+    audit-content-max-length: ${POST_AUDIT_CONTENT_MAX_LENGTH:2000}
 
   web:
     # 跨域来源白名单：逗号分隔，端口通配用 *；必须走 allowedOriginPatterns（见 CorsConfig）
