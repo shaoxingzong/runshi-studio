@@ -84,6 +84,16 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
             // 注意**只放行这一条**：/ai/session/list（我的会话列表）要求登录，
             // 是「按登录用户维度聚合」的接口，匿名没有任何语义
             "/ai/session/delete",
+            // 官网「帖子」：列表与详情，游客可浏览（产品要求利于传播）。
+            // 两条都**精确登记**，禁止 /post/**——管理端还会有 /post/admin/* 之类的
+            // 审核、删除、置顶接口，通配符会把它们一起放行。
+            // 另外注意 /post/list/page 是分页接口，与假想的 /post/list 只差一段，登记时不能省略后缀
+            "/post/list/page",
+            "/post/detail",
+            // 帖子的评论列表：游客浏览帖子时应当能直接看到评论，因此精确放行这一条。
+            // 注意**不放行** /post/comment/add（发评论要登录）——只登记读的路径，
+            // 写路径仍走默认要求登录的规则
+            "/post/comment/list",
             // 上传后的图片访问路径：官网展示成员头像/证书图片时游客必须能看到。
             // 注意这是「读」的路径；「写」的路径 /file/upload 不在这里，仍然要求登录
             "/uploads/**",
