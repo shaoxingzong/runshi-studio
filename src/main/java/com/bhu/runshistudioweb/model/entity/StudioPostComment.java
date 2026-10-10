@@ -90,6 +90,9 @@ public class StudioPostComment implements Serializable {
 
     /**
      * 审核人 ID（管理员）
+     *
+     * <p>AI 自动处置时<b>留空</b>：AI 不是人，不该伪造管理员 ID，
+     * 机器的处置记录见 {@link #aiAuditStatus}。
      */
     private Long auditBy;
 
@@ -97,6 +100,24 @@ public class StudioPostComment implements Serializable {
      * 审核时间
      */
     private LocalDateTime auditAt;
+
+    /**
+     * AI 审核结论：0-未判, 1-安全(自动通过), 2-违规(自动驳回), 3-灰色(转人工), 4-判定失败(转人工)
+     *
+     * <p>取值定义见 {@link com.bhu.runshistudioweb.model.enums.AiAuditStatusEnum}，与帖子共用。
+     * 异步审核任务拿它当幂等条件：只处理「未判」的记录。
+     */
+    private Integer aiAuditStatus;
+
+    /**
+     * AI 给出的理由（给管理端参考；给用户看的驳回说明另存 {@link #rejectReason}）
+     */
+    private String aiReason;
+
+    /**
+     * AI 判定时（未判则为 null）
+     */
+    private LocalDateTime aiAt;
 
     /**
      * 删除人 ID（管理员删除评论时的审计字段）

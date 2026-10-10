@@ -239,8 +239,15 @@ CREATE TABLE `studio_post` (
     `author_id` bigint NOT NULL COMMENT '发帖人 ID（关联 sys_user.id；只有绑定的在队成员能发帖）',
     `status` tinyint NOT NULL DEFAULT '0' COMMENT '审核状态：0-待审, 1-已通过, 2-已驳回（取值须与 AuditStatusEnum 一致）',
     `reject_reason` varchar(256) DEFAULT NULL COMMENT '驳回理由（给用户看；仅 status=2 时有意义）',
-    `audit_by` bigint DEFAULT NULL COMMENT '审核人 ID（管理员）',
+    `audit_by` bigint DEFAULT NULL COMMENT '审核人 ID（管理员）；AI 自动处置时留空（AI 不是人，不伪造管理员 ID）',
     `audit_at` datetime DEFAULT NULL COMMENT '审核时间',
+    -- AI 审核三列：内容是「先审后发」，提交后由后台异步调模型初判，结论写在这里。
+    -- 之所以要单独一列而不只靠 status：① 异步任务必须能识别「哪些还没判过」以保证幂等，
+    --   否则重复送审会覆盖已有结论；②「还没轮到」（0）与「AI 判不了」（4）是两回事，
+    --   混在一起的话管理端无法感知 AI 故障。取值须与 AiAuditStatusEnum 一致
+    `ai_audit_status` tinyint NOT NULL DEFAULT '0' COMMENT 'AI 审核结论：0-未判, 1-安全(自动通过), 2-违规(自动驳回), 3-灰色(转人工), 4-判定失败(转人工)',
+    `ai_reason` varchar(256) DEFAULT NULL COMMENT 'AI 给出的理由（管理端展示用；给用户看的驳回理由另存 reject_reason）',
+    `ai_at` datetime DEFAULT NULL COMMENT 'AI 判定时（未判则为 NULL）',
     `view_count` int NOT NULL DEFAULT '0' COMMENT '浏览量',
     `comment_count` int NOT NULL DEFAULT '0' COMMENT '评论数（冗余，避免列表页 N+1）',
     `pinned` tinyint NOT NULL DEFAULT '0' COMMENT '是否置顶：0-否, 1-是',
@@ -269,8 +276,12 @@ CREATE TABLE `studio_post_comment` (
     `floor` int DEFAULT NULL COMMENT '楼层号（顶层评论从 1 递增；回复某条评论时为 NULL）',
     `status` tinyint NOT NULL DEFAULT '0' COMMENT '审核状态：0-待审, 1-已通过, 2-已驳回（与帖子共用 AuditStatusEnum）',
     `reject_reason` varchar(256) DEFAULT NULL COMMENT '驳回理由（给用户看；仅 status=2 时有意义）',
-    `audit_by` bigint DEFAULT NULL COMMENT '审核人 ID（管理员）',
+    `audit_by` bigint DEFAULT NULL COMMENT '审核人 ID（管理员）；AI 自动处置时留空（AI 不是人，不伪造管理员 ID）',
     `audit_at` datetime DEFAULT NULL COMMENT '审核时间',
+    -- AI 审核三列（与 studio_post 同一套语义，取值须与 AiAuditStatusEnum 一致）
+    `ai_audit_status` tinyint NOT NULL DEFAULT '0' COMMENT 'AI 审核结论：0-未判, 1-安全(自动通过), 2-违规(自动驳回), 3-灰色(转人工), 4-判定失败(转人工)',
+    `ai_reason` varchar(256) DEFAULT NULL COMMENT 'AI 给出的理由（管理端展示用；给用户看的驳回理由另存 reject_reason）',
+    `ai_at` datetime DEFAULT NULL COMMENT 'AI 判定时（未判则为 NULL）',
     `deleted_by` bigint DEFAULT NULL COMMENT '删除人 ID（管理员删除评论时的审计字段）',
     `created_at` datetime NOT NULL COMMENT '创建时间',
     `updated_at` datetime NOT NULL COMMENT '更新时间',

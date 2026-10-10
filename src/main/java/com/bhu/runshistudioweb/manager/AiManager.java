@@ -273,6 +273,47 @@ public class AiManager {
      * @throws BusinessException 未配置、调用失败或回答为空时抛出（C0200）
      */
     public String chat(List<AiMessageVO> history, String userMessage) {
+        return invokeChat(buildMessages(history, userMessage));
+    }
+
+    /**
+     * 用<b>调用方指定</b>的系统提示词调用一次 AI（<b>不带历史上下文</b>）
+     *
+     * <p>与 {@link #chat} 唯一的差别是 system 消息的来源：
+     * {@link #chat} 用的是聊天人设（启动时从 {@link AiProperties#getSystemPromptLocation()} 加载），
+     * 本方法由调用方给。<b>内容审核这类场景必须用这个方法</b>——
+     * 它需要的是「审核员」人设，若带着「工作室助手」的聊天人设去判合规，模型会跑偏
+     * （两种人设对「什么算合适内容」的回答完全不同）。
+     *
+     * <p><b>不带历史</b>是刻意的：审核是「一次一判」的独立任务，没有上下文可继承。
+     * 把上一次的判定结果带进这一次，会让模型倾向于给出与上次相同的结论（锚定效应）。
+     *
+     * @param systemMessage 本次专用的系统提示词；为空则本次不带 system 消息
+     * @param userMessage   用户消息（即待处理的内容）
+     * @return AI 回答正文（已校验非空）
+     * @throws BusinessException 未配置、调用失败或回答为空时抛出（C0200）
+     */
+    public String chatWithSystemPrompt(String systemMessage, String userMessage) {
+        List<ChatMessage> messages = new ArrayList<>();
+        if (StrUtil.isNotBlank(systemMessage)) {
+            messages.add(SystemMessage.from(systemMessage));
+        }
+        messages.add(UserMessage.from(userMessage));
+        return invokeChat(messages);
+    }
+
+    /**
+     * 真正发起一次模型调用（{@link #chat} 与 {@link #chatWithSystemPrompt} 共用）
+     *
+     * <p>抽出来的目的是<b>让两种调用走完全相同的失败处理</b>：
+     * 未配置、超时、限流、回答为空，在任何一种调用路径上的表现都必须一致，
+     * 否则「聊天不可用时审核却可用」这类不一致会在排查时浪费大量时间。
+     *
+     * @param messages 已组装好的消息列表（顺序由调用方保证）
+     * @return AI 回答正文（已校验非空）
+     * @throws BusinessException 未配置、调用失败或回答为空时抛出（C0200）
+     */
+    private String invokeChat(List<ChatMessage> messages) {
         // 未配置时直接失败：ApplicationContext 已经起来了，这里只影响这一次调用
         if (chatModel == null) {
             log.warn("调用 AI 失败：studio.ai.base-url 或 api-key 未配置（本地不配置不影响其它接口）");
@@ -280,7 +321,7 @@ public class AiManager {
         }
 
         ChatRequest chatRequest = ChatRequest.builder()
-                .messages(buildMessages(history, userMessage))
+                .messages(messages)
                 .build();
 
         ChatResponse chatResponse;
