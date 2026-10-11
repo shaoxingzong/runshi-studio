@@ -289,6 +289,29 @@ class AiKnowledgeRetrievalTest {
         return body.substring(start, body.indexOf('"', start));
     }
 
+    /**
+     * 注册一个**成员**用户并登录
+     *
+     * <p>成员不受提问次数限制：本类把 {@code query-limit} 配成 3 是为了配额用例，
+     * 而检索类用例需要多次提问，用成员账号可避免撞上普通用户的 3 次上限
+     * （AI 服务对游客关闭，因此也不能再用匿名）。
+     */
+    private String loginMember() throws Exception {
+        String account = "T26mem_" + (System.nanoTime() % 100000);
+        SysUser user = new SysUser();
+        user.setUserAccount(account);
+        user.setUserPassword(PasswordUtils.encrypt("Studio@2026"));
+        user.setUserName(account);
+        user.setUserRole(UserRoleConstant.MEMBER);
+        user.setUserStatus(0);
+        sysUserMapper.insert(user);
+        String body = postJson("/user/login",
+                "{\"userAccount\":\"" + account + "\",\"userPassword\":\"Studio@2026\"}", null);
+        int start = body.indexOf("\"token\":\"") + 9;
+        assertTrue(start > 9, "登录失败：" + body);
+        return body.substring(start, body.indexOf('"', start));
+    }
+
     private int queryCountOf(String account) {
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT ai_query_count FROM sys_user WHERE user_account=?", Integer.class, account);
@@ -328,10 +351,6 @@ class AiKnowledgeRetrievalTest {
     private String lastUserMessageOfChatRequest() {
         JsonNode messages = jsonMapper.readTree(lastRequestBody).get("messages");
         return messages.get(messages.size() - 1).get("content").asString();
-    }
-
-    private String chatAnon(String message) throws Exception {
-        return postJson("/ai/chat", "{\"message\":\"" + message + "\"}", null);
     }
 
     private String chatLogged(String message, String token) throws Exception {
@@ -379,7 +398,7 @@ class AiKnowledgeRetrievalTest {
         ingest("T26-V1项目文档", "V1-EXACT 润石工作室的明星项目是「星轨计划」，队长是小石。");
         String question = "T26 V1-EXACT 问题：工作室的明星项目叫什么？";
 
-        String body = chatAnon(question);
+        String body = chatLogged(question, loginMember());
 
         assertEquals("00000", code(body), "提问应成功：" + body);
         // 注入取证：资料确实被拼进了送进模型的 user 消息
@@ -414,7 +433,7 @@ class AiKnowledgeRetrievalTest {
         // V6 平面没有任何已入库向量 → 正交（relevance 0.5 < 0.75 阈值），等价于「知识库里没有相关资料」
         String question = "T26 V6-EXACT 问题：知识库里没有这个主题";
 
-        String body = chatAnon(question);
+        String body = chatLogged(question, loginMember());
 
         assertEquals("00000", code(body), "提问应成功：" + body);
         assertEquals(question, lastUserMessageOfChatRequest(), "无命中时消息必须原样（不注入）");
@@ -433,7 +452,7 @@ class AiKnowledgeRetrievalTest {
         ingest("T26-V2接近文档", "V2-NEAR 语义接近的正文");
         ingest("T26-V2远离文档", "V2-FAR 弱相关的正文");
 
-        String body = chatAnon("T26 V2-EXACT 问题：找精确资料");
+        String body = chatLogged("T26 V2-EXACT 问题：找精确资料", loginMember());
 
         assertEquals("00000", code(body), "提问应成功：" + body);
         JsonNode sources = dataOf(body).get("sources");
@@ -455,7 +474,7 @@ class AiKnowledgeRetrievalTest {
         ingest("T26-V3文档乙", "V3-EXACT 乙");
         ingest("T26-V3文档丙", "V3-EXACT 丙");
 
-        String body = chatAnon("T26 V3-EXACT 问题：找齐三篇");
+        String body = chatLogged("T26 V3-EXACT 问题：找齐三篇", loginMember());
 
         assertEquals("00000", code(body), "提问应成功：" + body);
         JsonNode sources = dataOf(body).get("sources");
@@ -475,7 +494,7 @@ class AiKnowledgeRetrievalTest {
         jdbcTemplate.update("UPDATE studio_knowledge_doc SET deleted_at=? WHERE id=?", now, docB);
 
         String question = "T26 V4-EXACT 问题：查已删除的资料";
-        String body = chatAnon(question);
+        String body = chatLogged(question, loginMember());
 
         assertEquals("00000", code(body), "悬挂数据不应让提问失败：" + body);
         assertEquals(0, dataOf(body).get("sources").size(), "两条命中都查不到实体，应全部跳过：" + body);
@@ -488,8 +507,9 @@ class AiKnowledgeRetrievalTest {
     @DisplayName("SSE：meta → sources → delta → done；命中注入且载荷带标题；无命中恒发空数组")
     void sseEventOrderAndSourcesPayload() throws Exception {
         ingest("T26-V5流式文档", "V5-EXACT 流式回答要依据的资料正文");
+        String token = loginMember();
 
-        String hit = streamFrames("{\"message\":\"T26 V5-EXACT 流式问题\"}", null);
+        String hit = streamFrames("{\"message\":\"T26 V5-EXACT 流式问题\"}", token);
         int iMeta = hit.indexOf("event:meta");
         int iSources = hit.indexOf("event:sources");
         int iDelta = hit.indexOf("event:delta");
@@ -504,7 +524,7 @@ class AiKnowledgeRetrievalTest {
         assertTrue(lastUserMessageOfChatRequest().contains("T26-V5流式文档"));
 
         // 无命中：sources 恒发、载荷为空数组（前端无需靠「等一会儿」判断有没有资料）
-        String miss = streamFrames("{\"message\":\"T26 V7-EXACT 流式无命中\"}", null);
+        String miss = streamFrames("{\"message\":\"T26 V7-EXACT 流式无命中\"}", token);
         assertTrue(miss.contains("event:sources"), "无命中也必须发 sources 事件：" + miss);
         JsonNode missPayload = jsonMapper.readTree(dataOf(miss, "sources"));
         assertEquals(0, missPayload.get("sources").size(), "无命中时应为空数组：" + miss);

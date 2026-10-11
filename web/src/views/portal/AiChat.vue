@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { aiApi, chatStream } from '@/api/ai';
-import type { KnowledgeSource } from '@/api/types';
+import { useUserStore } from '@/stores/user';
+import type { AiSession, KnowledgeSource } from '@/api/types';
+
+const router = useRouter();
 
 /**
  * AI 助手（SSE 流式）
@@ -24,6 +28,10 @@ const messages = ref<Bubble[]>([]);
 const input = ref('');
 const sessionId = ref(localStorage.getItem(SESSION_KEY) || '');
 const streaming = ref(false);
+
+/** 历史会话（接口要求登录，游客侧这一栏不出现） */
+const sessionList = ref<AiSession[]>([]);
+const user = useUserStore();
 const windowRef = ref<HTMLElement | null>(null);
 let controller: AbortController | null = null;
 
@@ -76,6 +84,8 @@ async function send() {
         streaming.value = false;
         controller = null;
         void scrollBottom();
+        // 首次提问会创建出新会话，侧边栏要跟着出现
+        void loadSessionList();
     }
 }
 
@@ -87,6 +97,54 @@ function newChat() {
     sessionId.value = '';
     localStorage.removeItem(SESSION_KEY);
     messages.value = [];
+}
+
+/**
+ * 拉取历史会话
+ *
+ * <p>未登录时<b>直接返回</b>而不是发请求：接口要求登录，游客调它会拿到 A0201，
+ * 而请求层遇到 A0201 会顺手清掉本地令牌——为一个不该发的请求赔上登录态，不划算。
+ */
+async function loadSessionList() {
+    if (!user.isLogin) {
+        sessionList.value = [];
+        return;
+    }
+    try {
+        const page = await aiApi.sessionList({ current: 1, pageSize: 20 });
+        sessionList.value = page.records ?? [];
+    } catch {
+        // 任何失败都静默降级为「不显示列表」，不影响对话本身
+        sessionList.value = [];
+    }
+}
+
+async function switchSession(id: string) {
+    if (id === sessionId.value) {
+        return;
+    }
+    // 三处必须同时更新：只改内存 ref 的话，刷新页面后会跳回旧会话
+    sessionId.value = id;
+    localStorage.setItem(SESSION_KEY, id);
+    messages.value = [];
+    await loadHistory();
+}
+
+async function removeCurrent() {
+    const id = sessionId.value;
+    if (!id) {
+        return;
+    }
+    try {
+        await aiApi.deleteSession(id);
+        ElMessage.success('会话已删除');
+    } catch {
+        // 提示已在请求层；失败时保持原状，不清理本地状态
+        return;
+    }
+    // 删除成功后清掉当前会话，并让侧边栏跟着刷新
+    newChat();
+    await loadSessionList();
 }
 
 /** 拉取当前会话的历史（后端按时间正序返回最近 50 条） */
@@ -104,9 +162,14 @@ async function loadHistory() {
 }
 
 onMounted(() => {
+    // 未登录不拉任何数据：历史与会话列表接口都要求登录，调了只会换来 A0201
+    if (!user.isLogin) {
+        return;
+    }
     if (sessionId.value) {
         void loadHistory();
     }
+    void loadSessionList();
 });
 </script>
 
@@ -114,11 +177,52 @@ onMounted(() => {
     <div class="page">
         <div class="page-head">
             <h1>AI 助手</h1>
-            <p>基于工作室资料回答，命中资料时会在回答下方给出来源。游客有限频，登录后额度更高。</p>
+            <p>
+                基于工作室资料回答，命中资料时会在回答下方给出来源。
+                普通用户可免费提问 5 次，成员与管理员不限次数。
+            </p>
         </div>
 
-        <div class="card chat">
-            <div ref="windowRef" class="window">
+        <!-- 未登录：AI 服务需登录后使用 -->
+        <div v-if="!user.isLogin" class="card gate">
+            <el-empty description="">
+                <template #description>
+                    <p class="gate-title">登录后即可使用 AI 助手</p>
+                    <p class="gate-sub">普通用户可免费提问 5 次，成员与管理员不限次数。</p>
+                </template>
+                <el-button type="primary" @click="router.push('/login')">去登录</el-button>
+            </el-empty>
+        </div>
+
+        <div v-else class="ai-layout">
+            <!-- 历史会话：接口要求登录（此处已在「已登录」分支内） -->
+            <aside class="sessions">
+                <div class="sessions-head">
+                    <span class="sessions-title">历史会话</span>
+                    <el-button link type="danger" :disabled="!sessionId" @click="removeCurrent">
+                        删除当前
+                    </el-button>
+                </div>
+                <el-scrollbar max-height="460px">
+                    <div v-if="!sessionList.length" class="muted sessions-empty">还没有历史会话</div>
+                    <div
+                        v-for="item in sessionList"
+                        :key="item.id"
+                        class="session-item"
+                        :class="{ active: item.id === sessionId }"
+                        @click="switchSession(item.id)"
+                    >
+                        <div class="session-title">{{ item.title || '新会话' }}</div>
+                        <div class="session-meta">
+                            <span>{{ (item.updatedAt ?? '').slice(5, 16) }}</span>
+                            <span v-if="item.messageCount">{{ item.messageCount }} 条</span>
+                        </div>
+                    </div>
+                </el-scrollbar>
+            </aside>
+
+            <div class="card chat">
+                <div ref="windowRef" class="window">
                 <el-empty v-if="messages.length === 0" description="问点什么吧，例如「星盘计划用了什么技术？」" />
                 <div v-for="(msg, index) in messages" :key="index" class="msg" :class="msg.role">
                     <div class="bubble">
@@ -175,15 +279,112 @@ onMounted(() => {
             </div>
 
             <p v-if="sessionId" class="muted session">当前会话：{{ sessionId }}</p>
+            </div>
         </div>
     </div>
 </template>
 
 <style scoped>
+.gate {
+    padding: 40px 20px;
+}
+
+.gate-title {
+    margin: 0 0 6px;
+    font-size: 15px;
+    font-weight: 500;
+    color: #1f2937;
+}
+
+.gate-sub {
+    margin: 0;
+    font-size: 13px;
+    color: #6b7280;
+}
+
+.ai-layout {
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+}
+
+.sessions {
+    width: 240px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+}
+
+.sessions-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.sessions-title {
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.sessions-empty {
+    font-size: 12px;
+}
+
+.session-item {
+    padding: 8px 10px;
+    margin-bottom: 4px;
+    margin-right: 6px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.session-item:hover {
+    background: #f1f5f9;
+}
+
+.session-item.active {
+    background: #eff6ff;
+}
+
+.session-title {
+    font-size: 13px;
+    color: #1f2937;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.session-meta {
+    margin-top: 2px;
+    font-size: 12px;
+    color: #9ca3af;
+    display: flex;
+    gap: 8px;
+}
+
+/* 窄屏放不下侧边栏：改为上下堆叠 */
+@media (max-width: 900px) {
+    .ai-layout {
+        flex-direction: column;
+    }
+
+    .sessions {
+        width: 100%;
+    }
+}
+
 .chat {
     display: flex;
     flex-direction: column;
     gap: 14px;
+    /* 在 flex 容器里要显式声明，否则内容会被侧边栏挤变形 */
+    flex: 1;
+    min-width: 0;
 }
 
 .window {

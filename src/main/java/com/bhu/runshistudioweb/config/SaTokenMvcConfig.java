@@ -72,18 +72,16 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
             // 通配符会把它们一起放行（/project/list 与 /project/list/page 只差一个后缀）
             "/project/list",
             "/project/detail",
-            // 官网「AI 咨询」：提问与历史。两条都精确登记，禁止 /ai/**（见 AiChatController 注释）。
-            // 注意路径里带有 chat 段：/ai/chat 是提问（POST），/ai/chat/history 是历史（GET），
-            // 两者必须分别登记——只登记前者会让历史接口返回 A0201
-            "/ai/chat",
-            "/ai/chat/history",
-            // SSE 流式提问：与 /ai/chat 同源同规则，同样匿名可访问。
-            // 注意它是独立路径、必须单独登记——只登记 /ai/chat 不会匹配到 /ai/chat/stream
+            // ⚠️ AI 咨询**不再匿名开放**：提问、历史、删除会话全部要求登录
+            // （普通用户限 studio.ai.query-limit 次，成员 / 管理员不限次）。
+            // 因此这里**不登记** /ai/chat、/ai/chat/history、/ai/session/delete——
+            // 它们统一走「默认要求登录」，未登录由拦截器直接返回 A0201。
+            //
+            // 唯一例外是 SSE 流式接口：它必须**进到 Service** 才能把「未登录」
+            // 表达成 error 事件（SSE 的失败契约是 HTTP 200 + error 事件，见 AiChatController），
+            // 若由拦截器拒绝会返回 application/json，破坏流式契约。
+            // 因此保留它进白名单，由 Service 层强制登录（见 AiChatServiceImpl.prepareChat）。
             "/ai/chat/stream",
-            // 删除会话：游客也要能删掉自己刚聊完的会话（凭不可枚举的雪花 ID）。
-            // 注意**只放行这一条**：/ai/session/list（我的会话列表）要求登录，
-            // 是「按登录用户维度聚合」的接口，匿名没有任何语义
-            "/ai/session/delete",
             // 官网「帖子」：列表与详情，游客可浏览（产品要求利于传播）。
             // 两条都**精确登记**，禁止 /post/**——管理端还会有 /post/admin/* 之类的
             // 审核、删除、置顶接口，通配符会把它们一起放行。

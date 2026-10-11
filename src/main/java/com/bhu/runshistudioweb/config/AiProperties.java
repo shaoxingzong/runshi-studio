@@ -79,11 +79,12 @@ public class AiProperties {
     private String systemPromptLocation = "classpath:prompts/system-prompt.txt";
 
     /**
-     * 单个用户的提问次数上限（登录用户才计数，游客不计）
+     * 普通登录用户的提问次数上限（成员与管理员不限额、也不计数）
      *
-     * <p>预检命中时返回 A0501。默认 100 与 DESIGN 的口径一致
+     * <p>预检命中时返回 A0501。默认 5 次：AI 服务对游客关闭，
+     * 登录用户可免费试用 5 次，成员 / 管理员不限次
      */
-    private Integer queryLimit = 100;
+    private Integer queryLimit = 5;
 
     /**
      * 向量模型（Embedding）名称，与对话模型分开配置

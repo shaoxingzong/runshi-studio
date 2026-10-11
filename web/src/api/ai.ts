@@ -1,5 +1,5 @@
 import { http, baseUrl, tokenStore } from './request';
-import type { ChatResponse, ChatMessage, KnowledgeSource } from './types';
+import type { AiSession, ApiResponse, ChatResponse, ChatMessage, KnowledgeSource, PageResult } from './types';
 
 /**
  * AI 咨询
@@ -10,15 +10,38 @@ import type { ChatResponse, ChatMessage, KnowledgeSource } from './types';
  */
 
 export const aiApi = {
+    /**
+     * 非流式提问（⚠️ **当前无调用方**）
+     *
+     * <p>AI 页面统一走 {@link chatStream}（SSE，边收边渲染），这个同步版本是早期实现留下的。
+     * 后端 `POST /ai/chat` 仍在，保留以备脚本化 / 非流式场景复用；
+     * 新增调用前请先确认是否真的不需要流式。
+     */
     chat(sessionId: string | null, message: string) {
         return http.post<ChatResponse>('/ai/chat', { sessionId, message });
     },
     history(sessionId: string) {
         return http.get<ChatMessage[]>('/ai/chat/history', { sessionId });
     },
+    /**
+     * 删除会话及其全部消息
+     *
+     * <p>⚠️ 后端 DTO 的字段叫 {@code sessionId}，不是 {@code id}。
+     * 早先这里发的是 `{ id }`，参数绑不上、后端拿到空值——请求不会报错，
+     * 但会话也删不掉，属于「点了没反应」那类最难发现的 bug。
+     */
     deleteSession(id: string) {
-        return http.post<boolean>('/ai/session/delete', { id });
+        return http.post<boolean>('/ai/session/delete', { sessionId: id });
     },
+
+    /**
+     * 我的会话列表（按最近活跃倒序，含消息条数）
+     *
+     * <p>接口要求登录（{@code @SaCheckLogin}），而 AI 页对游客开放。
+     * 未登录时<b>不要调它</b>：会拿到 A0201，而请求层遇到 A0201 会顺手清掉本地令牌。
+     */
+    sessionList: (params: Record<string, unknown> = {}) =>
+        http.get<PageResult<AiSession>>('/ai/session/list', params),
 };
 
 export interface StreamHandlers {
@@ -52,6 +75,14 @@ export async function chatStream(
         // 支持「停止生成」：前端 AbortController 中断后，这里会抛 AbortError
         signal,
     });
+
+    // 未登录 / 被拦截 / 服务端异常时返回的不是事件流，而是统一响应体的 JSON。
+    // 必须先判内容类型，否则会把一段 JSON 当成 SSE 帧去分帧，最后一个事件也收不到
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.includes('text/event-stream')) {
+        const body = (await response.json().catch(() => null)) as ApiResponse<unknown> | null;
+        throw new Error(body?.message || 'AI 服务暂不可用，请登录后重试');
+    }
 
     const reader = response.body?.getReader();
     if (!reader) {

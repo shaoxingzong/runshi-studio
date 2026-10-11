@@ -1,5 +1,9 @@
 package com.bhu.runshistudioweb.controller;
 
+import com.bhu.runshistudioweb.constant.UserRoleConstant;
+import com.bhu.runshistudioweb.mapper.SysUserMapper;
+import com.bhu.runshistudioweb.model.entity.SysUser;
+import com.bhu.runshistudioweb.utils.PasswordUtils;
 import com.sun.net.httpserver.HttpServer;
 import jakarta.annotation.Resource;
 import org.junit.jupiter.api.AfterAll;
@@ -49,6 +53,9 @@ class AiPromptFallbackTest {
     @Resource
     private JsonMapper jsonMapper;
 
+    @Resource
+    private SysUserMapper sysUserMapper;
+
     private static HttpServer stub;
 
     /** 最近一次收到的请求体（用于断言消息组装） */
@@ -86,10 +93,35 @@ class AiPromptFallbackTest {
         stub.stop(0);
     }
 
+    /**
+     * 注册一个成员用户并登录，返回 token
+     *
+     * <p>本用例关注的是「提示词文件缺失时的降级」，与权限无关；
+     * 但 AI 服务已要求登录，因此需要先取得一个可用的登录态。
+     */
+    private String loginToken() throws Exception {
+        String account = "T25fb_" + (System.nanoTime() % 100000);
+        SysUser user = new SysUser();
+        user.setUserAccount(account);
+        user.setUserPassword(PasswordUtils.encrypt("Studio@2026"));
+        user.setUserName(account);
+        user.setUserRole(UserRoleConstant.MEMBER);
+        user.setUserStatus(0);
+        sysUserMapper.insert(user);
+
+        String body = mockMvc.perform(post("/user/login").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"userAccount\":\"" + account + "\",\"userPassword\":\"Studio@2026\"}"))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+        int start = body.indexOf("\"token\":\"") + 9;
+        assertTrue(start > 9, "登录失败：" + body);
+        return body.substring(start, body.indexOf('"', start));
+    }
+
     @Test
     @DisplayName("提示词文件缺失：聊天仍可用，且请求里没有 system 消息（首条即 user）")
     void missingPromptFileStillChatsWithoutSystemMessage() throws Exception {
         String body = mockMvc.perform(post("/ai/chat")
+                        .header("satoken", loginToken())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"message\":\"T25-降级提问\"}"))
                 .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);

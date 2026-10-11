@@ -5,16 +5,15 @@ import cn.hutool.core.convert.Convert;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
-import cn.dev33.satoken.context.SaHolder;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bhu.runshistudioweb.config.AiProperties;
 import com.bhu.runshistudioweb.constant.AiChatConstant;
+import com.bhu.runshistudioweb.constant.UserRoleConstant;
 import com.bhu.runshistudioweb.exception.BusinessException;
 import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.exception.ThrowUtils;
 import com.bhu.runshistudioweb.manager.AiManager;
 import com.bhu.runshistudioweb.manager.AiQueryCountManager;
-import com.bhu.runshistudioweb.manager.AiRateLimitManager;
 import com.bhu.runshistudioweb.mapper.StudioAiMessageMapper;
 import com.bhu.runshistudioweb.mapper.StudioAiSessionMapper;
 import com.bhu.runshistudioweb.mapper.SysUserMapper;
@@ -31,7 +30,6 @@ import com.bhu.runshistudioweb.service.AiChatService;
 import com.bhu.runshistudioweb.service.KnowledgeDocService;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
@@ -140,13 +138,6 @@ public class AiChatServiceImpl implements AiChatService {
      */
     private final AiQueryCountManager aiQueryCountManager;
 
-    /**
-     * 游客 IP 限流
-     *
-     * <p>只在「未登录」时生效，且位于最外层（配额预检与检索之前）。
-     */
-    private final AiRateLimitManager aiRateLimitManager;
-
     private final AiProperties aiProperties;
 
     /**
@@ -204,16 +195,12 @@ public class AiChatServiceImpl implements AiChatService {
 
     @Override
     public AiChatResponseVO chat(AiChatRequest request) {
-        // 登录身份与来源 IP 都必须在这里（请求线程）取好：
-        // Sa-Token 的登录态与 Spring 的 RequestContextHolder 都存在 ThreadLocal 里，
-        // 后面的流式分支跑在虚拟线程上，拿不到（见 chatStream 里的说明）
+        // 登录身份必须在这里（请求线程）取好：
+        // Sa-Token 的登录态存在 ThreadLocal 里，后面的流式分支跑在虚拟线程上拿不到
+        // （见 chatStream 里的说明）
         Long userId = currentUserIdOrNull();
 
-        // ① 游客 IP 限流：**最外层**——
-        // 超限的请求不该再走检索 / Embedding / 模型调用，那些才是真正的开销
-        assertGuestRateLimit(userId, currentIpOrNull());
-
-        // ② 校验 / 会话 / 配额 / 上下文：与流式接口走**同一个**私有方法，
+        // ① 校验 / 会话 / 配额 / 上下文：与流式接口走**同一个**私有方法，
         // 保证「鉴权与归属规则完全一致」是靠同一份代码，而不是靠两处人肉同步
         PreparedChat prepared = prepareChat(request, userId);
 
@@ -276,10 +263,8 @@ public class AiChatServiceImpl implements AiChatService {
         // 于是流里只剩一个 error 事件、连 meta 都发不出来）。
         // 这一行是本类唯一依赖「请求线程」的地方，改动时务必保留。
         Long userId = currentUserIdOrNull();
-        // 来源 IP 同理必须在请求线程取好：虚拟线程里没有 RequestContextHolder
-        String clientIp = currentIpOrNull();
 
-        streamExecutor.execute(() -> streamChat(request, userId, clientIp, emitter, state));
+        streamExecutor.execute(() -> streamChat(request, userId, emitter, state));
         return emitter;
     }
 
@@ -287,7 +272,7 @@ public class AiChatServiceImpl implements AiChatService {
     public List<AiMessageVO> listHistory(String sessionId) {
         long parsedSessionId = parseSessionId(sessionId, "会话 id 不能为空");
         // 历史接口的归属校验与提问完全一致：否则它会成为「探测某会话是否存在」的入口
-        Long userId = currentUserIdOrNull();
+        long userId = requireLoginUserId();
         assertSessionAccessible(parsedSessionId, userId);
         return recentMessages(parsedSessionId, AiChatConstant.HISTORY_MESSAGE_LIMIT);
     }
@@ -329,7 +314,7 @@ public class AiChatServiceImpl implements AiChatService {
         // 归属校验与提问、历史完全一致：不存在与无权统一 A0402，不暴露存在性。
         // 这一步顺带实现了「重复删除 → A0402」：第一次删除后会话已被逻辑删除，
         // selectById 带 deleted_at = 0 条件查不到 → 与「不存在」走同一条路径
-        Long userId = currentUserIdOrNull();
+        long userId = requireLoginUserId();
         assertSessionAccessible(parsedSessionId, userId);
 
         // 双逻辑删：父表（会话）与子表（消息）各自 UPDATE deleted_at，必须在同一事务内。
@@ -357,12 +342,15 @@ public class AiChatServiceImpl implements AiChatService {
      * 复制一份出来早晚会漂移（改了一处忘了另一处，就是越权漏洞）。
      *
      * @param request 提问请求
-     * @param userId  当前登录用户 ID（null 表示游客）。
+     * @param userId  当前登录用户 ID（<b>不得为 null</b>，游客在本方法内被拒）。
      *                <b>由调用方在请求线程上取好传进来</b>——流式路径的调用方在虚拟线程里，
      *                而 Sa-Token 的登录态存在 ThreadLocal 中，跨线程取不到
-     * @return 准备结果（用户、会话、提问、上下文）
+     * @return 准备结果（用户、会话、提问、上下文、是否不限额）
      */
     private PreparedChat prepareChat(AiChatRequest request, Long userId) {
+        // ⓪ AI 服务不向游客开放：必须登录。同步与流式共用本方法，门槛只此一处
+        ThrowUtils.throwIf(userId == null, ErrorCode.NOT_LOGIN_ERROR, "请先登录后再使用 AI 助手");
+
         // 请求体整体为 null 时 @Valid 不会触发，兜一层避免后面 getMessage() 抛 NPE 变成 500
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
         // trim 后再判空与计长：避免「   」这种纯空格绕过必填校验
@@ -375,15 +363,13 @@ public class AiChatServiceImpl implements AiChatService {
         // ① 会话：sessionId 为空则新建（标题取首问前 30 字）；非空则校验存在性与归属
         long sessionId = resolveSession(request.getSessionId(), userId, message).getId();
 
-        // ② 配额预检：仅登录用户计数；游客的限流属于后续工程化任务（DESIGN 已登记）
-        if (userId != null) {
-            assertQuotaAvailable(userId);
-        }
+        // ② 配额预检：普通用户受次数上限约束；成员 / 管理员不限额（unlimited = true）
+        boolean unlimited = assertQuotaAvailable(userId);
 
         // ③ 上下文窗口：取最近 10 条（内部已翻正为时间正序），交给 Manager 拼 prompt
         List<AiMessageVO> history = recentMessages(sessionId, AiChatConstant.CONTEXT_MESSAGE_COUNT);
 
-        return new PreparedChat(userId, sessionId, message, history);
+        return new PreparedChat(userId, sessionId, message, history, unlimited);
     }
 
     /**
@@ -408,64 +394,12 @@ public class AiChatServiceImpl implements AiChatService {
         });
 
         // 事务提交之后再计数：与「HTTP 调用不进事务」是同一条纪律——
-        // 外部系统的写必须留在数据库事务边界之外
-        if (prepared.userId() != null) {
+        // 外部系统的写必须留在数据库事务边界之外。
+        // 成员 / 管理员不限额（unlimited），既不预检也不计数
+        if (prepared.userId() != null && !prepared.unlimited()) {
             aiQueryCountManager.increment(prepared.userId());
         }
         return messageIdHolder[0];
-    }
-
-    // ==================== 游客 IP 限流 ====================
-
-    /**
-     * 游客限流：<b>只对未登录用户生效</b>
-     *
-     * <p>登录用户走「按用户计数」的 {@code studio.ai.query-limit}，
-     * 不受 IP 限流约束——同一出口 IP 下可能有多个用户（公司、校园网），
-     * 按 IP 限会让他们互相拖累，而且他们本来就有配额兜底。
-     * 反过来，游客没有身份，配额无从谈起，只能按 IP 兜底。
-     *
-     * @param userId   当前登录用户 ID（null 表示游客）
-     * @param clientIp 来源 IP（由请求线程取好后传入，见 {@link #currentIpOrNull}）
-     */
-    private void assertGuestRateLimit(Long userId, String clientIp) {
-        if (userId != null) {
-            return;
-        }
-        aiRateLimitManager.assertAllowed(clientIp);
-    }
-
-    /**
-     * 取请求来源 IP（<b>必须在请求线程调用</b>）
-     *
-     * <p><b>⚠️ 这个 IP 不完全可信</b>：若请求经过反向代理，
-     * {@code X-Forwarded-For} / {@code X-Real-IP} 是<b>客户端可以伪造的请求头</b>——
-     * 攻击者换个头就能绕过限流。因此：
-     * <ul>
-     *     <li>生产环境必须在<b>网关 / Nginx 层</b>重写这些头（只信任来自可信代理的链路），
-     *     并把「取 IP」的责任放在最外层；</li>
-     *     <li>应用层的限流只是<b>兜底</b>，不能替代网关层的真实限流。</li>
-     * </ul>
-     * 拿不到 IP 时返回 null，限流会放行——宁可漏限，也不能因为取不到 IP 就拒绝所有人。
-     *
-     * @return 来源 IP；取不到时为 null
-     */
-    private String currentIpOrNull() {
-        try {
-            // Sa-Token 的 SaRequest 没有直接的 getRemoteAddr()，
-            // getSource() 返回的是原始请求对象（Spring MVC 下即 HttpServletRequest）
-            Object source = SaHolder.getRequest().getSource();
-            if (source instanceof HttpServletRequest request) {
-                // 取的是 TCP 对端地址（getRemoteAddr），**不读 X-Forwarded-For 头**——
-                // 那个头是客户端可以伪造的（伪造就能绕过限流）；
-                // 生产环境若走反向代理，必须在网关层完成「真实 IP 的还原与传递」
-                return request.getRemoteAddr();
-            }
-            return null;
-        } catch (Exception e) {
-            log.warn("获取请求来源 IP 失败，本次跳过 IP 限流", e);
-            return null;
-        }
     }
 
     // ==================== RAG 检索 ====================
@@ -530,13 +464,9 @@ public class AiChatServiceImpl implements AiChatService {
      * @param emitter SSE 发射器
      * @param state   中止标记（客户端断开时会被置位）
      */
-    private void streamChat(AiChatRequest request, Long userId, String clientIp,
+    private void streamChat(AiChatRequest request, Long userId,
                             SseEmitter emitter, StreamState state) {
         try {
-            // ① 游客 IP 限流：与同步接口同一位置、同一语义。
-            // 超限会在 try 里抛 BusinessException，被下面的 catch 转成 error 事件（HTTP 恒 200）
-            assertGuestRateLimit(userId, clientIp);
-
             PreparedChat prepared = prepareChat(request, userId);
 
             // ② meta：先告知会话 ID。新建会话时前端只能从这里拿到它
@@ -699,17 +629,29 @@ public class AiChatServiceImpl implements AiChatService {
     // ==================== 配额 ====================
 
     /**
-     * 配额预检：已达上限则返回 A0501
+     * 配额预检
+     *
+     * <p><b>成员与管理员不限额</b>（返回 {@code true}），直接放行、也不计数；
+     * 普通注册用户受 {@code studio.ai.query-limit}（默认 5 次）约束，超限返回 A0501。
      *
      * <p>这里读的是「当前值」，并发下两个请求可能同时通过预检，
      * 最终略微超出上限——这是刻意接受的：配额是「防护性上限」而不是计费依据，
-     * 为此加锁得不偿失。真正不能错的是自增本身必须原子（见 {@link #increaseQueryCount}）。
+     * 为此加锁得不偿失。真正不能错的是自增本身必须原子（见 {@link AiQueryCountManager#increment}）。
      *
-     * @param userId 登录用户 ID
+     * <p>角色取自 {@code sys_user.user_role} 而<b>不是</b> {@code StpUtil.hasRole}：
+     * 流式提问的预检跑在虚拟线程上，Sa-Token 的登录态存在 ThreadLocal 里取不到。
+     *
+     * @param userId 登录用户 ID（调用方已保证非 null）
+     * @return {@code true} 表示不限额（成员 / 管理员）；{@code false} 表示按次数上限计
      */
-    private void assertQuotaAvailable(long userId) {
+    private boolean assertQuotaAvailable(long userId) {
         SysUser user = sysUserMapper.selectById(userId);
         ThrowUtils.throwIf(user == null, ErrorCode.NOT_LOGIN_ERROR, "登录用户不存在");
+
+        // 成员 / 管理员：无限使用，且不计数
+        if (isUnlimitedRole(user.getUserRole())) {
+            return true;
+        }
 
         int limit = aiProperties.getQueryLimit() == null ? Integer.MAX_VALUE : aiProperties.getQueryLimit();
         // 必须是「DB 基准 + Redis 未落库增量」的合并值：
@@ -717,7 +659,18 @@ public class AiChatServiceImpl implements AiChatService {
         // 配额就成了摆设。合并读取也让预检**不依赖回刷是否发生**
         int used = aiQueryCountManager.merge(userId, user.getAiQueryCount());
         ThrowUtils.throwIf(used >= limit, ErrorCode.TOO_MANY_REQUESTS_ERROR,
-                "提问次数已达上限（" + limit + " 次），请稍后再试");
+                "登录用户的 AI 提问次数已用完（共 " + limit + " 次），成员与管理员可不限次使用");
+        return false;
+    }
+
+    /**
+     * 是否为「不限额」角色（成员 / 管理员）
+     *
+     * @param role 用户角色原始值（取自 {@code sys_user.user_role}）
+     * @return true 表示不受提问次数限制
+     */
+    private static boolean isUnlimitedRole(String role) {
+        return UserRoleConstant.MEMBER.equals(role) || UserRoleConstant.ADMIN.equals(role);
     }
 
     // 配额 +1 已移到 AiQueryCountManager（Redis INCR，事务外执行）：
@@ -879,6 +832,20 @@ public class AiChatServiceImpl implements AiChatService {
         return Convert.toLong(StpUtil.getLoginId(), null);
     }
 
+    /**
+     * 取当前登录用户 ID，未登录直接拒绝（A0201）
+     *
+     * <p>AI 服务不向游客开放，历史 / 删除会话等接口统一用它取用户，
+     * 避免每处各写一遍「取 id + 判空」。
+     *
+     * @return 登录用户 ID（保证非 null）
+     */
+    private long requireLoginUserId() {
+        Long userId = currentUserIdOrNull();
+        ThrowUtils.throwIf(userId == null, ErrorCode.NOT_LOGIN_ERROR, "请先登录后再使用 AI 助手");
+        return userId;
+    }
+
     // ==================== 内部类型 ====================
 
     /**
@@ -887,12 +854,14 @@ public class AiChatServiceImpl implements AiChatService {
      * <p>用 {@code record} 而不是普通类：它是纯粹的「方法返回多个值」的载体，
      * 不可变、不需要 setter，也不需要进 Spring 容器。
      *
-     * @param userId    当前登录用户 ID（null 表示游客，不计配额）
+     * @param userId    当前登录用户 ID（已保证非 null）
      * @param sessionId 会话 ID（可能是本次新建的）
      * @param message   已 trim 的提问内容
      * @param history   上下文窗口（时间正序）
+     * @param unlimited 是否不限额（成员 / 管理员为 true，落库时不计数）
      */
-    private record PreparedChat(Long userId, long sessionId, String message, List<AiMessageVO> history) {
+    private record PreparedChat(Long userId, long sessionId, String message, List<AiMessageVO> history,
+                                boolean unlimited) {
     }
 
     /**

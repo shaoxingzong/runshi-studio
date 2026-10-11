@@ -59,7 +59,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *     <li><b>配额</b>：登录用户每次成功流式 +1（SQL 对齐）；</li>
  *     <li><b>失败也是事件</b>：参数错误 / 会话不存在或无权 / AI 失败 → {@code error} 事件，
  *     HTTP 恒 200；AI 失败时保留用户消息、无 assistant、不计数；</li>
- *     <li><b>回归</b>：匿名放行（白名单精确）与既有接口不受影响。</li>
+ *     <li><b>回归</b>：匿名流式被拒 A0201（未登录不可用）与既有接口不受影响。</li>
  * </ol>
  */
 @SpringBootTest
@@ -258,9 +258,10 @@ class AiChatStreamTest {
     // ==================== ① ② ③ 事件序列 / 增量拼接 / 落库 ====================
 
     @Test
-    @DisplayName("匿名流式：meta → delta* → done；增量拼接=完整回答；两条消息入库且 messageId 可查")
-    void anonymousStreamSequenceAndPersistence() throws Exception {
-        MvcResult result = streamRaw("{\"message\":\"T23-你好\"}", null);
+    @DisplayName("登录流式：meta → delta* → done；增量拼接=完整回答；两条消息入库且 messageId 可查")
+    void loggedInStreamSequenceAndPersistence() throws Exception {
+        String token = login();
+        MvcResult result = streamRaw("{\"message\":\"T23-你好\"}", token);
         String frames = result.getResponse().getContentAsString(StandardCharsets.UTF_8);
 
         // HTTP 恒 200（SSE 契约）
@@ -310,10 +311,11 @@ class AiChatStreamTest {
     @Test
     @DisplayName("续聊：带 sessionId 的流式追加进同一会话（4 条消息）")
     void continueSameSessionByStream() throws Exception {
-        String first = streamFrames("{\"message\":\"T23-第一问\"}", null);
+        String token = login();
+        String first = streamFrames("{\"message\":\"T23-第一问\"}", token);
         String sessionId = jsonField(dataOf(first, "meta"), "sessionId");
 
-        String second = streamFrames("{\"sessionId\":\"" + sessionId + "\",\"message\":\"T23-第二问\"}", null);
+        String second = streamFrames("{\"sessionId\":\"" + sessionId + "\",\"message\":\"T23-第二问\"}", token);
         assertEquals(sessionId, jsonField(dataOf(second, "meta"), "sessionId"), "sessionId 应保持不变");
 
         assertEquals(4, (int) jdbcTemplate.queryForObject(
@@ -343,7 +345,8 @@ class AiChatStreamTest {
     @Test
     @DisplayName("参数错误以 error 事件返回：HTTP 200、无 meta、code=A0401")
     void paramsErrorBecomesErrorEvent() throws Exception {
-        MvcResult result = streamRaw("{\"message\":\"   \"}", null);
+        String token = login();
+        MvcResult result = streamRaw("{\"message\":\"   \"}", token);
         String frames = result.getResponse().getContentAsString(StandardCharsets.UTF_8);
 
         assertEquals(200, result.getResponse().getStatus(), "SSE 失败也应 HTTP 200");
@@ -355,18 +358,18 @@ class AiChatStreamTest {
     @Test
     @DisplayName("会话不存在 / 他人会话：error A0402 统一提示（与同步接口同规则）")
     void sessionNotFoundAndOwnership() throws Exception {
+        String token = login();
         // 不存在
         String missing = streamFrames(
-                "{\"sessionId\":\"999999999999999999\",\"message\":\"T23-在吗\"}", null);
+                "{\"sessionId\":\"999999999999999999\",\"message\":\"T23-在吗\"}", token);
         String error = dataOf(missing, "error");
         assertTrue(error.contains("\"code\":\"A0402\"") && error.contains("会话不存在"), "应 A0402：" + error);
 
-        // 登录用户 A 建会话，匿名尝试续聊 → 与不存在同码同提示
-        String token = login();
+        // 登录用户 A 建会话，另一个登录用户尝试续聊 → 与不存在同码同提示
         String own = streamFrames("{\"message\":\"T23-A 的会话\"}", token);
         String sessionId = jsonField(dataOf(own, "meta"), "sessionId");
         String cross = streamFrames(
-                "{\"sessionId\":\"" + sessionId + "\",\"message\":\"T23-越权续聊\"}", null);
+                "{\"sessionId\":\"" + sessionId + "\",\"message\":\"T23-越权续聊\"}", login());
         String crossError = dataOf(cross, "error");
         assertTrue(crossError.contains("\"code\":\"A0402\"") && crossError.contains("会话不存在"),
                 "越权应 A0402 且不暴露存在性：" + crossError);
@@ -395,9 +398,14 @@ class AiChatStreamTest {
     // ==================== ⑦ 回归 ====================
 
     @Test
-    @DisplayName("回归：匿名流式放行；既有公开接口与管理端拦截不受影响")
+    @DisplayName("回归：匿名流式被拒 A0201；既有公开接口与管理端拦截不受影响")
     void whitelistAndRegression() throws Exception {
-        // 匿名流式放行（主用例已证），这里补一条既有公开接口 + 管理端拦截
+        // 匿名流式：进 Service 后被强制登录拦下，以 error 事件返回 A0201（HTTP 200）
+        MvcResult anon = streamRaw("{\"message\":\"T23-匿名\"}", null);
+        String anonFrames = anon.getResponse().getContentAsString(StandardCharsets.UTF_8);
+        assertTrue(dataOf(anonFrames, "error").contains("\"code\":\"A0201\""),
+                "匿名流式应 A0201：" + anonFrames);
+
         assertEquals(0, (int) jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM sys_user WHERE user_account LIKE 'T23%'", Integer.class),
                 "清理基准：本类不应有历史残留");

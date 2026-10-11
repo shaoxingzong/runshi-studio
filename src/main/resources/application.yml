@@ -85,8 +85,8 @@ studio:
     # 想不改包换话术：设为 file:/opt/.../system-prompt.txt
     system-prompt-location: ${AI_SYSTEM_PROMPT_LOCATION:classpath:prompts/system-prompt.txt}
 
-    # 单用户提问次数上限（登录用户才计数，游客不计）；命中返回 A0501
-    query-limit: 100
+    # 普通登录用户的提问次数上限（成员/管理员不限额、也不计数）；命中返回 A0501
+    query-limit: 5
     # RAG 检索：最多取回多少条资料块（越多越全，但 token 与噪声同步上升）
     rag-top-k: 5
     # RAG 相似度下限：⚠️ 它是 relevance=(1+cos)/2 而**不是**余弦本身，

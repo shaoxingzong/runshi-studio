@@ -205,14 +205,14 @@ class AiSessionManageTest {
     // ==================== ① 鉴权边界与列表隔离 ====================
 
     @Test
-    @DisplayName("鉴权：列表未登录 A0201；只返回本人会话；删除接口匿名可达")
+    @DisplayName("鉴权：列表 / 删除未登录一律 A0201；只返回本人会话")
     void authBoundaryAndIsolation() throws Exception {
         // 未登录访问列表：A0201（该路径不进白名单）
         assertEquals("A0201", code(getBody("/ai/session/list", null)), "会话列表必须登录");
 
-        // 游客访问删除接口：能被拦截器放行（白名单），只是会话不存在 → A0402 而非 A0201
-        assertEquals("A0402", code(postJson("/ai/session/delete",
-                "{\"sessionId\":\"999999999999999999\"}", null)), "删除接口应匿名放行");
+        // 未登录访问删除接口：同样 A0201（AI 不再匿名开放）
+        assertEquals("A0201", code(postJson("/ai/session/delete",
+                "{\"sessionId\":\"999999999999999999\"}", null)), "删除接口应要求登录");
 
         // 隔离：A 两个会话，B 一个会话；A 的列表看不到 B 的
         String tokenA = loginUser();
@@ -331,7 +331,7 @@ class AiSessionManageTest {
     // ==================== ⑦ 归属规则 ====================
 
     @Test
-    @DisplayName("归属：他人会话 A0402（同码同提示）；匿名会话凭 ID 可删")
+    @DisplayName("归属：他人会话 A0402（同码同提示）；未登录一律 A0201")
     void ownershipRules() throws Exception {
         String tokenA = loginUser();
         String tokenB = loginUser();
@@ -341,18 +341,14 @@ class AiSessionManageTest {
         String cross = postJson("/ai/session/delete", "{\"sessionId\":\"" + aSid + "\"}", tokenB);
         assertEquals("A0402", code(cross));
         assertEquals("会话不存在", message(cross));
-        // 游客删 A 的会话：同样 A0402
-        assertEquals("A0402", code(postJson("/ai/session/delete",
-                "{\"sessionId\":\"" + aSid + "\"}", null)));
+        // 未登录删会话：A0201（AI 不再匿名开放，进不到「会话不存在」那一步）
+        assertEquals("A0201", code(postJson("/ai/session/delete",
+                "{\"sessionId\":\"" + aSid + "\"}", null)), "匿名删除应 A0201");
         // A 本人可以删（没有被上面的越权尝试影响）
         assertEquals("00000", code(postJson("/ai/session/delete", "{\"sessionId\":\"" + aSid + "\"}", tokenA)));
-
-        // 匿名会话：游客创建、任何持 ID 者（这里是匿名请求）可删
-        String anonSid = newSession(null, "T22-e-游客会话");
-        assertEquals("00000", code(postJson("/ai/session/delete",
-                "{\"sessionId\":\"" + anonSid + "\"}", null)), "匿名会话凭 ID 可删");
+        // 重复删除 → A0402
         assertEquals("A0402", code(postJson("/ai/session/delete",
-                "{\"sessionId\":\"" + anonSid + "\"}", null)), "重复删除 A0402");
+                "{\"sessionId\":\"" + aSid + "\"}", tokenA)), "重复删除 A0402");
     }
 
     // ==================== ⑧ 参数校验 ====================
@@ -360,13 +356,18 @@ class AiSessionManageTest {
     @Test
     @DisplayName("参数：缺 sessionId / 空白 / 脏值 A0401；不存在 A0402")
     void paramValidation() throws Exception {
-        assertEquals("A0401", code(postJson("/ai/session/delete", "{}", null)), "缺参应 A0401");
-        assertEquals("A0401", code(postJson("/ai/session/delete", "{\"sessionId\":\"   \"}", null)),
+        // 未登录访问删除接口：A0201（AI 不再匿名开放）
+        assertEquals("A0201", code(postJson("/ai/session/delete", "{}", null)), "匿名应 A0201");
+
+        // 登录后才是参数校验逻辑
+        String token = loginUser();
+        assertEquals("A0401", code(postJson("/ai/session/delete", "{}", token)), "缺参应 A0401");
+        assertEquals("A0401", code(postJson("/ai/session/delete", "{\"sessionId\":\"   \"}", token)),
                 "空白应 A0401");
-        assertEquals("A0401", code(postJson("/ai/session/delete", "{\"sessionId\":\"abc\"}", null)),
+        assertEquals("A0401", code(postJson("/ai/session/delete", "{\"sessionId\":\"abc\"}", token)),
                 "脏值应 A0401 而不是 B0001");
         assertEquals("A0402", code(postJson("/ai/session/delete",
-                "{\"sessionId\":\"999999999999999999\"}", null)), "不存在应 A0402");
+                "{\"sessionId\":\"999999999999999999\"}", token)), "不存在应 A0402");
     }
 
     // ==================== ⑨ 脱敏与序列化 ====================
@@ -403,11 +404,10 @@ class AiSessionManageTest {
         // Page 元数据是 long → 全局 Long→字符串约定下出字符串（与 records / messageCount 的数字形态不同）
         assertTrue(empty.contains("\"total\":\"0\""), "新用户 total 应为 0：" + empty);
 
-        // 回归：匿名提问 / 历史仍正常；管理端接口仍 A0201
-        String anonChat = chat(null, null, "T22-h 回归提问");
-        assertEquals("00000", code(anonChat));
-        String anonSid = sessionIdOf(anonChat);
-        assertEquals("00000", code(getBody("/ai/chat/history?sessionId=" + anonSid, null)));
+        // 回归：匿名提问 / 历史一律 A0201（游客不可用）；已登录用户提问仍可用；管理端接口仍 A0201
+        assertEquals("A0201", code(chat(null, null, "T22-h 回归提问")), "匿名提问应 A0201");
+        assertEquals("A0201", code(getBody("/ai/chat/history?sessionId=1", null)), "匿名历史应 A0201");
+        assertEquals("00000", code(chat(token, null, "T22-h 登录提问")), "登录用户提问应可用");
         assertEquals("A0201", code(getBody("/member/list/page", null)));
         // 原「/member/list 仍可匿名访问」的断言已随「团队成员不对外展示」删除——
         // 该接口现已整体移除，访问得到 404 且响应体为空，断言集中在 StudioMemberCrudTest。
