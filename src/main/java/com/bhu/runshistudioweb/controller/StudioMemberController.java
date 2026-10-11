@@ -1,6 +1,8 @@
 package com.bhu.runshistudioweb.controller;
 
+import cn.dev33.satoken.annotation.SaCheckLogin;
 import cn.dev33.satoken.annotation.SaCheckRole;
+import cn.dev33.satoken.stp.StpUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bhu.runshistudioweb.common.BaseResponse;
 import com.bhu.runshistudioweb.common.ResultUtils;
@@ -11,6 +13,8 @@ import com.bhu.runshistudioweb.model.dto.common.DeleteRequest;
 import com.bhu.runshistudioweb.model.dto.member.MemberAddRequest;
 import com.bhu.runshistudioweb.model.dto.member.MemberQueryRequest;
 import com.bhu.runshistudioweb.model.dto.member.MemberUpdateRequest;
+import com.bhu.runshistudioweb.model.entity.StudioMember;
+import com.bhu.runshistudioweb.model.vo.MemberFrontVO;
 import com.bhu.runshistudioweb.model.vo.MemberVO;
 import com.bhu.runshistudioweb.service.StudioMemberService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -44,6 +48,9 @@ import org.springframework.web.bind.annotation.RestController;
  *     <tr><td>{@code /member/add}、{@code /member/update}、{@code /member/delete}、
  *     {@code /member/get}、{@code /member/list/page}</td>
  *     <td>全部要求 {@code @SaCheckRole("admin")}</td></tr>
+ *     <tr><td>{@code /member/mine}</td>
+ *     <td>{@code @SaCheckLogin}——登录用户看<b>自己</b>的成员档案，
+ *     是全部接口里唯一的非 admin 接口</td></tr>
  * </table>
  * 注意：管理端维护绑定关系不在这里，而在 {@link MemberCertificateController}
  * （{@code /member-certificate/bind} 等），避免本类职责膨胀。
@@ -67,6 +74,37 @@ public class StudioMemberController {
      * 依赖缺失在启动期就失败，而不是等到真正调用时才 NPE
      */
     private final StudioMemberService studioMemberService;
+
+    // ==================== 当前登录用户：查自己的在队成员档案 ====================
+
+    /**
+     * 我的成员档案（当前登录用户）
+     *
+     * <p><b>为什么要这个接口</b>：判断「我是不是在队成员」必须以 {@code studio_member} 表为准，
+     * 而不是前端 localStorage 里的 {@code userRole}——角色是权限标签，可能与档案不同步
+     * （管理员改了角色未必建档案，成员毕业时档案状态改了角色未必跟着改）。
+     * 前端只按角色判断，就会出现「发帖按钮在那儿，点了却被后端拒绝」。
+     *
+     * <p>前端拿它决定要不要显示「发帖」入口；将来的考勤模块（只有成员能打卡、
+     * 也只有成员能看出勤看板）需要的是同一个判断。
+     *
+     * <p><b>为什么用 null 表示「不是成员」而不是抛异常</b>：
+     * 「不是成员」是完全正常的查询结果，不是错误——普通注册用户就是这个结果。
+     * 真正的拦截（A0301）发生在发帖、打卡这些业务接口里，那里才该报错。
+     * 让查询接口抛异常，会把「查询」和「鉴权」两件事混在一起。
+     *
+     * @return 在队的成员档案；不是成员（或已毕业离队）时返回 <b>null</b>
+     */
+    @GetMapping("/mine")
+    @SaCheckLogin
+    @Operation(summary = "【登录用户】我的成员档案", description = "在队则返回档案；不是成员返回 null")
+    public BaseResponse<MemberFrontVO> mine() {
+        long userId = StpUtil.getLoginIdAsLong();
+        // 与考勤同一套判定：查在队成员（member_status = 0），认表不认角色
+        StudioMember member = studioMemberService.getActiveMemberByUserId(userId);
+        // 脱敏后返回：不含 userId / sortOrder / 审计字段（MemberFrontVO 本身就是白名单）
+        return ResultUtils.success(member == null ? null : studioMemberService.getMemberFrontVO(member));
+    }
 
     // ==================== 管理端：全部要求 admin 角色 ====================
 
