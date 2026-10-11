@@ -40,6 +40,14 @@ export default defineConfig({
                 target: 'http://localhost:8080',
                 changeOrigin: true,
             },
+            // 上传的图片由后端以静态资源方式提供（/uploads/**），与 /api 同源。
+            // 不配这条，开发态（5173）下 /uploads/2026/10/xxx.png 会 404——
+            // 表现为「编辑器里能插入图片，保存后页面上却裂图」。
+            // 生产是同源部署，这条代理不生效也不影响
+            '/uploads': {
+                target: 'http://localhost:8080',
+                changeOrigin: true,
+            },
         },
     },
     build: {

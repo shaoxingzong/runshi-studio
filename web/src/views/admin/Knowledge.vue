@@ -19,6 +19,12 @@ const loading = ref(false);
 const syncForm = reactive({ sourceType: 'project', sourceId: '' });
 const lastResult = ref('');
 
+// ==================== 手工录入 ====================
+
+const manualVisible = ref(false);
+const manualSaving = ref(false);
+const manualForm = reactive({ title: '', content: '' });
+
 async function load() {
     loading.value = true;
     try {
@@ -48,6 +54,35 @@ async function syncOne() {
         return;
     }
     await runBatch('同步单条', () => adminApi.docSync(syncForm.sourceType, syncForm.sourceId));
+}
+
+/**
+ * 手工录入一篇文档
+ *
+ * <p>与「同步」的区别：同步是<b>从业务数据</b>（项目 / 成员 / 证书）读内容，
+ * 手工录入是管理员<b>直接写</b>标题与正文，用来补充那些不在业务表里的资料
+ * （比如团队约定、技术规约）。每次调用都会新建一篇，重复点会产生重复文档。
+ *
+ * <p>⚠️ <b>耗时要说清楚</b>：后端会真实调用 Embedding，两万字的正文可能超过
+ * 请求层 30 秒的超时。所以按钮 loading 期间要在界面上说明「请勿关闭」，
+ * 否则用户会以为卡死，甚至关掉页面——那样后端其实还在跑，只是没人看结果了。
+ */
+async function submitManual() {
+    if (!manualForm.title.trim() || !manualForm.content.trim()) {
+        ElMessage.warning('标题与正文必填');
+        return;
+    }
+    manualSaving.value = true;
+    try {
+        await runBatch('手工录入', () =>
+            adminApi.docManual(manualForm.title.trim(), manualForm.content),
+        );
+        manualVisible.value = false;
+        manualForm.title = '';
+        manualForm.content = '';
+    } finally {
+        manualSaving.value = false;
+    }
 }
 
 async function rebuild(row: KnowledgeDoc) {
@@ -93,6 +128,7 @@ onMounted(load);
             <span class="spacer" />
             <el-button type="primary" @click="runBatch('全量同步', adminApi.docSyncAll)">全量同步</el-button>
             <el-button type="warning" @click="runBatch('重建向量', adminApi.docReindexAll)">重建向量</el-button>
+            <el-button type="success" @click="manualVisible = true">手工录入</el-button>
         </div>
 
         <el-alert
@@ -130,6 +166,12 @@ onMounted(load);
                 </template>
             </el-table-column>
             <el-table-column prop="chunkCount" label="块数" width="90" />
+            <el-table-column label="创建时间" width="160">
+                <template #default="{ row }">{{ (row.createdAt ?? '').slice(0, 16) || '—' }}</template>
+            </el-table-column>
+            <el-table-column label="更新时间" width="160">
+                <template #default="{ row }">{{ (row.updatedAt ?? '').slice(0, 16) || '—' }}</template>
+            </el-table-column>
             <el-table-column label="操作" width="150" fixed="right">
                 <template #default="{ row }">
                     <el-button link type="primary" @click="rebuild(row)">重建</el-button>
@@ -143,6 +185,37 @@ onMounted(load);
             <span class="muted">第 {{ page.current }} / {{ result.pages }} 页 · 共 {{ result.total }} 条</span>
             <el-button :disabled="page.current >= Number(result.pages)" @click="turn(1)">下一页</el-button>
         </div>
+
+        <el-dialog v-model="manualVisible" title="手工录入文档" width="640px">
+            <el-form label-position="top">
+                <el-form-item label="标题" required>
+                    <el-input v-model="manualForm.title" maxlength="128" show-word-limit />
+                </el-form-item>
+                <el-form-item label="正文" required>
+                    <el-input
+                        v-model="manualForm.content"
+                        type="textarea"
+                        :rows="12"
+                        maxlength="20000"
+                        show-word-limit
+                        placeholder="直接粘贴正文；录入后会被切分并向量化"
+                    />
+                </el-form-item>
+            </el-form>
+
+            <!-- 耗时提示放在提交按钮附近：现在的等待是真实的，不说清楚会被当成卡死 -->
+            <el-alert
+                type="info"
+                show-icon
+                :closable="false"
+                title="长文需要调用 Embedding，可能耗时较久：点「录入」后请耐心等待，不要关闭页面（后端仍在运行）。每次录入都会新建一篇，重复提交会产生重复文档。"
+            />
+
+            <template #footer>
+                <el-button @click="manualVisible = false">取消</el-button>
+                <el-button type="primary" :loading="manualSaving" @click="submitManual">录入</el-button>
+            </template>
+        </el-dialog>
     </div>
 </template>
 

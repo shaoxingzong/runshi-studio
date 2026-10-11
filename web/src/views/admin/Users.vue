@@ -177,6 +177,77 @@ async function submitPassword() {
     }
 }
 
+// ===== 新增账号 =====
+const createVisible = ref(false);
+const createForm = reactive({
+    userAccount: '',
+    userPassword: '',
+    userName: '',
+    /** 默认「成员」：新增账号多为把新人拉进工作室，省一次改角色 */
+    userRole: 'member',
+});
+
+function openCreate() {
+    Object.assign(createForm, {
+        userAccount: '',
+        userPassword: '',
+        userName: '',
+        userRole: 'member',
+    });
+    createVisible.value = true;
+}
+
+/**
+ * 新增账号
+ *
+ * 密码留空时**不下发** userPassword 字段：后端会用默认初始密码，
+ * 而下发空串会撞上 DTO 的 @Size(min=8)。这与「字段为 null 即不改」的部分更新语义一致。
+ */
+async function submitCreate() {
+    if (createForm.userAccount.length < 4 || createForm.userAccount.length > 16) {
+        ElMessage.warning('账号长度需为 4-16 位');
+        return;
+    }
+    if (createForm.userPassword && (createForm.userPassword.length < 8 || createForm.userPassword.length > 20)) {
+        ElMessage.warning('密码长度需为 8-20 位（留空则用默认初始密码）');
+        return;
+    }
+    try {
+        await adminApi.userAdd({
+            userAccount: createForm.userAccount,
+            userPassword: createForm.userPassword || undefined,
+            userName: createForm.userName || undefined,
+            userRole: createForm.userRole,
+        });
+        ElMessage.success('账号已创建');
+        createVisible.value = false;
+        await load();
+    } catch (e) {
+        console.warn('新增账号失败', e);
+    }
+}
+
+/** 删除账号（逻辑删除）：账号名会被释放、可被重新注册，所以确认文案里要说清后果 */
+async function removeUser(row: AdminUser) {
+    try {
+        await ElMessageBox.confirm(
+            `确认删除账号「${row.userAccount}」？删除后该账号无法登录，账号名可被重新注册。`,
+            '删除确认',
+            { type: 'warning' },
+        );
+    } catch {
+        return;
+    }
+    try {
+        await adminApi.userDelete(row.id);
+        ElMessage.success('已删除');
+        await load();
+    } catch (e) {
+        console.warn('删除账号失败', e);
+        await load();
+    }
+}
+
 onMounted(load);
 </script>
 
@@ -196,6 +267,7 @@ onMounted(load);
             <el-button type="primary" @click="reload">查询</el-button>
             <span class="spacer" />
             <span class="hint muted">注册只能得到「普通用户」；把角色改成「成员」即授予成员身份</span>
+            <el-button type="primary" @click="openCreate">新增账号</el-button>
         </div>
 
         <el-table v-loading="loading" :data="records" class="card table">
@@ -221,7 +293,7 @@ onMounted(load);
             </el-table-column>
             <el-table-column prop="aiQueryCount" label="AI 次数" width="100" />
             <el-table-column prop="createdAt" label="注册时间" min-width="170" />
-            <el-table-column label="操作" width="170" fixed="right">
+            <el-table-column label="操作" width="220" fixed="right">
                 <template #default="{ row }">
                     <el-button
                         v-if="row.userRole === 'user'"
@@ -239,6 +311,7 @@ onMounted(load);
                     >
                         {{ row.userStatus === 1 ? '解封' : '封禁' }}
                     </el-button>
+                    <el-button link type="danger" @click="removeUser(row)">删除</el-button>
                 </template>
             </el-table-column>
         </el-table>
@@ -257,6 +330,36 @@ onMounted(load);
                 "
             />
         </div>
+
+        <el-dialog v-model="createVisible" title="新增账号" width="440px">
+            <p class="muted">
+                直接创建登录账号。密码留空则使用系统默认初始密码，创建后请通过安全渠道告知本人。
+            </p>
+            <el-form label-position="top">
+                <el-form-item label="账号" required>
+                    <el-input v-model="createForm.userAccount" placeholder="4-16 位，需唯一" />
+                </el-form-item>
+                <el-form-item label="初始密码">
+                    <el-input
+                        v-model="createForm.userPassword"
+                        placeholder="留空则用默认初始密码（8-20 位）"
+                        show-password
+                    />
+                </el-form-item>
+                <el-form-item label="昵称">
+                    <el-input v-model="createForm.userName" placeholder="选填，留空则用账号名" />
+                </el-form-item>
+                <el-form-item label="角色">
+                    <el-select v-model="createForm.userRole">
+                        <el-option v-for="r in ROLES" :key="r.value" :label="r.label" :value="r.value" />
+                    </el-select>
+                </el-form-item>
+            </el-form>
+            <template #footer>
+                <el-button @click="createVisible = false">取消</el-button>
+                <el-button type="primary" @click="submitCreate">创建</el-button>
+            </template>
+        </el-dialog>
 
         <el-dialog v-model="pwdVisible" title="重置密码" width="380px">
             <p class="muted">为账号「{{ pwdTarget?.userAccount }}」设置新密码（8-20 位）</p>

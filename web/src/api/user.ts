@@ -1,5 +1,5 @@
 import { http } from './request';
-import type { LoginResult } from './types';
+import type { LoginResult, Member } from './types';
 
 /**
  * C 端用户接口（门户使用）
@@ -27,6 +27,15 @@ export const userApi = {
 
     /** 当前登录用户：刷新页面后用它恢复登录态（比只信 localStorage 里的账号名可靠） */
     current: () => http.get<LoginResult>('/user/current'),
+
+    /**
+     * 我的成员档案：在队则返回档案，**不是成员返回 null**
+     *
+     * <p>判断「我是不是在队成员」必须走这个接口，而不是看 {@link LoginResult#userRole}：
+     * 角色是权限标签，可能与 studio_member 档案不同步，
+     * 只按角色判断会出现「发帖按钮在那儿，点了却被后端拒绝」。
+     */
+    mineMember: () => http.get<Member | null>('/member/mine'),
 
     /** 注销：清服务端会话与 Cookie */
     logout: () => http.post<boolean>('/user/logout', {}),

@@ -52,6 +52,7 @@ onMounted(load);
     <div class="page" v-loading="loading">
         <template v-if="detail">
             <div class="card">
+                <img v-if="detail.coverImage" :src="detail.coverImage" :alt="detail.title" class="cover" />
                 <h1>{{ detail.title }}</h1>
                 <span class="tag" :class="detail.status === 1 ? 'green' : 'gray'">
                     {{ STATUS_TEXT[String(detail.status)] || detail.status }}
@@ -80,16 +81,33 @@ onMounted(load);
                 <h2>参与成员（{{ detail.members.length }}）</h2>
                 <p class="muted small">队长必然在列表中：后端把 leader_id 作为权威源，建/改项目时同步写入关联表。</p>
                 <el-empty v-if="detail.members.length === 0" description="暂无成员" />
-                <div v-else class="grid cards-4">
-                    <router-link
-                        v-for="member in detail.members"
-                        :key="member.id"
-                        :to="`/members/${member.id}`"
-                        class="member"
-                    >
-                        <div class="name">{{ member.name }}</div>
-                        <span class="tag gray">{{ member.teamPosition }}</span>
-                    </router-link>
+                <div v-else class="grid cards-3">
+                    <!-- ⚠️ 成员信息「不对外展示」（业务规则）：这里只作为项目参与者的信息卡，**不做跳转**。
+                         曾经的 :to="/members/:id" 指向已下线路由，点击会命中兜底路由静默跳回首页 -->
+                    <div v-for="member in detail.members" :key="member.id" class="member">
+                        <div class="member-head">
+                            <img v-if="member.avatar" :src="member.avatar" :alt="member.name" class="avatar" />
+                            <span v-else class="avatar fallback">{{ member.name.slice(0, 1) }}</span>
+                            <div class="who">
+                                <div class="name">{{ member.name }}</div>
+                                <span v-if="member.teamPosition" class="tag gray">{{ member.teamPosition }}</span>
+                            </div>
+                        </div>
+                        <div v-if="member.gradeYear || member.direction" class="meta">
+                            <span v-if="member.gradeYear">{{ member.gradeYear }} 届</span>
+                            <span v-if="member.direction">{{ member.direction }}</span>
+                        </div>
+                        <p v-if="member.summary" class="summary">{{ member.summary }}</p>
+                        <el-link
+                            v-if="member.githubUrl"
+                            :href="member.githubUrl"
+                            target="_blank"
+                            type="primary"
+                            class="gh"
+                        >
+                            GitHub
+                        </el-link>
+                    </div>
                 </div>
             </div>
 
@@ -99,6 +117,15 @@ onMounted(load);
 </template>
 
 <style scoped>
+.cover {
+    width: 100%;
+    max-height: 320px;
+    object-fit: cover;
+    border-radius: var(--radius-sm);
+    margin-bottom: 16px;
+    display: block;
+}
+
 h1 {
     margin: 0 0 10px;
     font-size: 26px;
@@ -122,17 +149,64 @@ h1 {
     background: var(--bg);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    padding: 12px;
+    padding: 14px;
     color: var(--text);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
-.member:hover {
-    text-decoration: none;
-    border-color: var(--brand);
+.member-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+/* 没有头像时用姓名首字兜底，避免出现空框 */
+.avatar.fallback {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    color: #fff;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.who {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
 }
 
 .name {
     font-weight: 600;
-    margin-bottom: 4px;
+}
+
+.meta {
+    display: flex;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--muted);
+}
+
+.summary {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #6b7280;
+}
+
+.gh {
+    align-self: flex-start;
+    font-size: 13px;
 }
 </style>

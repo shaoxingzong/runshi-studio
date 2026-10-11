@@ -2,7 +2,9 @@
 import { onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { adminApi } from '@/api/admin';
-import type { AdminProject, PageResult } from '@/api/types';
+import { relationApi } from '@/api/relation';
+import ImageUploader from '@/components/ImageUploader.vue';
+import type { AdminMember, AdminProject, Member, PageResult } from '@/api/types';
 
 /** 项目管理：正文（Markdown）与技术栈是知识库的数据源，改完记得同步 */
 const page = reactive({ current: 1, pageSize: 10 });
@@ -25,6 +27,79 @@ const form = reactive<Record<string, unknown>>({
 });
 
 const STATUS_TEXT: Record<string, string> = { 0: '研发中', 1: '已上线', 2: '已结题' };
+
+// ==================== 参与成员（关联维护） ====================
+
+/** 已绑定的参与成员（含队长） */
+const projectMembers = ref<AdminMember[]>([]);
+/** 候选成员：来自后台成员分页；成员量级很小，一次取 100 条足够 */
+const memberOptions = ref<Member[]>([]);
+const memberLoading = ref(false);
+const pickedMember = ref('');
+
+/**
+ * 是否为当前队长
+ *
+ * <p>队长由 `project.leaderId` 决定，后端<b>拒绝把队长从成员列表里移除</b>。
+ * 这里提前判断并禁用按钮，而不是让用户点了才知道——后端的约束是对的，
+ * 但错误的时机应该是「点之前」而不是「报错之后」。
+ */
+function isLeader(memberId: string): boolean {
+    return String(form.leaderId ?? '') === memberId;
+}
+
+/** 只加载候选成员：新增项目时还没有项目 ID，但队长下拉同样需要候选列表 */
+async function loadMemberOptions() {
+    try {
+        const options = await adminApi.memberPage({ current: 1, pageSize: 100 });
+        memberOptions.value = options.records ?? [];
+    } catch {
+        memberOptions.value = [];
+    }
+}
+
+async function loadMembers(projectId: string) {
+    memberLoading.value = true;
+    try {
+        projectMembers.value = (await relationApi.projectMemberList(projectId)) ?? [];
+    } catch {
+        projectMembers.value = [];
+    } finally {
+        memberLoading.value = false;
+    }
+    // 候选成员与绑定关系互不影响，单独加载
+    await loadMemberOptions();
+}
+
+async function addMember() {
+    if (!pickedMember.value || !editing.value) {
+        return;
+    }
+    try {
+        await relationApi.projectMemberBind(editing.value.id, pickedMember.value);
+        ElMessage.success('已添加参与成员');
+        pickedMember.value = '';
+        await loadMembers(editing.value.id);
+    } catch {
+        // 重复绑定（A0401）等提示已在请求层
+    }
+}
+
+async function removeMember(memberId: string) {
+    if (!editing.value) {
+        return;
+    }
+    if (isLeader(memberId)) {
+        ElMessage.warning('队长不可移除：请先在上方修改队长 ID');
+        return;
+    }
+    try {
+        await relationApi.projectMemberUnbind(editing.value.id, memberId);
+        await loadMembers(editing.value.id);
+    } catch {
+        // 提示已在请求层
+    }
+}
 
 async function load() {
     loading.value = true;
@@ -49,6 +124,10 @@ function openCreate() {
         status: 1,
         sortOrder: 0,
     });
+    // 新增态没有项目 ID，绑不了成员：先保存，再打开编辑即可
+    projectMembers.value = [];
+    // 但队长下拉需要候选成员，先把名单拉出来
+    void loadMemberOptions();
     dialogVisible.value = true;
 }
 
@@ -65,9 +144,10 @@ function openEdit(row: AdminProject) {
         demoUrl: row.demoUrl ?? '',
         githubUrl: row.githubUrl ?? '',
         status: row.status ?? 1,
-        sortOrder: 0,
+        sortOrder: row.sortOrder ?? 0,
     });
     dialogVisible.value = true;
+    void loadMembers(row.id);
 }
 
 function toTechStack(): string[] {
@@ -153,7 +233,20 @@ onMounted(load);
                     </el-tag>
                 </template>
             </el-table-column>
-            <el-table-column prop="description" label="摘要" min-width="220" show-overflow-tooltip />
+            <el-table-column prop="description" label="摘要" min-width="200" show-overflow-tooltip />
+            <el-table-column label="技术栈" min-width="180">
+                <template #default="{ row }">
+                    <el-tag v-for="tech in row.techStack ?? []" :key="tech" size="small" class="tech">
+                        {{ tech }}
+                    </el-tag>
+                    <span v-if="!row.techStack || !row.techStack.length" class="muted">—</span>
+                </template>
+            </el-table-column>
+            <el-table-column label="最近更新" width="120">
+                <template #default="{ row }">
+                    {{ (row.updatedAt || row.createdAt || '').slice(0, 10) || '—' }}
+                </template>
+            </el-table-column>
             <el-table-column label="操作" width="150" fixed="right">
                 <template #default="{ row }">
                     <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
@@ -172,8 +265,16 @@ onMounted(load);
             <el-form label-position="top">
                 <el-form-item label="项目名称" required><el-input v-model="form.title as string" /></el-form-item>
                 <el-form-item label="摘要" required><el-input v-model="form.description as string" /></el-form-item>
-                <el-form-item label="队长 ID（成员表主键）" required>
-                    <el-input v-model="form.leaderId as string" placeholder="如 1900000000000000011" />
+                <el-form-item label="队长" required>
+                    <el-select v-model="form.leaderId as string" placeholder="选择队长（成员）" filterable class="full">
+                        <el-option
+                            v-for="option in memberOptions"
+                            :key="option.id"
+                            :label="option.name"
+                            :value="option.id"
+                        />
+                    </el-select>
+                    <div class="hint">队长会同时写入参与成员列表，且不可从成员中移除。</div>
                 </el-form-item>
                 <el-form-item label="正文（Markdown，知识库数据源）">
                     <el-input v-model="form.content as string" type="textarea" :rows="6" />
@@ -188,10 +289,61 @@ onMounted(load);
                         <el-option label="已结题" :value="2" />
                     </el-select>
                 </el-form-item>
-                <el-form-item label="封面/体验/仓库地址">
-                    <el-input v-model="form.coverImage as string" placeholder="封面图 URL" />
-                    <el-input v-model="form.demoUrl as string" placeholder="体验地址" />
-                    <el-input v-model="form.githubUrl as string" placeholder="仓库地址" />
+                <el-form-item label="封面图">
+                    <ImageUploader v-model="form.coverImage as string" tip="项目封面（可选）；列表与详情页会展示" />
+                </el-form-item>
+                <el-form-item label="体验地址 / 仓库地址">
+                    <el-input v-model="form.demoUrl as string" placeholder="在线体验地址" />
+                    <el-input v-model="form.githubUrl as string" placeholder="开源仓库地址" />
+                </el-form-item>
+                <el-form-item label="置顶权重">
+                    <el-input-number v-model="form.sortOrder as number" :min="0" :max="999" />
+                    <div class="hint">数值越大越靠前（官网项目列表按它倒序）。</div>
+                </el-form-item>
+
+                <!-- 参与成员：绑定关系依赖项目 ID，所以只在编辑态出现 -->
+                <el-form-item v-if="editing" label="参与成员">
+                    <div v-loading="memberLoading" class="members">
+                        <div v-if="!projectMembers.length" class="muted">暂无参与成员</div>
+                        <div v-for="member in projectMembers" :key="member.id" class="member-row">
+                            <span class="member-name">{{ member.name }}</span>
+                            <el-tag v-if="isLeader(member.id)" size="small" type="warning">队长</el-tag>
+                            <el-button
+                                link
+                                type="danger"
+                                :disabled="isLeader(member.id)"
+                                @click="removeMember(member.id)"
+                            >
+                                移除
+                            </el-button>
+                        </div>
+                        <div class="member-add">
+                            <el-select
+                                v-model="pickedMember"
+                                placeholder="选择要添加的成员"
+                                filterable
+                                class="member-select"
+                            >
+                                <el-option
+                                    v-for="option in memberOptions"
+                                    :key="option.id"
+                                    :label="option.name"
+                                    :value="option.id"
+                                />
+                            </el-select>
+                            <el-button type="primary" :disabled="!pickedMember" @click="addMember">
+                                添加
+                            </el-button>
+                        </div>
+                    </div>
+                </el-form-item>
+                <el-form-item v-else>
+                    <el-alert
+                        type="info"
+                        :closable="false"
+                        show-icon
+                        title="保存之后即可绑定参与成员（绑定关系需要项目 ID）。"
+                    />
                 </el-form-item>
             </el-form>
             <template #footer>
@@ -224,5 +376,47 @@ h2 {
     justify-content: center;
     gap: 12px;
     margin-top: 16px;
+}
+
+.members {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.member-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.member-name {
+    flex: 1;
+}
+
+.member-add {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.member-select {
+    flex: 1;
+}
+
+.full {
+    width: 100%;
+}
+
+.tech {
+    margin: 0 4px 4px 0;
+}
+
+.hint {
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #6b7280;
 }
 </style>

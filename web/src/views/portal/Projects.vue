@@ -64,23 +64,47 @@ onMounted(load);
         <div v-loading="loading">
             <el-empty v-if="result && result.records.length === 0" description="没有符合条件的项目" />
             <div v-else class="grid cards-3">
-                <router-link
-                    v-for="project in result?.records ?? []"
-                    :key="project.id"
-                    :to="`/projects/${project.id}`"
-                    class="project-card"
-                >
-                    <div class="head">
-                        <h3>{{ project.title }}</h3>
-                        <span class="tag" :class="project.status === 1 ? 'green' : 'gray'">
-                            {{ STATUS_TEXT[String(project.status)] || project.status }}
-                        </span>
+                <!-- 卡片本身不是链接：内部同时有「进详情」与「外链」，嵌套 <a> 会导致点击行为混乱 -->
+                <div v-for="project in result?.records ?? []" :key="project.id" class="project-card">
+                    <router-link :to="`/projects/${project.id}`" class="cover">
+                        <img v-if="project.coverImage" :src="project.coverImage" :alt="project.title" />
+                        <span v-else class="cover-fallback">{{ project.title.slice(0, 1) }}</span>
+                    </router-link>
+                    <div class="body">
+                        <div class="head">
+                            <router-link :to="`/projects/${project.id}`" class="title">
+                                {{ project.title }}
+                            </router-link>
+                            <span class="tag" :class="project.status === 1 ? 'green' : 'gray'">
+                                {{ STATUS_TEXT[String(project.status)] || project.status }}
+                            </span>
+                        </div>
+                        <p class="muted">{{ project.description }}</p>
+                        <div class="techs">
+                            <span v-for="tag in project.techStack ?? []" :key="tag" class="tag gray">{{ tag }}</span>
+                        </div>
+                        <div v-if="project.demoUrl || project.githubUrl" class="links">
+                            <a
+                                v-if="project.demoUrl"
+                                :href="project.demoUrl"
+                                target="_blank"
+                                rel="noopener"
+                                class="link"
+                            >
+                                在线体验
+                            </a>
+                            <a
+                                v-if="project.githubUrl"
+                                :href="project.githubUrl"
+                                target="_blank"
+                                rel="noopener"
+                                class="link"
+                            >
+                                开源仓库
+                            </a>
+                        </div>
                     </div>
-                    <p class="muted">{{ project.description }}</p>
-                    <div>
-                        <span v-for="tag in project.techStack ?? []" :key="tag" class="tag gray">{{ tag }}</span>
-                    </div>
-                </router-link>
+                </div>
             </div>
 
             <div v-if="result && result.records.length" class="pager">
@@ -101,18 +125,51 @@ onMounted(load);
 }
 
 .project-card {
+    display: flex;
+    flex-direction: column;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 18px;
+    overflow: hidden;
     color: var(--text);
     transition: box-shadow 0.2s, transform 0.2s;
 }
 
 .project-card:hover {
-    text-decoration: none;
     box-shadow: var(--shadow-md);
     transform: translateY(-2px);
+}
+
+.cover {
+    display: block;
+    aspect-ratio: 16 / 9;
+    background: #eff6ff;
+}
+
+.cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+/* 没有封面时用标题首字兜底，卡片不会出现大片空白 */
+.cover-fallback {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 34px;
+    font-weight: 600;
+    color: #2563eb;
+}
+
+.body {
+    padding: 16px 18px 18px;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
 }
 
 .head {
@@ -120,16 +177,45 @@ onMounted(load);
     justify-content: space-between;
     align-items: flex-start;
     gap: 8px;
+    margin-bottom: 8px;
 }
 
-h3 {
-    margin: 0 0 8px;
+.title {
     font-size: 17px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.title:hover {
+    color: var(--brand);
+    text-decoration: none;
+}
+
+.techs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
 }
 
 p {
     font-size: 14px;
     margin: 0 0 12px;
+    flex: 1;
+}
+
+.links {
+    display: flex;
+    gap: 14px;
+    margin-top: 12px;
+    font-size: 13px;
+}
+
+.link {
+    color: var(--brand);
+}
+
+.link:hover {
+    text-decoration: underline;
 }
 
 .pager {

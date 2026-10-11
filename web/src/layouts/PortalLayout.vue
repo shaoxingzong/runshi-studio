@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { userApi } from '@/api/user';
@@ -21,8 +22,23 @@ const navItems = [
     { path: '/', label: '首页' },
     { path: '/projects', label: '项目案例' },
     { path: '/certificates', label: '荣誉墙' },
+    { path: '/posts', label: '社区' },
+    // 工作台（考勤）只对在队成员显示：后端同样只准成员签到。
+    // 判定用 isMember（查 /member/mine 的档案）而不是 userRole——角色是权限标签，与档案可能不同步
+    { path: '/workspace', label: '工作台', memberOnly: true },
     { path: '/ai', label: 'AI 助手' },
 ];
+
+/**
+ * 刷新后主动补一次「我的成员档案」
+ *
+ * <p>它决定「写文章」这类成员专属入口是否显示。布局只在启动时挂载一次，
+ * 路由切换不会再触发，所以刷新页面后必须自己拉一次——
+ * 否则刷新完入口就消失了，要等下次登录才恢复。
+ */
+onMounted(() => {
+    void user.loadMemberProfile();
+});
 
 /** 退出登录：先让服务端清会话，再清本地状态 */
 async function logout() {
@@ -44,6 +60,14 @@ async function logout() {
  * （实测：进入「团队成员」时首页与团队成员同时亮）。
  * 这里显式区分：首页要精确相等，其余允许 `/members` 匹配 `/members/{id}` 这类子路径。
  */
+/**
+ * 实际渲染的导航项：带 memberOnly 的项只在确认是成员后才出现
+ *
+ * <p>为什么不在模板里逐个写 v-if：那样每加一个成员专属入口，就多一处要记得加判断的地方。
+ * 集中在这里过滤，「入口定义」和「可见条件」待在一起，不容易漏。
+ */
+const visibleNavItems = computed(() => navItems.filter((item) => !item.memberOnly || user.isMember));
+
 function isActive(path: string): boolean {
     const current = route.path;
     return path === '/' ? current === '/' : current === path || current.startsWith(`${path}/`);
@@ -60,7 +84,7 @@ function isActive(path: string): boolean {
                 </router-link>
                 <nav class="nav">
                     <router-link
-                        v-for="item in navItems"
+                        v-for="item in visibleNavItems"
                         :key="item.path"
                         :to="item.path"
                         class="nav-item"

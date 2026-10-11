@@ -1,0 +1,284 @@
+<script setup lang="ts">
+import { computed, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
+import { ElMessage } from 'element-plus';
+import { attendanceApi } from '@/api/attendance';
+import { userApi } from '@/api/user';
+import { useUserStore } from '@/stores/user';
+import type { AttendanceBoardItem, AttendanceRecord } from '@/api/types';
+
+/**
+ * 成员工作台（考勤）
+ *
+ * <p><b>准入</b>：只有<b>在队成员</b>能用（与发帖同一套判定，认 studio_member 表）。
+ * 非成员进来会被拦下并送回首页——不是报错，因为「不是成员」是正常的身份状态。
+ *
+ * <p><b>隐私</b>：看板数据刻意不含 IP / UA / 账号，这里只呈现「是否内网」的布尔结论，
+ * 不展示任何位置或网段信息。
+ */
+const router = useRouter();
+const user = useUserStore();
+
+const loading = ref(false);
+const checkingIn = ref(false);
+const board = ref<AttendanceBoardItem[]>([]);
+const history = ref<AttendanceRecord[]>([]);
+/** 当前登录账号 ID：用于在看板里定位「我」这一行 */
+const userId = ref('');
+
+/** 看板里属于我的那一行 */
+const me = computed(() => board.value.find((item) => item.userId === userId.value));
+/** 今天是否已打卡（看板里我自己那行的标记） */
+const checkedToday = computed(() => !!me.value?.checkedIn);
+
+async function load() {
+    loading.value = true;
+    try {
+        // 三个请求互不依赖，并发拉取
+        const [current, boardData, historyData] = await Promise.all([
+            userApi.current(),
+            attendanceApi.todayBoard(),
+            attendanceApi.myHistory(),
+        ]);
+        userId.value = current.id;
+        board.value = boardData ?? [];
+        history.value = historyData ?? [];
+    } finally {
+        loading.value = false;
+    }
+}
+
+async function checkIn() {
+    checkingIn.value = true;
+    try {
+        await attendanceApi.checkIn();
+        ElMessage.success('签到成功');
+        // 刷新看板与历史：本次签到的时刻、是否内网、本月次数都会变
+        await load();
+    } catch {
+        // 失败原因（非成员 / 距上次签到太近）已由请求层统一提示，
+        // 这里不重复弹窗，也不重置数据——保持用户看到的是上一次的真实状态
+    } finally {
+        checkingIn.value = false;
+    }
+}
+
+function formatTime(value?: string | null): string {
+    return value ? value.slice(11, 16) : '—';
+}
+
+function formatDate(value?: string | null): string {
+    return value ? value.slice(0, 10) : '—';
+}
+
+onMounted(async () => {
+    // 布局不会在路由切换时重建，这里主动拉一次确保身份是最新的
+    await user.loadMemberProfile();
+    if (!user.isMember) {
+        ElMessage.warning('仅工作室成员可以使用工作台');
+        await router.replace('/');
+        return;
+    }
+    await load();
+});
+</script>
+
+<template>
+    <div class="page" v-loading="loading">
+        <div class="page-head">
+            <div>
+                <h1>工作台</h1>
+                <p>成员签到与出勤情况，仅工作室成员可见。</p>
+            </div>
+        </div>
+
+        <!-- 签到卡片：品牌蓝渐变，页面里唯一的重色块，用来强调「今天要做的那件事」 -->
+        <section class="checkin-card">
+            <div class="checkin-main">
+                <div class="checkin-title">
+                    {{ checkedToday ? '今日已打卡' : '还没有打卡' }}
+                </div>
+                <div class="checkin-sub">
+                    {{
+                        checkedToday
+                            ? `打卡时间 ${formatTime(me?.checkInAt)}`
+                            : '在工作室内网环境下签到会记为「内网」'
+                    }}
+                </div>
+                <el-button class="checkin-btn" size="large" :loading="checkingIn" @click="checkIn">
+                    {{ checkedToday ? '再次签到' : '一键签到' }}
+                </el-button>
+            </div>
+
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-value">{{ formatTime(me?.checkInAt) }}</div>
+                    <div class="stat-label">今日打卡</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">
+                        {{ me?.inLan ? '内网' : me ? '外网' : '—' }}
+                    </div>
+                    <div class="stat-label">本次网络</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value">{{ me?.monthCount ?? 0 }}</div>
+                    <div class="stat-label">本月次数</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 今日出勤看板 -->
+        <section class="card">
+            <h2>今日出勤</h2>
+            <el-empty v-if="!board.length" description="暂无在队成员" />
+            <el-table v-else :data="board" size="large">
+                <el-table-column label="成员" min-width="120">
+                    <template #default="{ row }">
+                        <span class="name">{{ row.userName || '成员' }}</span>
+                    </template>
+                </el-table-column>
+                <el-table-column label="今日打卡" width="160">
+                    <template #default="{ row }">
+                        <el-tag v-if="row.checkedIn" type="success" size="small">
+                            {{ formatTime(row.checkInAt) }}
+                        </el-tag>
+                        <span v-else class="muted">未打卡</span>
+                    </template>
+                </el-table-column>
+                <el-table-column label="本月次数" width="110">
+                    <template #default="{ row }">{{ row.monthCount ?? 0 }}</template>
+                </el-table-column>
+                <el-table-column label="网络" width="100">
+                    <template #default="{ row }">
+                        <span v-if="!row.checkedIn" class="muted">—</span>
+                        <span v-else>{{ row.inLan ? '内网' : '外网' }}</span>
+                    </template>
+                </el-table-column>
+            </el-table>
+        </section>
+
+        <!-- 我的考勤历史 -->
+        <section class="card">
+            <h2>我的考勤记录</h2>
+            <el-empty v-if="!history.length" description="还没有签到记录" />
+            <div v-else class="history">
+                <div v-for="(record, index) in history" :key="index" class="history-item">
+                    <span class="dot" :class="{ lan: record.inLan }" />
+                    <span class="date">{{ formatDate(record.attendanceDate) }}</span>
+                    <span class="time">{{ formatTime(record.checkInAt) }}</span>
+                    <el-tag size="small" :type="record.inLan ? 'success' : 'info'">
+                        {{ record.inLan ? '内网' : '外网' }}
+                    </el-tag>
+                </div>
+            </div>
+        </section>
+    </div>
+</template>
+
+<style scoped>
+.page-head {
+    margin-bottom: 20px;
+}
+
+.checkin-card {
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    color: #fff;
+    border-radius: var(--radius);
+    padding: 28px 32px;
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 32px;
+    flex-wrap: wrap;
+    box-shadow: 0 10px 24px -12px rgba(37, 99, 235, 0.6);
+}
+
+.checkin-title {
+    font-size: 22px;
+    font-weight: 600;
+}
+
+.checkin-sub {
+    margin: 6px 0 16px;
+    font-size: 13px;
+    opacity: 0.85;
+}
+
+.checkin-btn {
+    min-width: 140px;
+    font-weight: 500;
+}
+
+.stats {
+    display: flex;
+    gap: 14px;
+}
+
+.stat {
+    min-width: 112px;
+    padding: 14px 18px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.14);
+    text-align: center;
+}
+
+.stat-value {
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 1.2;
+}
+
+.stat-label {
+    margin-top: 4px;
+    font-size: 12px;
+    opacity: 0.85;
+}
+
+h2 {
+    margin: 0 0 14px;
+    font-size: 18px;
+    font-weight: 500;
+}
+
+.name {
+    font-weight: 500;
+}
+
+.history {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.history-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 14px;
+}
+
+/* 左侧小圆点：内网用绿色，外网用灰色，一眼区分 */
+.dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #d1d5db;
+    flex-shrink: 0;
+}
+
+.dot.lan {
+    background: #059669;
+}
+
+.date {
+    min-width: 100px;
+    color: #1f2937;
+}
+
+.time {
+    min-width: 60px;
+    color: #6b7280;
+}
+</style>

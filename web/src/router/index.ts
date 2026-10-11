@@ -25,6 +25,15 @@ const routes: RouteRecordRaw[] = [
             },
             { path: 'certificates', name: 'certificates', component: () => import('@/views/portal/Certificates.vue') },
             { path: 'ai', name: 'ai', component: () => import('@/views/portal/AiChat.vue') },
+            // 社区帖子：列表与详情对游客开放（后端白名单精确放行了 /post/list/page、/post/detail）
+            { path: 'posts', name: 'posts', component: () => import('@/views/portal/Posts.vue') },
+            // ⚠️ 顺序有讲究：new 与 my 必须排在 ':id' 之前。
+            // 路由按定义顺序匹配，写反了的话 /posts/new 会被当成 id=new 的详情页
+            { path: 'posts/new', name: 'post-new', component: () => import('@/views/portal/PostEdit.vue') },
+            { path: 'posts/my', name: 'my-posts', component: () => import('@/views/portal/MyPosts.vue') },
+            { path: 'posts/:id', name: 'post-detail', component: () => import('@/views/portal/PostDetail.vue') },
+            // 成员工作台（考勤）：后端判成员身份，页面内部对非成员也会再拦一次
+            { path: 'workspace', name: 'workspace', component: () => import('@/views/portal/Workspace.vue') },
             // C 端注册 / 登录：注册出来是普通用户（user），「成员」身份由管理员在后台授予
             { path: 'login', name: 'login', component: () => import('@/views/portal/Login.vue') },
             { path: 'register', name: 'register', component: () => import('@/views/portal/Register.vue') },
@@ -51,6 +60,12 @@ const routes: RouteRecordRaw[] = [
                 component: () => import('@/views/admin/Certificates.vue'),
             },
             { path: 'knowledge', name: 'admin-knowledge', component: () => import('@/views/admin/Knowledge.vue') },
+            { path: 'posts', name: 'admin-posts', component: () => import('@/views/admin/PostAudit.vue') },
+            {
+                path: 'post-comments',
+                name: 'admin-post-comments',
+                component: () => import('@/views/admin/PostCommentAudit.vue'),
+            },
         ],
     },
     { path: '/:pathMatch(.*)*', redirect: '/' },

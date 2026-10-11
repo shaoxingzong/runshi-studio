@@ -2,28 +2,55 @@
 import { onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { adminApi } from '@/api/admin';
-import type { Member, PageResult } from '@/api/types';
+import ImageUploader from '@/components/ImageUploader.vue';
+import type { AdminMember, AdminUser, PageResult } from '@/api/types';
 
 /** 成员管理：分页表格 + 新增/编辑/删除 */
 const page = reactive({ current: 1, pageSize: 10 });
-const result = ref<PageResult<Member> | null>(null);
+const result = ref<PageResult<AdminMember> | null>(null);
 const loading = ref(false);
 
 const dialogVisible = ref(false);
-const editing = ref<Member | null>(null);
+const editing = ref<AdminMember | null>(null);
 const form = reactive<Record<string, unknown>>({
+    /** 绑定的登录账号 ID；空 = 未绑定（编辑时留空表示不修改，解绑需另设计） */
+    userId: '',
     name: '',
     gradeYear: null,
     major: '',
     direction: '',
     teamPosition: 'member',
     memberStatus: 0,
+    avatar: '',
     githubUrl: '',
     summary: '',
     sortOrder: 0,
 });
 
 const POSITION_TEXT: Record<string, string> = { member: '成员', leader: '队长', tech_lead: '组长' };
+
+/**
+ * 候选登录账号：用来把「注册用户」转成「成员」
+ *
+ * <p>这是成员能否发帖、能否打卡的<b>唯一开关</b>——成员身份认的是 studio_member.user_id，
+ * 不是账号的角色。管理员没有这个入口的话，就只能靠改数据库才能让自己变成成员。
+ */
+const userOptions = ref<AdminUser[]>([]);
+
+async function loadUsers() {
+    try {
+        const page = await adminApi.userPage({ current: 1, pageSize: 100 });
+        userOptions.value = page.records ?? [];
+    } catch {
+        userOptions.value = [];
+    }
+}
+
+/** 由 userId 反查账号名，让表格里的绑定状态一眼可读 */
+function accountOf(userId: string): string {
+    const found = userOptions.value.find((item) => item.id === userId);
+    return found ? found.userAccount : userId;
+}
 
 async function load() {
     loading.value = true;
@@ -37,12 +64,14 @@ async function load() {
 function openCreate() {
     editing.value = null;
     Object.assign(form, {
+        userId: '',
         name: '',
         gradeYear: null,
         major: '',
         direction: '',
         teamPosition: 'member',
         memberStatus: 0,
+        avatar: '',
         githubUrl: '',
         summary: '',
         sortOrder: 0,
@@ -50,18 +79,20 @@ function openCreate() {
     dialogVisible.value = true;
 }
 
-function openEdit(row: Member) {
+function openEdit(row: AdminMember) {
     editing.value = row;
     Object.assign(form, {
+        userId: row.userId ?? '',
         name: row.name,
         gradeYear: row.gradeYear ?? null,
         major: row.major ?? '',
         direction: row.direction ?? '',
         teamPosition: row.teamPosition ?? 'member',
         memberStatus: row.memberStatus ?? 0,
+        avatar: row.avatar ?? '',
         githubUrl: row.githubUrl ?? '',
         summary: row.summary ?? '',
-        sortOrder: 0,
+        sortOrder: row.sortOrder ?? 0,
     });
     dialogVisible.value = true;
 }
@@ -71,11 +102,17 @@ async function save() {
         ElMessage.warning('姓名必填');
         return;
     }
+    // 未选账号时<b>不带</b>该字段：后端 @Positive 不接受空串，
+    // 而「null = 不修改绑定」是后端的既有语义——留空<b>不等于</b>解绑
+    const payload: Record<string, unknown> = { ...form };
+    if (!payload.userId) {
+        delete payload.userId;
+    }
     try {
         if (editing.value) {
-            await adminApi.memberUpdate({ id: editing.value.id, ...form });
+            await adminApi.memberUpdate({ id: editing.value.id, ...payload });
         } else {
-            await adminApi.memberAdd(form as Partial<Member>);
+            await adminApi.memberAdd(payload as Partial<AdminMember>);
         }
         ElMessage.success('保存成功');
         dialogVisible.value = false;
@@ -85,7 +122,7 @@ async function save() {
     }
 }
 
-async function remove(row: Member) {
+async function remove(row: AdminMember) {
     try {
         await ElMessageBox.confirm(`确认删除成员「${row.name}」？`, '删除确认', { type: 'warning' });
     } catch {
@@ -110,7 +147,10 @@ function turn(delta: number) {
     load();
 }
 
-onMounted(load);
+onMounted(() => {
+    load();
+    void loadUsers();
+});
 </script>
 
 <template>
@@ -138,6 +178,12 @@ onMounted(load);
                     </el-tag>
                 </template>
             </el-table-column>
+            <el-table-column label="绑定账号" min-width="130">
+                <template #default="{ row }">
+                    <span v-if="row.userId" class="bound">{{ accountOf(row.userId) }}</span>
+                    <span v-else class="muted">未绑定</span>
+                </template>
+            </el-table-column>
             <el-table-column label="操作" width="150" fixed="right">
                 <template #default="{ row }">
                     <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
@@ -157,6 +203,12 @@ onMounted(load);
                 <el-form-item label="姓名" required>
                     <el-input v-model="form.name as string" />
                 </el-form-item>
+                <el-form-item label="头像">
+                    <ImageUploader
+                        v-model="form.avatar as string"
+                        tip="成员头像（可选）；项目详情的「参与成员」卡片会用到"
+                    />
+                </el-form-item>
                 <el-form-item label="届别">
                     <el-input-number v-model="form.gradeYear as number" :min="1990" :max="2100" />
                 </el-form-item>
@@ -168,6 +220,30 @@ onMounted(load);
                         <el-option label="队长" value="leader" />
                         <el-option label="组长" value="tech_lead" />
                     </el-select>
+                </el-form-item>
+                <el-form-item label="绑定登录账号">
+                    <el-select
+                        v-model="form.userId as string"
+                        placeholder="未绑定"
+                        clearable
+                        filterable
+                        class="full"
+                    >
+                        <el-option
+                            v-for="option in userOptions"
+                            :key="option.id"
+                            :label="
+                                option.userName
+                                    ? `${option.userAccount}（${option.userName}）`
+                                    : option.userAccount
+                            "
+                            :value="option.id"
+                        />
+                    </el-select>
+                    <div class="hint">
+                        绑定后，该账号登录即可发帖、使用工作台签到。
+                        <b>编辑时留空表示「不修改」现有绑定，不能用来解绑。</b>
+                    </div>
                 </el-form-item>
                 <el-form-item label="状态">
                     <el-select v-model="form.memberStatus as number">
@@ -213,5 +289,21 @@ h2 {
     justify-content: center;
     gap: 12px;
     margin-top: 16px;
+}
+
+.full {
+    width: 100%;
+}
+
+.hint {
+    margin-top: 4px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #6b7280;
+}
+
+/* 已绑定的账号用绿色，与「未绑定」的灰色形成对比 */
+.bound {
+    color: #059669;
 }
 </style>

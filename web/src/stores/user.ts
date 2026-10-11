@@ -1,6 +1,8 @@
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import { tokenStore } from '@/api/request';
+import { userApi } from '@/api/user';
+import type { Member } from '@/api/types';
 
 const ACCOUNT_KEY = 'user_account';
 const ROLE_KEY = 'user_role';
@@ -31,6 +33,34 @@ export const useUserStore = defineStore('user', () => {
      */
     const isAdmin = computed(() => role.value === 'admin');
 
+    /**
+     * 当前用户的在队成员档案（由 `/member/mine` 填充；null 表示不是成员）
+     *
+     * <p>为什么不直接用 role 判断：role 是权限标签，可能与 studio_member 档案不同步。
+     * 「能不能发帖 / 打卡」由档案说了算，界面入口也就必须以它为准——
+     * 否则会出现「按钮在那儿，点了却被后端拒绝」。
+     */
+    const memberProfile = ref<Member | null>(null);
+    const isMember = computed(() => !!memberProfile.value);
+
+    /**
+     * 拉取「我的成员档案」：决定要不要显示成员专属入口（发帖 / 打卡）
+     *
+     * <p>失败时按「不是成员」处理而不是抛错：未登录、接口异常都属于可恢复的情况，
+     * 不该让整个布局崩掉。真正的拦截在后端业务接口里。
+     */
+    async function loadMemberProfile() {
+        if (!token.value) {
+            memberProfile.value = null;
+            return;
+        }
+        try {
+            memberProfile.value = await userApi.mineMember();
+        } catch {
+            memberProfile.value = null;
+        }
+    }
+
     function setLogin(value: string, name: string, userRole = '') {
         token.value = value;
         account.value = name;
@@ -38,16 +68,30 @@ export const useUserStore = defineStore('user', () => {
         tokenStore.set(value);
         localStorage.setItem(ACCOUNT_KEY, name);
         localStorage.setItem(ROLE_KEY, userRole);
+        // 登录后立刻补拉一次：布局不会重建，等不到下一次 onMounted
+        void loadMemberProfile();
     }
 
     function logout() {
         token.value = '';
         account.value = '';
         role.value = '';
+        memberProfile.value = null;
         tokenStore.clear();
         localStorage.removeItem(ACCOUNT_KEY);
         localStorage.removeItem(ROLE_KEY);
     }
 
-    return { token, account, role, isLogin, isAdmin, setLogin, logout };
+    return {
+        token,
+        account,
+        role,
+        isLogin,
+        isAdmin,
+        memberProfile,
+        isMember,
+        loadMemberProfile,
+        setLogin,
+        logout,
+    };
 });

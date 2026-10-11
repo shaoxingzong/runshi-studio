@@ -73,6 +73,18 @@ export interface Certificate {
     imageUrl?: string | null;
 }
 
+/**
+ * 后台证书视图（后端 CertificateVO）
+ *
+ * 与 {@link AdminProject} 同理：比 C 端的 {@link Certificate} 多出 sortOrder / 审计时间，
+ * 只在 admin 面前出现，不要与脱敏的 C 端类型混用。
+ */
+export interface AdminCertificate extends Certificate {
+    sortOrder?: number | null;
+    createdAt?: string;
+    updatedAt?: string;
+}
+
 /** C 端项目列表项（不含正文） */
 export interface Project {
     id: string;
@@ -100,6 +112,11 @@ export interface ProjectDetail extends Project {
 export interface AdminProject extends Project {
     leaderId: string;
     content?: string | null;
+    /** 置顶权重（后台内部字段，仅 admin 接口返回；`sort_order` 倒序） */
+    sortOrder?: number | null;
+    /** 审计时间：列表页用来展示「最近维护」 */
+    createdAt?: string;
+    updatedAt?: string;
 }
 
 /** 后台知识库文档 */
@@ -193,4 +210,179 @@ export interface AdminUser {
     aiQueryCount?: number | null;
     createdAt?: string;
     updatedAt?: string;
+}
+
+// ==================== 帖子 / 评论模块 ====================
+
+/** C 端帖子列表项（后端 PostFrontVO；**不含正文**——正文只在详情接口返回） */
+export interface Post {
+    id: string;
+    title: string;
+    summary?: string | null;
+    coverImage?: string | null;
+    authorId: string;
+    /** 作者名（成员姓名，由后端批量查出后填充） */
+    authorName?: string | null;
+    viewCount?: number | null;
+    commentCount?: number | null;
+    /** 是否置顶：0-否，1-是 */
+    pinned?: number | null;
+    createdAt?: string;
+}
+
+/** C 端帖子详情（后端 PostFrontDetailVO：比列表多一个 Markdown 正文） */
+export interface PostDetail extends Post {
+    /**
+     * 正文（Markdown，图片内嵌其中）
+     *
+     * ⚠️ 它是**成员提交**的内容，比管理员录入的项目正文更不可信，
+     * 渲染前必须走「marked → DOMPurify 白名单清洗 → v-html」，
+     * 且要额外限制 img 的 src 只能是站内路径（见 PostDetail.vue）
+     */
+    content?: string | null;
+}
+
+/**
+ * 带审核状态的帖子（后端 PostVO）
+ *
+ * <p>它同时服务于两处：「我的发帖」（作者看自己的）与「管理端待审队列」（管理员看全部）。
+ * 两者拿到的是同一个 VO，因为管理员需要看作者看得到的全部信息，
+ * 再额外多给一份只会造成两套类型漂移。
+ */
+export interface PostAudit {
+    id: string;
+    title: string;
+    summary?: string | null;
+    coverImage?: string | null;
+    /** 审核状态：0-待审, 1-已通过, 2-已驳回 */
+    status?: number | null;
+    /** 驳回理由（仅已驳回时有意义） */
+    rejectReason?: string | null;
+    auditAt?: string | null;
+    /**
+     * AI 审核结论：0-未判, 1-安全(自动通过), 2-违规(自动驳回), 3-灰色(转人工), 4-判定失败(转人工)
+     *
+     * 「未判」与「判定失败」是两回事：前者只是还没轮到，后者说明 AI 出故障了
+     */
+    aiAuditStatus?: number | null;
+    /** AI 给出的理由（给管理端参考；作者也能看到针对自己内容的说明） */
+    aiReason?: string | null;
+    aiAt?: string | null;
+    viewCount?: number | null;
+    commentCount?: number | null;
+    pinned?: number | null;
+    createdAt?: string;
+}
+
+/** 公开评论（后端 PostCommentVO，楼中楼） */
+export interface PostComment {
+    id: string;
+    postId: string;
+    authorId: string;
+    authorName?: string | null;
+    /** null 表示直接评论帖子；非 null 表示回复某条评论 */
+    parentId?: string | null;
+    content: string;
+    /** 楼层号（回复某条评论时为 null） */
+    floor?: number | null;
+    createdAt?: string;
+    /**
+     * 回复列表（只两层，由后端挂好树）
+     *
+     * 前端直接渲染这一层即可，**不要**自行二次组装
+     */
+    children: PostComment[];
+}
+
+/** 管理端评论审核队列项（后端 PostCommentAuditVO：比公开评论多审核与 AI 字段） */
+export interface PostCommentAudit {
+    id: string;
+    postId: string;
+    authorId: string;
+    authorName?: string | null;
+    parentId?: string | null;
+    content: string;
+    floor?: number | null;
+    status?: number | null;
+    rejectReason?: string | null;
+    auditAt?: string | null;
+    aiAuditStatus?: number | null;
+    aiReason?: string | null;
+    aiAt?: string | null;
+    createdAt?: string;
+}
+
+// ==================== 考勤模块 ====================
+
+/**
+ * 签到结果（后端 AttendanceCheckInVO）
+ *
+ * <p>接口刻意<b>不返回 ip / userAgent</b>，网络信息只以 {@link #inLan} 布尔出现——
+ * 前端也不要试图展示网段或位置信息。
+ */
+export interface AttendanceCheckIn {
+    userId: string;
+    /** 本次签到时刻（东八区，精确到秒） */
+    checkInAt?: string;
+    /** 本次是否判为内网（命中工作室网段） */
+    inLan?: boolean | null;
+    /** 本月累计签到次数（含本次） */
+    monthCount?: number | null;
+}
+
+/**
+ * 今日出勤看板项（后端 AttendanceBoardVO；仅工作室成员可见）
+ *
+ * <p>未打卡的成员同样在列表里，用 {@link #checkedIn} 为 false + {@link #checkInAt} 为 null 表示，
+ * 便于前端区分「今天还没来」而不是直接消失。
+ */
+export interface AttendanceBoardItem {
+    userId: string;
+    /** 展示名：来自 studio_member.name，不取登录账号 */
+    userName?: string | null;
+    /** 今日打卡时刻（当天最早的一次）；未打卡为 null */
+    checkInAt?: string | null;
+    /** 今日是否已打卡 */
+    checkedIn?: boolean | null;
+    /** 本月打卡次数（自然月内的签到条数） */
+    monthCount?: number | null;
+    /** 今日是否内网签到 */
+    inLan?: boolean | null;
+}
+
+/** 我的签到历史项（后端 AttendanceMeVO，只能查自己的） */
+export interface AttendanceRecord {
+    userId: string;
+    /** 签到日期（yyyy-MM-dd，与 checkInAt 同源派生，便于按天分组） */
+    attendanceDate?: string | null;
+    /** 签到时刻（东八区，精确到秒） */
+    checkInAt?: string | null;
+    /** 是否内网签到 */
+    inLan?: boolean | null;
+}
+
+// ==================== 后台与 AI 的补充类型 ====================
+
+/**
+ * 后台成员视图（后端 MemberVO）
+ *
+ * <p>比 C 端的 {@link Member} 多出 userId / sortOrder 等内部字段，只在 admin 面前出现——
+ * 与 {@link AdminProject} 扩展 {@link Project} 是同一套路，不要图省事共用 C 端类型。
+ */
+export interface AdminMember extends Member {
+    /** 绑定的登录账号 ID；未绑定为 null */
+    userId?: string | null;
+    sortOrder?: number | null;
+    createdAt?: string;
+    updatedAt?: string;
+}
+
+/** AI 会话列表项（后端 AiSessionVO） */
+export interface AiSession {
+    id: string;
+    /** 会话标题：取自首问前 30 字 */
+    title?: string | null;
+    updatedAt?: string;
+    /** 会话内的消息条数 */
+    messageCount?: number | null;
 }
