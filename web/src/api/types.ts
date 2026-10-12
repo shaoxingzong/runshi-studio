@@ -249,15 +249,24 @@ export interface PostDetail extends Post {
 /**
  * 带审核状态的帖子（后端 PostVO）
  *
- * <p>它同时服务于两处：「我的发帖」（作者看自己的）与「管理端待审队列」（管理员看全部）。
- * 两者拿到的是同一个 VO，因为管理员需要看作者看得到的全部信息，
- * 再额外多给一份只会造成两套类型漂移。
+ * <p>它同时服务于三处：「我的发帖」（作者看自己的）、「管理端待审队列」与
+ * 「管理端帖子管理」（管理员看全部）。三者拿到的是同一个 VO，因为管理员需要看
+ * 作者看得到的全部信息，再额外多给一份只会造成两套类型漂移。
  */
 export interface PostAudit {
     id: string;
     title: string;
     summary?: string | null;
     coverImage?: string | null;
+    /** 作者 ID（管理端用来定位到人；作者本人视角下就是自己） */
+    authorId?: string | null;
+    /**
+     * 作者展示名（后端批量填充）
+     *
+     * 在队成员取成员姓名（与门户口径一致），查不到档案时兜底账号昵称——
+     * 帖子不会因成员离队而消失，老帖子的作者也不能显示成空白
+     */
+    authorName?: string | null;
     /** 审核状态：0-待审, 1-已通过, 2-已驳回 */
     status?: number | null;
     /** 驳回理由（仅已驳回时有意义） */
@@ -278,6 +287,17 @@ export interface PostAudit {
     likeCount?: number | null;
     pinned?: number | null;
     createdAt?: string;
+}
+
+/**
+ * 管理端帖子详情（后端 PostAdminDetailVO = PostVO + Markdown 正文）
+ *
+ * <p>编辑弹窗回填正文专用：列表 VO 刻意不带 content，而公开详情只返回
+ * 「已通过」的帖子且会自增浏览量，两者都满足不了编辑场景。
+ */
+export interface PostAdminDetail extends PostAudit {
+    /** 正文（Markdown，图片内嵌其中；⚠️ 成员提交的内容，按需做清洗处理） */
+    content?: string | null;
 }
 
 /** 公开评论（后端 PostCommentVO，楼中楼） */

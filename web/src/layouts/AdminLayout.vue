@@ -15,6 +15,7 @@ const menus = [
     { path: '/admin/certificates', label: '证书管理' },
     { path: '/admin/knowledge', label: '知识库 (RAG)' },
     { path: '/admin/posts', label: '帖子审核' },
+    { path: '/admin/post-manage', label: '帖子管理' },
     { path: '/admin/post-comments', label: '评论审核' },
 ];
 

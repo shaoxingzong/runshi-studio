@@ -3,6 +3,7 @@ import { fileApi } from './file';
 import type {
     PageResult,
     Post,
+    PostAdminDetail,
     PostAudit,
     PostComment,
     PostCommentAudit,
@@ -81,6 +82,62 @@ export const postApi = {
      * @returns 实际删除的条数（含回复）
      */
     commentDelete: (id: string) => http.post<number>('/admin/post/comment/delete', { id }),
+
+    // ==================== 管理端：帖子管理（全部要求 admin） ====================
+
+    /**
+     * 帖子全量列表（三种状态均可查）
+     *
+     * <p>GET + 查询参数。筛选条件不传即「不按该条件过滤」：
+     * {@code status} 不传 = 查全部状态（与待审队列的关键区别）。
+     */
+    adminList: (params: {
+        current?: number;
+        pageSize?: number;
+        status?: number;
+        titleKeyword?: string;
+        authorKeyword?: string;
+    }) => http.get<PageResult<PostAudit>>('/admin/post/list/page', params),
+
+    /**
+     * 删除帖子（级联删除该帖全部评论与点赞关系）
+     *
+     * @returns 实际删除的内容行数（帖子 1 + 其下评论数）
+     */
+    delete: (id: string) => http.post<number>('/admin/post/delete', { id }),
+
+    /**
+     * 置顶 / 取消置顶
+     *
+     * <p>后端只允许置顶「已通过」的帖子（置顶待审帖在公开列表无意义），
+     * 前端也应把其它状态的开关置灰，别让用户点了才收到报错。
+     */
+    pin: (id: string, pinned: number) =>
+        http.post<boolean>('/admin/post/pin', { id, pinned }),
+
+    /**
+     * 编辑帖子
+     *
+     * <p>⚠️ 保存后后端会把非待审的帖子**重置为待审**重新送审，
+     * 前端必须提示「已保存，修改内容将重新送审」——否则管理员会以为
+     * 改完立刻生效，跑去门户发现文章「消失」了。
+     */
+    update: (body: {
+        id: string;
+        title: string;
+        content: string;
+        summary?: string;
+        coverImage?: string;
+    }) => http.post<boolean>('/admin/post/update', body),
+
+    /**
+     * 管理端帖子详情（含 Markdown 正文）
+     *
+     * <p>编辑弹窗回填正文专用。为什么不能调公开的 {@link detail}：
+     * 它只返回「已通过」的帖子（待审 / 已驳回取不到），
+     * 而且会**自增浏览量**——管理员每点开一次编辑，热度计数就被污染一次。
+     */
+    adminDetail: (id: string) => http.get<PostAdminDetail>('/admin/post/detail', { id }),
 };
 
 /**

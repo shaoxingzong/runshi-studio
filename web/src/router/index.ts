@@ -61,6 +61,12 @@ const routes: RouteRecordRaw[] = [
             },
             { path: 'knowledge', name: 'admin-knowledge', component: () => import('@/views/admin/Knowledge.vue') },
             { path: 'posts', name: 'admin-posts', component: () => import('@/views/admin/PostAudit.vue') },
+            // 帖子管理（全部帖子的查阅 / 删除 / 置顶 / 代改），与上面的待审队列互补
+            {
+                path: 'post-manage',
+                name: 'admin-post-manage',
+                component: () => import('@/views/admin/PostManage.vue'),
+            },
             {
                 path: 'post-comments',
                 name: 'admin-post-comments',
