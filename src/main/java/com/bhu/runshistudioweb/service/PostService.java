@@ -4,10 +4,13 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.IService;
 import com.bhu.runshistudioweb.model.dto.post.AuditRequest;
 import com.bhu.runshistudioweb.model.dto.post.PostAddRequest;
+import com.bhu.runshistudioweb.model.dto.post.PostAdminQueryRequest;
+import com.bhu.runshistudioweb.model.dto.post.PostUpdateRequest;
 import com.bhu.runshistudioweb.model.entity.StudioPost;
 import com.bhu.runshistudioweb.model.vo.PostFrontDetailVO;
 import com.bhu.runshistudioweb.model.vo.PostFrontVO;
 import com.bhu.runshistudioweb.model.vo.PostVO;
+import com.bhu.runshistudioweb.model.vo.PostAdminDetailVO;
 
 /**
  * 帖子服务接口
@@ -25,6 +28,11 @@ import com.bhu.runshistudioweb.model.vo.PostVO;
  * 不抛异常：传错页码没必要让整个查询失败（与项目其它模块一致）。
  *
  * <p>约定：参数不合法 / 业务不允许时抛 {@code BusinessException}，不返回错误码、不返回 null。
+ *
+ * <p><b>管理端能力</b>（{@code listForAdmin} / {@code deletePost} / {@code updatePinned} /
+ * {@code updatePost}）只被 {@code AdminPostController} 调用，Controller 层已有
+ * {@code @SaCheckRole(ADMIN)}；Service 内仍各自校验登录态，
+ * 与 {@link #audit} 的做法一致——不把「调用方一定鉴权过」当作前提。
  */
 public interface PostService extends IService<StudioPost> {
 
@@ -120,4 +128,97 @@ public interface PostService extends IService<StudioPost> {
      * @throws com.bhu.runshistudioweb.exception.BusinessException 动作非法、驳回缺理由时抛出
      */
     int audit(AuditRequest request);
+
+    /**
+     * 管理端全量列表：三种状态均可查，支持按状态 / 标题 / 作者筛选（最新提交在前）
+     *
+     * <p>与 {@link #listPendingByPage} 的分工：那个是「待审队列」——只有一种状态、
+     * 也不需要筛选，管理员面对的就是一条先进先出的流水。本方法服务于「帖子管理」页，
+     * 已通过 / 已驳回的内容同样要能翻出来（审核只是治理的一个环节，不是全部）。
+     *
+     * <p><b>作者关键词匹配账号与成员姓名两处</b>：门户展示用的是成员姓名，
+     * 管理员照着屏幕上看到的名字去搜，必须能搜到——否则「搜得到展示名却查不到帖子」
+     * 会让人以为数据丢了。
+     *
+     * @param request 查询条件（status / titleKeyword / authorKeyword / 分页）
+     * @return 分页结果（含作者信息）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 审核状态取值非法时抛出
+     */
+    Page<PostVO> listForAdmin(PostAdminQueryRequest request);
+
+    /**
+     * 删除帖子（逻辑删除），<b>同事务级联</b>删除该帖的全部评论与点赞关系
+     *
+     * <p>为什么级联：只删帖子会留下两类孤儿——评论（父帖没了，却还占着审核队列）
+     * 与点赞关系（还挂在已不存在的帖子上）。对齐 {@code PostCommentService#deleteComment}
+     * 「连带删回复 + 同事务」的既有语义。
+     *
+     * <p><b>待审帖子不能删</b>（与 {@code deleteComment} 同一条规则）：先审后发之下
+     * 作者只知道「我提交了」，删掉他什么都收不到；该走驳回，让 {@code rejectReason}
+     * 把理由送到作者眼前。删帖只服务于「已通过的要下线」与「已驳回的要清理」。
+     *
+     * <p><b>审计</b>：{@code studio_post} 没有 {@code deleted_by} 列（评论表才有），
+     * 删除前把 {@code updated_by} 显式写成操作人作为痕迹。
+     *
+     * @param id 帖子 ID
+     * @return 本次删除的内容行数（帖子 1 + 其下评论数；点赞关系是物理删除，不计入）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 未登录、帖子不存在、
+     *         帖子尚在待审时抛出
+     */
+    int deletePost(long id);
+
+    /**
+     * 置顶 / 取消置顶
+     *
+     * <p><b>只有已通过的帖子允许置顶</b>：公开列表只返回已通过的内容，
+     * 置顶一篇待审帖在门户上没有任何效果——属于典型误操作，
+     * 因此在服务端挡掉并给出可读提示，而不是让用户点了没反应。
+     *
+     * <p><b>取消置顶不设状态限制</b>：帖子被编辑后会重置为待审，但 {@code pinned} 仍为 1；
+     * 若此时不许取消置顶，管理员就卡在一个「改不回来」的状态里。恢复操作永远不该被拦住。
+     *
+     * @param id      帖子 ID
+     * @param pinned  1-置顶, 0-取消置顶（其它值拒绝）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 未登录、帖子不存在、
+     *         取值非法、对非已通过帖子置顶时抛出
+     */
+    void updatePinned(long id, int pinned);
+
+    /**
+     * 编辑帖子（仅管理员），保存后<b>非待审状态一律重置为待审</b>重新送审
+     *
+     * <p><b>为什么不让作者自己改</b>：编辑权只给管理员。「先审后发」意味着内容公开前
+     * 已过审，若作者能自由修改已通过的正文，等于给审核开了后门——改完的内容没人再看。
+     *
+     * <p><b>为什么编辑后重新送审</b>：内容变了就必须重新过审，否则「先审后发」会被
+     * 编辑功能绕开。代价是改个别字也会让文章暂时下线，因此调用方必须提示
+     * 「已保存，修改内容将重新送审」。
+     *
+     * <p>编辑同时复用 {@link #addPost} 的两条校验（正文长度、正文图片必须是
+     * {@code /uploads/} 站内路径）与「异步交 AI 初判」的送审逻辑。
+     *
+     * @param request 编辑请求（id、标题、正文必填；摘要与封面选填，为空时兜底生成）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 未登录、帖子不存在、
+     *         正文过长、含外链图片时抛出
+     */
+    void updatePost(PostUpdateRequest request);
+
+    /**
+     * 管理端帖子详情（含 Markdown 正文）
+     *
+     * <p><b>为什么不能复用公开详情 {@link #getApprovedDetail}</b>：
+     * <ul>
+     *     <li>它只返回<b>已通过</b>的帖子——待审 / 已驳回的取不到，而管理员编辑时
+     *     三类状态都可能碰到；</li>
+     *     <li>它会<b>原子自增浏览量</b>——管理员点开编辑一下计数就 +1，
+     *     而浏览量是内容热度的依据，不能被管理动作污染。</li>
+     * </ul>
+     *
+     * <p>本方法<b>不累加任何计数</b>，纯粹是「按 id 取单篇全文」，供编辑弹窗回填。
+     *
+     * @param id 帖子 ID
+     * @return 详情（含正文）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 帖子不存在时抛出（A0402）
+     */
+    PostAdminDetailVO getPostForAdmin(long id);
 }

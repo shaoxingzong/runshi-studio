@@ -10,20 +10,27 @@ import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.exception.ThrowUtils;
 import com.bhu.runshistudioweb.manager.ContentAuditManager;
 import com.bhu.runshistudioweb.mapper.StudioMemberMapper;
+import com.bhu.runshistudioweb.mapper.StudioPostCommentMapper;
 import com.bhu.runshistudioweb.mapper.StudioPostLikeMapper;
 import com.bhu.runshistudioweb.mapper.StudioPostMapper;
+import com.bhu.runshistudioweb.mapper.SysUserMapper;
 import com.bhu.runshistudioweb.model.dto.post.AuditRequest;
 import com.bhu.runshistudioweb.model.dto.post.AuditResult;
 import com.bhu.runshistudioweb.model.dto.post.PostAddRequest;
+import com.bhu.runshistudioweb.model.dto.post.PostAdminQueryRequest;
+import com.bhu.runshistudioweb.model.dto.post.PostUpdateRequest;
 import com.bhu.runshistudioweb.model.entity.StudioMember;
 import com.bhu.runshistudioweb.model.entity.StudioPost;
+import com.bhu.runshistudioweb.model.entity.StudioPostComment;
 import com.bhu.runshistudioweb.model.entity.StudioPostLike;
+import com.bhu.runshistudioweb.model.entity.SysUser;
 import com.bhu.runshistudioweb.model.enums.AiAuditStatusEnum;
 import com.bhu.runshistudioweb.model.enums.AuditStatusEnum;
 import com.bhu.runshistudioweb.model.enums.MemberStatusEnum;
 import com.bhu.runshistudioweb.model.vo.PostFrontDetailVO;
 import com.bhu.runshistudioweb.model.vo.PostFrontVO;
 import com.bhu.runshistudioweb.model.vo.PostVO;
+import com.bhu.runshistudioweb.model.vo.PostAdminDetailVO;
 import com.bhu.runshistudioweb.service.PostService;
 import com.bhu.runshistudioweb.service.StudioMemberService;
 import lombok.RequiredArgsConstructor;
@@ -37,8 +44,10 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -113,6 +122,23 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
      * 批量能力走 Mapper 最直接，且能保证是一次查询而不是 N+1。
      */
     private final StudioPostLikeMapper studioPostLikeMapper;
+
+    /**
+     * 评论（studio_post_comment）
+     *
+     * <p>注入 Mapper 而非 {@code PostCommentService}：删帖子时要按 {@code post_id}
+     * <b>批量</b>逻辑删除该帖的全部评论，这是单表批量能力，走 Mapper 最直接；
+     * 且 Service 之间互相依赖容易成环（本项目已全量改为构造器注入，成环会启动即失败）。
+     */
+    private final StudioPostCommentMapper studioPostCommentMapper;
+
+    /**
+     * 用户（sys_user）
+     *
+     * <p>管理端列表要按作者关键词筛选、要展示作者昵称，都需要直接查账号表——
+     * 这两种都是「按一批 id / 一个模糊词」的批量查询，与上述两个 Mapper 同一理由。
+     */
+    private final SysUserMapper sysUserMapper;
 
     @Override
     public long addPost(PostAddRequest request) {
@@ -335,15 +361,7 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
                 .orderByDesc(StudioPost::getCreatedAt);
 
         Page<StudioPost> entityPage = this.page(newPageWithDefaults(current, pageSize), wrapper);
-        Page<PostVO> voPage = emptyVOPage(entityPage);
-        voPage.setRecords(entityPage.getRecords().stream()
-                .map(post -> {
-                    PostVO vo = new PostVO();
-                    BeanUtils.copyProperties(post, vo);
-                    return vo;
-                })
-                .toList());
-        return voPage;
+        return toVOPage(entityPage);
     }
 
     @Override
@@ -353,15 +371,7 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
                 .orderByAsc(StudioPost::getCreatedAt);
 
         Page<StudioPost> entityPage = this.page(newPageWithDefaults(current, pageSize), wrapper);
-        Page<PostVO> voPage = emptyVOPage(entityPage);
-        voPage.setRecords(entityPage.getRecords().stream()
-                .map(post -> {
-                    PostVO vo = new PostVO();
-                    BeanUtils.copyProperties(post, vo);
-                    return vo;
-                })
-                .toList());
-        return voPage;
+        return toVOPage(entityPage);
     }
 
     @Override
@@ -396,6 +406,261 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         // 用 baseMapper.update 而不是 this.update——后者返回 boolean（是否成功），
         // 而这里要的是「实际影响的行数」，好让前端提示「已处理 N 条」
         return baseMapper.update(null, wrapper);
+    }
+
+    // ==================== 管理端：全量列表 / 删除 / 置顶 / 编辑 ====================
+
+    @Override
+    public Page<PostVO> listForAdmin(PostAdminQueryRequest request) {
+        ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR, "查询参数不能为空");
+
+        // ① 审核状态：精确匹配，取值合法性在这里校验（GET 参数不做注解校验，见 DTO 注释）
+        Integer status = request.getStatus();
+        if (status != null) {
+            ThrowUtils.throwIf(AuditStatusEnum.of(status) == null, ErrorCode.PARAMS_ERROR,
+                    "审核状态只能是 " + AuditStatusEnum.valuesText());
+        }
+
+        LambdaQueryWrapper<StudioPost> wrapper = new LambdaQueryWrapper<>();
+        if (status != null) {
+            wrapper.eq(StudioPost::getStatus, status);
+        }
+        if (StrUtil.isNotBlank(request.getTitleKeyword())) {
+            wrapper.like(StudioPost::getTitle, StrUtil.trim(request.getTitleKeyword()));
+        }
+
+        // ② 作者关键词：先解析成一批 userId，再按 author_id IN 过滤。
+        //    不写成 join：MP 的 LambdaQueryWrapper 表达不了 join，
+        //    为一个模糊筛选去维护自定义 XML 不值得；sys_user 是几百条的量级，两次 IN 查询足够快
+        // 分页参数先取好：GET 的 `?current=` 空串会绑成 null，不能直接拆箱
+        long current = request.getCurrent() == null ? 1L : request.getCurrent();
+        long pageSize = request.getPageSize() == null ? DEFAULT_PAGE_SIZE : request.getPageSize();
+
+        Collection<Long> authorIds = resolveAuthorIds(request.getAuthorKeyword());
+        if (authorIds != null) {
+            // 关键词一个用户都没命中：直接返回空页，不必再查帖子
+            if (authorIds.isEmpty()) {
+                return emptyVOPage(newPageWithDefaults(current, pageSize));
+            }
+            wrapper.in(StudioPost::getAuthorId, authorIds);
+        }
+
+        // ③ 排序：最新提交在前。管理端翻找的是「最近发生了什么」，
+        //    而待审队列专用的「先进先出」只在那一个接口用
+        wrapper.orderByDesc(StudioPost::getCreatedAt);
+
+        Page<StudioPost> entityPage = this.page(newPageWithDefaults(current, pageSize), wrapper);
+        return toVOPage(entityPage);
+    }
+
+    /**
+     * 把作者关键词解析成用户 ID 集合
+     *
+     * <p><b>账号与成员姓名都要匹配</b>：门户展示用的是成员姓名，管理员照着屏幕上
+     * 看到的名字去搜必须能搜到——否则「搜得到展示名却查不到帖子」会让人以为数据丢了。
+     *
+     * @param authorKeyword 作者关键词（可为空）
+     * @return 用户 ID 集合；关键词为空时返回 {@code null}（表示「不按作者筛选」），
+     *         与空集合（匹配不到任何人）是两种不同的语义
+     */
+    private Collection<Long> resolveAuthorIds(String authorKeyword) {
+        if (StrUtil.isBlank(authorKeyword)) {
+            return null;
+        }
+        String keyword = StrUtil.trim(authorKeyword);
+        Set<Long> ids = new HashSet<>();
+
+        // ① 账号侧：昵称或账号名模糊匹配
+        List<SysUser> users = sysUserMapper.selectList(new LambdaQueryWrapper<SysUser>()
+                .and(nested -> nested
+                        .like(SysUser::getUserName, keyword)
+                        .or()
+                        .like(SysUser::getUserAccount, keyword))
+                .select(SysUser::getId));
+        users.forEach(user -> ids.add(user.getId()));
+
+        // ② 成员档案侧：姓名模糊匹配（在队与否都算——帖子不会因成员离队而消失）
+        List<StudioMember> members = studioMemberMapper.selectList(new LambdaQueryWrapper<StudioMember>()
+                .like(StudioMember::getName, keyword)
+                .select(StudioMember::getId, StudioMember::getUserId));
+        members.forEach(member -> {
+            if (member.getUserId() != null) {
+                ids.add(member.getUserId());
+            }
+        });
+        return ids;
+    }
+
+    /**
+     * 删除帖子：同事务级联逻辑删除帖子 + 全部评论 + 全部点赞关系
+     *
+     * <p><b>为什么用声明式事务</b>：这里是多处纯 DB 写（审计痕迹、删评论、删点赞、删帖子），
+     * 没有外部 HTTP 调用，用项目惯用的 {@code @Transactional(rollbackFor = Exception.class)} 即可。
+     * 少了事务，「评论删了帖子没删掉」会留下父帖已不存在、评论还占着审核队列的中间态。
+     *
+     * <p><b>待审帖子不能删</b>（与 {@code PostCommentService#deleteComment} 同一条规则）：
+     * 先审后发之下，作者只知道「我提交了」，直接删掉他什么都收不到；
+     * 该走驳回——{@code rejectReason} 能把理由送到作者眼前。删帖只服务于
+     * 「已通过的内容要下线」与「已驳回的内容要清理」两种场景。
+     *
+     * <p><b>审计说明</b>：{@code studio_post} 没有 {@code deleted_by} 列（评论表才有），
+     * 因此删除前把 {@code updated_by} 显式写成操作人作为痕迹（元数据填充器只会填 0L），
+     * 日志里再记一条；{@code deleted_at} 仍会记录删除时间。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public int deletePost(long id) {
+        ThrowUtils.throwIf(!StpUtil.isLogin(), ErrorCode.NOT_LOGIN_ERROR, "未登录");
+        long operatorId = StpUtil.getLoginIdAsLong();
+        ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "帖子 id 不合法");
+
+        StudioPost post = this.getById(id);
+        ThrowUtils.throwIf(post == null, ErrorCode.NOT_FOUND_ERROR, "帖子不存在");
+
+        // 待审 → 只能驳回：删了作者什么都收不到（他只知道「提交了」）。
+        // 与 deleteComment「只删已通过」是同一条规则，提示语也指向同一个动作
+        ThrowUtils.throwIf(post.getStatus() == null
+                        || post.getStatus() == AuditStatusEnum.PENDING.getValue(),
+                ErrorCode.PARAMS_ERROR, "待审帖子不能删除，请使用驳回（作者需要收到理由）");
+
+        long postId = post.getId();
+
+        // ① 审计痕迹：本表没有 deleted_by 列，删除前把 updated_by 显式写成操作人。
+        //    元数据填充器只填 0L（拿不到登录态，见 MyMetaObjectHandler），审计必须自己写
+        this.update(new LambdaUpdateWrapper<StudioPost>()
+                .eq(StudioPost::getId, postId)
+                .set(StudioPost::getUpdatedBy, operatorId));
+
+        // ② 级联删评论（含楼中楼回复）：只删帖子会留下「父帖没了却还占审核队列」的孤儿
+        //    this.remove 只返回 boolean，要实际条数故走 baseMapper.delete（MP 会改写成逻辑删除）
+        int commentRows = studioPostCommentMapper.delete(new LambdaQueryWrapper<StudioPostComment>()
+                .eq(StudioPostComment::getPostId, postId));
+
+        // ③ 级联删点赞关系：studio_post_like 是关系表、物理删除（见 DDL 注释），
+        //    留着会变成挂在不存在帖子上的悬空行
+        studioPostLikeMapper.delete(new LambdaQueryWrapper<StudioPostLike>()
+                .eq(StudioPostLike::getPostId, postId));
+
+        // ④ 删帖子本体
+        baseMapper.delete(new LambdaQueryWrapper<StudioPost>().eq(StudioPost::getId, postId));
+
+        // 删除是管理员对**别人**内容的操作，必须留痕（操作人已写入 updated_by，这里再记一条日志）
+        log.info("管理员删除帖子 | postId={} | operatorId={} | 连带删除评论 {} 条", postId, operatorId, commentRows);
+        // 返回内容行数（帖子 1 + 评论数）；点赞关系是物理删除，不计入
+        return commentRows + 1;
+    }
+
+    /**
+     * 置顶 / 取消置顶
+     *
+     * <p>置顶只允许「已通过」的帖子（理由见 {@link PostService#updatePinned}）；
+     * 取消置顶不设状态限制——恢复操作永远不该被拦住。
+     */
+    @Override
+    public void updatePinned(long id, int pinned) {
+        ThrowUtils.throwIf(!StpUtil.isLogin(), ErrorCode.NOT_LOGIN_ERROR, "未登录");
+        long operatorId = StpUtil.getLoginIdAsLong();
+        ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "帖子 id 不合法");
+        ThrowUtils.throwIf(pinned != 0 && pinned != 1, ErrorCode.PARAMS_ERROR,
+                "置顶标记只能是 0（取消置顶）或 1（置顶）");
+
+        StudioPost post = this.getById(id);
+        ThrowUtils.throwIf(post == null, ErrorCode.NOT_FOUND_ERROR, "帖子不存在");
+
+        ThrowUtils.throwIf(pinned == 1 && (post.getStatus() == null
+                        || post.getStatus() != AuditStatusEnum.APPROVED.getValue()),
+                ErrorCode.PARAMS_ERROR, "只有已通过的帖子才能置顶（公开列表只展示已通过的内容）");
+
+        ThrowUtils.throwIf(!this.update(new LambdaUpdateWrapper<StudioPost>()
+                        .eq(StudioPost::getId, id)
+                        .set(StudioPost::getPinned, pinned)),
+                ErrorCode.OPERATION_ERROR, pinned == 1 ? "置顶失败" : "取消置顶失败");
+
+        log.info("帖子置顶状态已变更 | postId={} | pinned={} | operatorId={}", id, pinned, operatorId);
+    }
+
+    /**
+     * 编辑帖子（仅管理员），非待审状态一律重置为待审重新送审
+     *
+     * <p>重置时把上一轮内容的审核痕迹（AI 结论、审核人、审核时间、驳回理由）一并清掉：
+     * 它们描述的是<b>旧版本</b>的结论，留着会让管理员误以为新内容已经判过。
+     * 清空后由本方法重新送 AI 初判，走的是与发帖完全相同的链路。
+     */
+    @Override
+    public void updatePost(PostUpdateRequest request) {
+        ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR, "编辑内容不能为空");
+        ThrowUtils.throwIf(!StpUtil.isLogin(), ErrorCode.NOT_LOGIN_ERROR, "未登录");
+        long operatorId = StpUtil.getLoginIdAsLong();
+
+        StudioPost post = this.getById(request.getId());
+        ThrowUtils.throwIf(post == null, ErrorCode.NOT_FOUND_ERROR, "帖子不存在");
+
+        // 校验与 addPost 完全同源：正文长度 + 图片必须是站内路径
+        String content = StrUtil.trim(request.getContent());
+        ThrowUtils.throwIf(content.length() > CONTENT_MAX_LENGTH, ErrorCode.PARAMS_ERROR,
+                "正文过长，请控制在 " + CONTENT_MAX_LENGTH + " 字以内");
+        assertImagesAreInternal(content);
+
+        // 摘要与封面的兜底规则同 addPost：不填也能有列表展示效果
+        String summary = StrUtil.isBlank(request.getSummary())
+                ? buildSummary(content)
+                : StrUtil.trim(request.getSummary());
+        String coverImage = StrUtil.isBlank(request.getCoverImage())
+                ? extractFirstImage(content)
+                : StrUtil.trim(request.getCoverImage());
+
+        // 非待审（已通过 / 已驳回）→ 重置为待审：内容变了就必须重新过审，
+        // 否则「先审后发」会被编辑功能绕开（改完的正文没人看过就对外）
+        boolean backToPending = post.getStatus() == null
+                || post.getStatus() != AuditStatusEnum.PENDING.getValue();
+
+        LambdaUpdateWrapper<StudioPost> wrapper = new LambdaUpdateWrapper<>();
+        wrapper.eq(StudioPost::getId, post.getId())
+                .set(StudioPost::getTitle, StrUtil.trim(request.getTitle()))
+                .set(StudioPost::getSummary, summary)
+                .set(StudioPost::getCoverImage, coverImage)
+                .set(StudioPost::getContent, content);
+        if (backToPending) {
+            wrapper.set(StudioPost::getStatus, AuditStatusEnum.PENDING.getValue())
+                    // 上一轮内容的审核痕迹全部作废（理由见方法注释）
+                    .set(StudioPost::getAiAuditStatus, AiAuditStatusEnum.NOT_JUDGED.getValue())
+                    .set(StudioPost::getAiReason, null)
+                    .set(StudioPost::getAiAt, null)
+                    .set(StudioPost::getAuditBy, null)
+                    .set(StudioPost::getAuditAt, null)
+                    .set(StudioPost::getRejectReason, null);
+        }
+
+        ThrowUtils.throwIf(!this.update(wrapper), ErrorCode.OPERATION_ERROR, "保存失败，数据库异常");
+        log.info("管理员编辑帖子 | postId={} | operatorId={} | 重新送审={}", post.getId(), operatorId, backToPending);
+
+        // 重新送 AI 初判：与 addPost 同一条链路（异步、不阻塞保存）。
+        // 编辑待审帖时同样要重送——它可能已经带了一轮针对旧正文的结论（灰色/判定失败），
+        // 不重送则新正文永远不会被机器过一遍
+        long postId = post.getId();
+        contentAuditManager.submitAsync(content, result -> applyAiVerdict(postId, result));
+    }
+
+    /**
+     * 管理端详情：按 id 取单篇（含正文），<b>不累加浏览量</b>
+     *
+     * <p>理由见 {@link PostService#getPostForAdmin}：公开详情接口既不覆盖
+     * 待审 / 已驳回的帖子，又会污染浏览量，管理动作必须绕开它。
+     */
+    @Override
+    public PostAdminDetailVO getPostForAdmin(long id) {
+        // 与其它管理端方法一致：Service 内也校验登录态，不把「调用方一定鉴权过」当作前提
+        // （Controller 的 @SaCheckRole 是第一道，这里是第二道）
+        ThrowUtils.throwIf(!StpUtil.isLogin(), ErrorCode.NOT_LOGIN_ERROR, "未登录");
+        ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "帖子 id 不合法");
+        StudioPost post = this.getById(id);
+        ThrowUtils.throwIf(post == null, ErrorCode.NOT_FOUND_ERROR, "帖子不存在");
+
+        PostAdminDetailVO vo = new PostAdminDetailVO();
+        BeanUtils.copyProperties(post, vo);
+        vo.setAuthorName(adminAuthorNames(List.of(post.getAuthorId())).get(post.getAuthorId()));
+        vo.setContent(post.getContent());
+        return vo;
     }
 
     // ==================== 私有工具 ====================
@@ -535,5 +800,68 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
     /** 构造一个保留 total/current/size 的空 VO 分页（前端分页组件依赖这三个值） */
     private <T> Page<T> emptyVOPage(Page<StudioPost> entityPage) {
         return new Page<>(entityPage.getCurrent(), entityPage.getSize(), entityPage.getTotal());
+    }
+
+    /**
+     * 实体页 → VO 页（批量填作者昵称，一次查询，不 N+1）
+     *
+     * <p>「我的发帖」「待审队列」「管理端列表」三条路径共用——
+     * {@link PostVO} 契约上 {@code authorName} 恒有值，而不是「有的接口填、有的不填」。
+     */
+    private Page<PostVO> toVOPage(Page<StudioPost> entityPage) {
+        List<StudioPost> posts = entityPage.getRecords();
+        Map<Long, String> names = adminAuthorNames(posts.stream().map(StudioPost::getAuthorId).toList());
+        Page<PostVO> voPage = emptyVOPage(entityPage);
+        voPage.setRecords(posts.stream()
+                .map(post -> {
+                    PostVO vo = new PostVO();
+                    BeanUtils.copyProperties(post, vo);
+                    vo.setAuthorName(names.get(post.getAuthorId()));
+                    return vo;
+                })
+                .toList());
+        return voPage;
+    }
+
+    /**
+     * 批量查作者展示名（管理端与作者本人视角共用）
+     *
+     * <p><b>为什么与 {@link #authorNames} 分开</b>：那个只认「在队成员」的姓名
+     * （门户的对外口径）；而帖子不会因为成员毕业离队而消失，管理端要看到<b>所有</b>
+     * 发过帖的账号——只查在队成员会让老帖子的作者变成空白。
+     *
+     * <p><b>口径与门户保持一致</b>：在队成员优先用成员姓名（否则同一篇帖子在门户显示
+     * 「陈星野」、在后台显示账号名，管理员会以为数据出了问题）；查不到成员档案时
+     * 兜底账号昵称，再兜底账号名——显示总比留空好。
+     *
+     * @param userIds 作者 ID 集合
+     * @return userId → 展示名（可能没有值，调用方按 null 处理）
+     */
+    private Map<Long, String> adminAuthorNames(Collection<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Map.of();
+        }
+        // ① 先按在队成员取名（与门户同一口径）
+        Map<Long, String> names = new HashMap<>(authorNames(userIds));
+
+        // ② 成员档案里查不到的（已离队 / 未绑档案），用账号昵称兜底
+        List<Long> missing = userIds.stream()
+                .filter(Objects::nonNull)
+                .filter(id -> !names.containsKey(id))
+                .distinct()
+                .toList();
+        if (missing.isEmpty()) {
+            return names;
+        }
+        List<SysUser> users = sysUserMapper.selectList(new LambdaQueryWrapper<SysUser>()
+                .in(SysUser::getId, missing)
+                .select(SysUser::getId, SysUser::getUserName, SysUser::getUserAccount));
+        for (SysUser user : users) {
+            String display = StrUtil.isNotBlank(user.getUserName()) ? user.getUserName() : user.getUserAccount();
+            if (StrUtil.isNotBlank(display)) {
+                names.put(user.getId(), display);
+            }
+        }
+        return names;
     }
 }

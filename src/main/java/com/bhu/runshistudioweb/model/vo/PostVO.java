@@ -24,6 +24,10 @@ import java.time.LocalDateTime;
  *
  * <p>先审后发的体验关键就在本类：待审内容只有作者自己能看到，
  * 所以「发出去了但没显示」这件事必须有个明确的去处——就是这里的 {@code status}。
+ *
+ * <p><b>{@code authorId} / {@code authorName} 只服务管理端</b>：管理员的帖子列表要能
+ * 定位到「这是谁发的」，否则筛选与核实身份都无从下手。对外的 {@link PostFrontVO}
+ * 只暴露 {@code authorName}，不给 ID——对外没必要知道作者的账号主键。
  */
 @Data
 public class PostVO implements Serializable {
@@ -33,6 +37,21 @@ public class PostVO implements Serializable {
     /** 帖子 ID（序列化为字符串） */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
+
+    /**
+     * 作者 ID（关联 sys_user.id，管理端用来定位到人；序列化为字符串）
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long authorId;
+
+    /**
+     * 作者昵称（管理端列表展示）
+     *
+     * <p>由 Service 批量查 {@code sys_user} 填充（一次查询，不逐条查）。
+     * 取 {@code user_name}，为空时兜底 {@code user_account}——
+     * 有些账号只设了账号名，显示总比留空好。
+     */
+    private String authorName;
 
     /** 帖子标题 */
     private String title;
