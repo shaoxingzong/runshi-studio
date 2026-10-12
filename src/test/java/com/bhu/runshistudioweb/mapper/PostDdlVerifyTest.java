@@ -16,22 +16,22 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 验收：帖子 / 评论 / 举报三张表的迁移脚本幂等 + 四条高频 SQL 命中预期索引
+ * 验收：帖子 / 评论 / 举报三张表的建库脚本结构 + 四条高频 SQL 命中预期索引
  *
  * author: shaoshing
  *
  * <p>验证两件事：
  * <ol>
- *     <li><b>增量脚本连续执行两次不报错</b>：三句都用 {@code CREATE TABLE IF NOT EXISTS}，
- *     索引一律写在建表语句内部，因此第二次执行整句被跳过。
+ *     <li><b>建表语句连续执行两次不报错</b>：用例把从 {@code db/user.sql} 抽出的
+ *     {@code CREATE TABLE} 改写成 {@code CREATE TABLE IF NOT EXISTS} 后连跑两次，第二次静默跳过。
  *     ⚠️ MySQL 没有 {@code CREATE INDEX IF NOT EXISTS}，
  *     所以「索引写在建表语句内」是幂等的前提，不要把它们拆成独立的 CREATE INDEX；</li>
  *     <li><b>四条高频 SQL 命中预期索引</b>：分别覆盖三张表最典型的查询。</li>
  * </ol>
  *
- * <p><b>为什么按分号拆成多条执行</b>：本脚本建的是<b>三张表</b>（三条 CREATE TABLE），
+ * <p><b>为什么按分号拆成多条执行</b>：目标表有<b>三张</b>（三条 CREATE TABLE），
  * 而连接串没有开 {@code allowMultiQueries}，JdbcTemplate 一次只能发一条语句，
- * 把三条一起提交会解析失败。这与 {@code AttendanceDdlVerifyTest} 不同——那个脚本只有一条建表语句。
+ * 把三条一起提交会解析失败。这与 {@code AttendanceDdlVerifyTest} 不同——那个只抽一条建表语句。
  *
  * <p><b>为什么不用 @Transactional 回滚</b>：MySQL 的 DDL 会隐式提交，
  * 且本用例的目的正是「把表建出来供后续业务代码使用」，所以刻意不回滚。
@@ -50,11 +50,12 @@ class PostDdlVerifyTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    @DisplayName("迁移脚本连续执行两次不报错，且四条高频 SQL 的候选索引符合预期")
+    @DisplayName("建表语句连续执行两次不报错，且四条高频 SQL 的候选索引符合预期")
     void migrationIsIdempotentAndIndexesMatch() throws Exception {
-        List<String> statements = readMigrationStatements();
+        List<String> statements = readCreateTableStatements(
+                "studio_post", "studio_post_comment", "studio_post_report");
         // 三张表，一条建表语句都不能少；将来加表时这里会立刻提醒脚本与用例对不上
-        assertEquals(3, statements.size(), "迁移脚本里的建表语句数量变了，本用例的造数逻辑需同步调整");
+        assertEquals(3, statements.size(), "建库脚本里的目标建表语句数量变了，本用例的造数逻辑需同步调整");
 
         for (String sql : statements) {
             // 第一次建表；第二次必须静默跳过（幂等）——报错即验收失败
@@ -91,13 +92,20 @@ class PostDdlVerifyTest {
     }
 
     /**
-     * 读取迁移脚本，去掉 {@code --} 注释行后按分号拆成多条 DDL
+     * 从全量建库脚本里取出目标表的建表语句
+     *
+     * <p>{@code db/migration/} 下的增量脚本已合并进 {@code db/user.sql}（唯一 DDL 源头），
+     * 因此这里改为从全量脚本中<b>按表名抽取</b>，并统一改写成
+     * {@code CREATE TABLE IF NOT EXISTS}。
+     *
+     * <p><b>为什么必须改写</b>：全量脚本靠「先 DROP 再 CREATE」保证可重跑，
+     * 而本用例只想「表不在就建、在就跳过」——直接执行原句会在第二次跑时撞「表已存在」，
+     * 更不能真去 DROP（那会清空开发库的数据）。
      *
      * <p>为什么必须去注释：注释里含有行内说明文字，按分号拆分时可能被误切。
-     * 去掉注释行后再拆，得到的正好是三条完整的 CREATE TABLE 语句。
      */
-    private List<String> readMigrationStatements() throws Exception {
-        String raw = Files.readString(Path.of("db/migration/20261009_add_post.sql"));
+    private List<String> readCreateTableStatements(String... tableNames) throws Exception {
+        String raw = Files.readString(Path.of("db/user.sql"));
         StringBuilder builder = new StringBuilder();
         raw.lines()
                 .filter(line -> !line.trim().startsWith("--"))
@@ -106,8 +114,15 @@ class PostDdlVerifyTest {
         List<String> statements = new ArrayList<>();
         for (String part : builder.toString().split(";")) {
             String trimmed = part.trim();
-            if (!trimmed.isEmpty()) {
-                statements.add(trimmed);
+            // 只留建表语句：脚本里还有 CREATE DATABASE / USE / SET NAMES / DROP TABLE / INSERT
+            if (!trimmed.startsWith("CREATE TABLE")) {
+                continue;
+            }
+            for (String table : tableNames) {
+                if (trimmed.contains("CREATE TABLE `" + table + "`")) {
+                    statements.add(trimmed.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS "));
+                    break;
+                }
             }
         }
         return statements;

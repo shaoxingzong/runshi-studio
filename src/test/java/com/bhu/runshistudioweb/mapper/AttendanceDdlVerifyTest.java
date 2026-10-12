@@ -8,20 +8,22 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 验收：考勤表迁移脚本幂等 + 三条高频 SQL 命中预期索引
+ * 验收：考勤表建库脚本结构 + 三条高频 SQL 命中预期索引
  *
  * author: shaoshing
  *
  * <p>验证三件事（对应 验收条款）：
  * <ol>
- *     <li><b>增量脚本连续执行两次不报错</b>：脚本用 {@code CREATE TABLE IF NOT EXISTS}，
- *     索引写在建表语句内部，因此第二次执行整句被跳过。注意 MySQL 没有
- *     {@code CREATE INDEX IF NOT EXISTS}，所以「索引写在建表语句内」是幂等的前提；</li>
+ *     <li><b>建表语句连续执行两次不报错</b>：用例把从 {@code db/user.sql} 抽出的
+ *     {@code CREATE TABLE} 改写成 {@code CREATE TABLE IF NOT EXISTS} 后连跑两次，第二次静默跳过。
+ *     注意 MySQL 没有 {@code CREATE INDEX IF NOT EXISTS}，所以「索引写在建表语句内」是幂等的前提；</li>
  *     <li><b>三条高频 SQL 命中预期索引</b>：见 {@code DESIGN.md} 场景 O。
  *     断言的是 {@code possible_keys}——它证明「索引对该查询可用且匹配」；
  *     实际是否选用（{@code key} 列）由优化器基于统计信息决定，
@@ -43,9 +45,9 @@ class AttendanceDdlVerifyTest {
     private JdbcTemplate jdbcTemplate;
 
     @Test
-    @DisplayName("迁移脚本连续执行两次不报错，且三条高频 SQL 的候选索引符合预期")
+    @DisplayName("建表语句连续执行两次不报错，且三条高频 SQL 的候选索引符合预期")
     void migrationIsIdempotentAndIndexesMatch() throws Exception {
-        String ddl = readMigrationDdl();
+        String ddl = readCreateTableDdl();
 
         // 第一次建表；第二次必须静默跳过（幂等）——报错即验收失败
         jdbcTemplate.execute(ddl);
@@ -74,19 +76,30 @@ class AttendanceDdlVerifyTest {
     }
 
     /**
-     * 读取迁移脚本并去掉 {@code --} 注释行
+     * 从全量建库脚本里取出考勤表的建表语句
+     *
+     * <p>{@code db/migration/} 已合并进 {@code db/user.sql}（唯一 DDL 源头），因此按表名抽取，
+     * 并改写成 {@code CREATE TABLE IF NOT EXISTS}：全量脚本靠「先 DROP 再 CREATE」保证可重跑，
+     * 用例里不能真去 DROP（那会清空开发库），也不能让第二次执行撞「表已存在」。
      *
      * <p>为什么必须去注释：JdbcTemplate 把整段当作<b>一条</b>语句发给 MySQL，
      * 而连接串没开 {@code allowMultiQueries}，多余的注释会让语句解析失败。
-     * 脚本本身只有一条 {@code CREATE TABLE}，去掉注释后正好是一条完整语句。
      */
-    private String readMigrationDdl() throws Exception {
-        String raw = Files.readString(Path.of("db/migration/20261004_add_attendance.sql"));
+    private String readCreateTableDdl() throws Exception {
+        String raw = Files.readString(Path.of("db/user.sql"));
         StringBuilder sb = new StringBuilder();
         raw.lines()
                 .filter(line -> !line.trim().startsWith("--"))
                 .forEach(line -> sb.append(line).append('\n'));
-        return sb.toString();
+
+        for (String part : sb.toString().split(";")) {
+            String trimmed = part.trim();
+            if (trimmed.startsWith("CREATE TABLE")
+                    && trimmed.contains("CREATE TABLE `studio_attendance`")) {
+                return trimmed.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ");
+            }
+        }
+        throw new IllegalStateException("db/user.sql 里找不到 studio_attendance 的建表语句");
     }
 
     /**
