@@ -65,6 +65,18 @@ public class PostFrontVO implements Serializable {
     /** 评论数（冗余列） */
     private Integer commentCount;
 
+    /** 点赞数（冗余列，由点赞时原子自增维护） */
+    private Integer likeCount;
+
+    /**
+     * 当前登录用户是否已赞过本篇（游客恒为 false）
+     *
+     * <p>这是本类里<b>唯一带「当前用户」语义的字段</b>：同一个列表，
+     * 不同登录用户拿到的 {@code liked} 不同，因此它不能被缓存
+     * （CDN / 浏览器缓存需按此排除，否则会出现「别人显示已赞、我却点不了」）。
+     */
+    private Boolean liked;
+
     /** 是否置顶 */
     private Integer pinned;
 

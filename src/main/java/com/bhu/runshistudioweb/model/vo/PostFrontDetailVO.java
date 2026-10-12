@@ -59,6 +59,16 @@ public class PostFrontDetailVO implements Serializable {
     /** 评论数 */
     private Integer commentCount;
 
+    /** 点赞数（冗余列，由点赞时原子自增维护） */
+    private Integer likeCount;
+
+    /**
+     * 当前登录用户是否已赞过本篇（游客恒为 false）
+     *
+     * <p>与 {@link PostFrontVO#getLiked()} 同义：带「当前用户」语义，不可被缓存。
+     */
+    private Boolean liked;
+
     /** 是否置顶 */
     private Integer pinned;
 

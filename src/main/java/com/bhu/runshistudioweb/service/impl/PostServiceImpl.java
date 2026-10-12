@@ -10,12 +10,14 @@ import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.exception.ThrowUtils;
 import com.bhu.runshistudioweb.manager.ContentAuditManager;
 import com.bhu.runshistudioweb.mapper.StudioMemberMapper;
+import com.bhu.runshistudioweb.mapper.StudioPostLikeMapper;
 import com.bhu.runshistudioweb.mapper.StudioPostMapper;
 import com.bhu.runshistudioweb.model.dto.post.AuditRequest;
 import com.bhu.runshistudioweb.model.dto.post.AuditResult;
 import com.bhu.runshistudioweb.model.dto.post.PostAddRequest;
 import com.bhu.runshistudioweb.model.entity.StudioMember;
 import com.bhu.runshistudioweb.model.entity.StudioPost;
+import com.bhu.runshistudioweb.model.entity.StudioPostLike;
 import com.bhu.runshistudioweb.model.enums.AiAuditStatusEnum;
 import com.bhu.runshistudioweb.model.enums.AuditStatusEnum;
 import com.bhu.runshistudioweb.model.enums.MemberStatusEnum;
@@ -27,7 +29,9 @@ import com.bhu.runshistudioweb.service.StudioMemberService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -35,8 +39,10 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * 帖子服务实现
@@ -98,6 +104,15 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
      * 反过来让 Manager 写库就会形成循环依赖（本项目已全量改为构造器注入，成环会启动即失败）。
      */
     private final ContentAuditManager contentAuditManager;
+
+    /**
+     * 点赞关系（studio_post_like）
+     *
+     * <p>注入 Mapper 而不是再包一层 Service：只需要「查重」与「按 post_id 批量查已赞集合」
+     * 两种单表查询，与 {@link #studioMemberMapper} 的引入理由一致——
+     * 批量能力走 Mapper 最直接，且能保证是一次查询而不是 N+1。
+     */
+    private final StudioPostLikeMapper studioPostLikeMapper;
 
     @Override
     public long addPost(PostAddRequest request) {
@@ -196,6 +211,66 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         log.info("AI 审核完成 | postId={} | 结论={}", postId, aiStatus.getDesc());
     }
 
+    /**
+     * 点赞帖子（幂等，<b>只能赞、不能取消</b>）
+     *
+     * <p><b>三步顺序不能乱</b>：先确认帖子可赞 → 再查重 → 最后才写。
+     * 顺序反了会出现「给不存在的帖子点了赞」这种脏数据。
+     *
+     * <p><b>为什么用声明式事务</b>：这里两次写都是纯 DB 操作（insert 关系行 + update 计数），
+     * 没有外部 HTTP 调用，与 {@code StudioProjectServiceImpl} 的「主表 + 关联表」同一类场景，
+     * 用项目惯用的 {@code @Transactional(rollbackFor = Exception.class)} 即可。
+     * （{@code AiChatServiceImpl} 要自建 {@code TransactionTemplate}，是因为它必须把
+     * 几十秒的模型调用排除在事务外，这里没有这个问题。）
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public Long likePost(long userId, long postId) {
+        ThrowUtils.throwIf(postId <= 0, ErrorCode.PARAMS_ERROR, "帖子 id 不合法");
+
+        // ① 只允许赞「已通过」的帖子。待审 / 驳回对公众等同于不存在，
+        //    因此与 getApprovedDetail 同一口径：同码（A0402）同提示，不暴露存在性
+        LambdaQueryWrapper<StudioPost> postWrapper = new LambdaQueryWrapper<>();
+        postWrapper.eq(StudioPost::getId, postId)
+                .eq(StudioPost::getStatus, AuditStatusEnum.APPROVED.getValue());
+        StudioPost post = this.getOne(postWrapper);
+        ThrowUtils.throwIf(post == null, ErrorCode.NOT_FOUND_ERROR, "帖子不存在");
+
+        // ② 查重：已赞过则原样返回当前计数——重复点赞不重复 +1（幂等）
+        if (isLiked(postId, userId)) {
+            return toLong(post.getLikeCount());
+        }
+
+        // ③ 未赞：插入关系行 + 计数原子自增。方法上的事务保证两次写要么都成功要么都回滚，
+        //    不会出现「有关系行但计数没涨」的悬空状态
+        StudioPostLike like = new StudioPostLike();
+        like.setPostId(postId);
+        like.setUserId(userId);
+        try {
+            ThrowUtils.throwIf(studioPostLikeMapper.insert(like) != 1,
+                    ErrorCode.OPERATION_ERROR, "点赞失败");
+        } catch (DuplicateKeyException e) {
+            // 并发下两个请求同时通过查重：后插入的撞唯一键 uk_post_user。
+            // 语义上等同于「已经赞过」，按幂等返回，而不是抛个错让人反复点
+            log.info("点赞撞唯一键（并发重复点赞），按幂等返回 | postId={} | userId={}", postId, userId);
+            return toLong(post.getLikeCount());
+        }
+
+        // 自增用 setSql 而不是「读出来 +1 再写回」：后者在并发下互相覆盖，计数会偏小
+        ThrowUtils.throwIf(!this.update(new LambdaUpdateWrapper<StudioPost>()
+                        .eq(StudioPost::getId, postId)
+                        .setSql("like_count = like_count + 1")),
+                ErrorCode.OPERATION_ERROR, "点赞失败");
+
+        // 事务提交后再读一次最新值：事务内读到的可能是旧快照
+        return toLong(this.getById(postId).getLikeCount());
+    }
+
+    /** likeCount 为 null 时按 0 返回（老数据在加列之前可能没有值） */
+    private static long toLong(Integer count) {
+        return count == null ? 0L : count.longValue();
+    }
+
     @Override
     public Page<PostFrontVO> listApprovedByPage(long current, long pageSize) {
         LambdaQueryWrapper<StudioPost> wrapper = new LambdaQueryWrapper<>();
@@ -208,6 +283,10 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         // 作者名一次查完再内存填充——不要对每条帖子各查一次作者（那是 N+1）
         Map<Long, String> names = authorNames(entityPage.getRecords().stream()
                 .map(StudioPost::getAuthorId).toList());
+        // 同理，「当前用户赞了这批里的哪几篇」也必须一次查完（likedPostIds），
+        // 否则每篇一次查询就是标准的 N+1
+        Set<Long> likedPostIds = likedPostIds(entityPage.getRecords().stream()
+                .map(StudioPost::getId).toList());
 
         Page<PostFrontVO> voPage = emptyVOPage(entityPage);
         List<PostFrontVO> records = new ArrayList<>(entityPage.getRecords().size());
@@ -215,6 +294,7 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
             PostFrontVO vo = new PostFrontVO();
             BeanUtils.copyProperties(post, vo);
             vo.setAuthorName(names.get(post.getAuthorId()));
+            vo.setLiked(likedPostIds.contains(post.getId()));
             records.add(vo);
         }
         voPage.setRecords(records);
@@ -241,6 +321,7 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         PostFrontDetailVO detailVO = new PostFrontDetailVO();
         BeanUtils.copyProperties(post, detailVO);
         detailVO.setAuthorName(authorNames(List.of(post.getAuthorId())).get(post.getAuthorId()));
+        detailVO.setLiked(isLiked(id, currentUserIdOrNull()));
         return detailVO;
     }
 
@@ -389,6 +470,55 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
             }
         }
         return names;
+    }
+
+    /**
+     * 当前登录用户 ID（未登录返回 null）
+     *
+     * <p>游客的 {@code liked} 恒为 false，因此这里不查库。
+     */
+    private Long currentUserIdOrNull() {
+        if (!StpUtil.isLogin()) {
+            return null;
+        }
+        // 本项目登录统一传 Long 型用户 id，直接取
+        return StpUtil.getLoginIdAsLong();
+    }
+
+    /**
+     * 批量查「当前用户赞了这批里的哪几篇」（一次查询，避免 N+1）
+     *
+     * <p>照抄 {@link #authorNames} 的套路：一次查完，再在内存里用 Set 判断。
+     * 游客不查库，直接返回空集合（{@code liked} 恒 false）。
+     *
+     * @param postIds 本页帖子 ID 集合
+     * @return 已赞的帖子 ID 集合
+     */
+    private Set<Long> likedPostIds(Collection<Long> postIds) {
+        Long userId = currentUserIdOrNull();
+        if (userId == null || postIds == null || postIds.isEmpty()) {
+            return Set.of();
+        }
+        List<StudioPostLike> likes = studioPostLikeMapper.selectList(new LambdaQueryWrapper<StudioPostLike>()
+                .in(StudioPostLike::getPostId, postIds)
+                .eq(StudioPostLike::getUserId, userId));
+        return likes.stream().map(StudioPostLike::getPostId).collect(Collectors.toSet());
+    }
+
+    /**
+     * 当前用户是否已赞某篇（详情页与点赞查重共用）
+     *
+     * @param postId 帖子 ID
+     * @param userId 用户 ID；为 null（游客）时直接返回 false，不查库
+     */
+    private boolean isLiked(long postId, Long userId) {
+        if (userId == null) {
+            return false;
+        }
+        Long count = studioPostLikeMapper.selectCount(new LambdaQueryWrapper<StudioPostLike>()
+                .eq(StudioPostLike::getPostId, postId)
+                .eq(StudioPostLike::getUserId, userId));
+        return count != null && count > 0;
     }
 
     /**

@@ -14,7 +14,7 @@ import org.apache.ibatis.annotations.Mapper;
  * 不必引入 XML。
  *
  * <p><b>三条索引各服务一条查询，写 SQL 时要对上号</b>（论证见
- * {@code db/migration/20261009_add_post.sql}）：
+ * {@code db/user.sql} 中 {@code studio_post} 的建表语句）：
  * <ul>
  *     <li>{@code idx_status_pinned_time (status, pinned, created_at)}：
  *     公开列表 {@code WHERE status=1 AND deleted_at=0 ORDER BY pinned DESC, created_at DESC}。

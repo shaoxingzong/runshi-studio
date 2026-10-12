@@ -1,12 +1,14 @@
 package com.bhu.runshistudioweb.controller;
 
 import cn.dev33.satoken.annotation.SaCheckLogin;
+import cn.dev33.satoken.stp.StpUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bhu.runshistudioweb.common.BaseResponse;
 import com.bhu.runshistudioweb.common.ResultUtils;
 import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.exception.ThrowUtils;
 import com.bhu.runshistudioweb.model.dto.post.PostAddRequest;
+import com.bhu.runshistudioweb.model.dto.post.PostLikeRequest;
 import com.bhu.runshistudioweb.model.vo.PostFrontDetailVO;
 import com.bhu.runshistudioweb.model.vo.PostFrontVO;
 import com.bhu.runshistudioweb.model.vo.PostVO;
@@ -34,6 +36,7 @@ import jakarta.validation.Valid;
  *     <tr><td>{@code /post/list/page}、{@code /post/detail}</td>
  *     <td><b>游客可访问</b>（已加入白名单，见 {@code SaTokenMvcConfig}）</td></tr>
  *     <tr><td>{@code /post/add}</td><td>登录用户（是否成员由 Service 查 {@code studio_member} 判定）</td></tr>
+ *     <tr><td>{@code /post/like}</td><td>登录用户（点赞幂等，只能赞不能取消）</td></tr>
  *     <tr><td>{@code /post/my}</td><td>登录用户</td></tr>
  * </table>
  *
@@ -71,6 +74,28 @@ public class PostController {
         // @Valid 只保证「字段级约束」被校验，请求体整体为 null 时不会触发，这里兜一层防 NPE
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
         return ResultUtils.success(postService.addPost(request));
+    }
+
+    /**
+     * 点赞帖子（<b>需登录</b>，幂等）
+     *
+     * <p>用户身份从登录态取，请求体里<b>不收 userId</b>——否则「替别人点赞」就成了一个功能。
+     *
+     * <p>返回的是点赞后的最新点赞数：前端直接用这个数字刷新界面，
+     * <b>不做乐观 +1</b>——避免与「重复点赞不计数」的幂等语义冲突导致数字跳变。
+     *
+     * <p>本模块<b>只能赞、不能取消</b>，因此没有 unlike / toggle 接口。
+     *
+     * @param request 点赞请求（postId 必填）
+     * @return 最新点赞数（重复点赞时原样返回，不重复 +1）
+     */
+    @PostMapping("/like")
+    @SaCheckLogin
+    @Operation(summary = "【登录用户】点赞帖子", description = "幂等：重复点赞不重复计数；只能赞，不能取消")
+    public BaseResponse<Long> likePost(@RequestBody @Valid PostLikeRequest request) {
+        // @Valid 只保证「字段级约束」被校验，请求体整体为 null 时不会触发，这里兜一层防 NPE
+        ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
+        return ResultUtils.success(postService.likePost(StpUtil.getLoginIdAsLong(), request.getPostId()));
     }
 
     /**

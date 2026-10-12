@@ -83,6 +83,7 @@ onMounted(load);
                             <span class="author">{{ post.authorName || '工作室成员' }}</span>
                             <span class="date">{{ post.createdAt?.slice(0, 10) }}</span>
                             <span class="spacer" />
+                            <span>赞 {{ post.likeCount ?? 0 }}</span>
                             <span>评论 {{ post.commentCount ?? 0 }}</span>
                             <span>浏览 {{ post.viewCount ?? 0 }}</span>
                         </div>

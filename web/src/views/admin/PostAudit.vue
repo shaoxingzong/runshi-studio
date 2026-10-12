@@ -149,10 +149,11 @@ onMounted(load);
                     </template>
                 </el-table-column>
 
-                <el-table-column label="数据" width="120">
+                <el-table-column label="数据" width="150">
                     <template #default="{ row }">
                         <span class="stat">浏览 {{ row.viewCount ?? 0 }}</span>
                         <span class="stat">评论 {{ row.commentCount ?? 0 }}</span>
+                        <span class="stat">赞 {{ row.likeCount ?? 0 }}</span>
                     </template>
                 </el-table-column>
 

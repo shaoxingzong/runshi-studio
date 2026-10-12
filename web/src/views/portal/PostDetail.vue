@@ -24,6 +24,8 @@ const commentText = ref('');
 const replyTo = ref<string | null>(null);
 const replyText = ref('');
 const submitting = ref(false);
+/** 点赞请求中（按钮 loading，防连点） */
+const liking = ref(false);
 
 /**
  * 正文渲染：Markdown → HTML → **白名单清洗** → v-html
@@ -75,19 +77,23 @@ async function load() {
     }
 }
 
-/** 未登录时把人送去登录，并记住来源 */
-function requireLogin(): boolean {
+/**
+ * 未登录时把人送去登录，并记住来源
+ *
+ * @param action 动作名（评论 / 回复 / 点赞），用于提示文案
+ */
+function requireLogin(action: string): boolean {
     if (user.isLogin) {
         return true;
     }
-    ElMessage.info('请先登录后再评论');
+    ElMessage.info(`请先登录后再${action}`);
     router.push({ name: 'login', query: { redirect: route.fullPath } });
     return false;
 }
 
 async function submitComment() {
     const text = commentText.value.trim();
-    if (!text || !requireLogin()) {
+    if (!text || !requireLogin('评论')) {
         return;
     }
     submitting.value = true;
@@ -103,7 +109,7 @@ async function submitComment() {
 
 async function submitReply(parentId: string) {
     const text = replyText.value.trim();
-    if (!text || !requireLogin()) {
+    if (!text || !requireLogin('回复')) {
         return;
     }
     submitting.value = true;
@@ -144,6 +150,31 @@ async function removeComment(id: string, withReplies: boolean) {
     await load();
 }
 
+/**
+ * 点赞（只能赞、不能取消）
+ *
+ * <p>数字<b>以后端返回为准</b>，不做乐观 +1：后端是幂等的，
+ * 前端自己加 1 会出现「重复点击数字跳两次」的错乱。
+ *
+ * <p>已赞后按钮即禁用：本模块没有取消点赞的能力，
+ * 界面上就不该再留一个可点的入口。
+ */
+async function like() {
+    if (!requireLogin('点赞')) {
+        return;
+    }
+    liking.value = true;
+    try {
+        const count = await postApi.like(id);
+        if (detail.value) {
+            detail.value.liked = true;
+            detail.value.likeCount = count;
+        }
+    } finally {
+        liking.value = false;
+    }
+}
+
 onMounted(load);
 </script>
 
@@ -163,6 +194,18 @@ onMounted(load);
                     <span class="spacer" />
                     <span>浏览 {{ detail.viewCount ?? 0 }}</span>
                     <span>评论 {{ detail.commentCount ?? 0 }}</span>
+                    <!-- 只能赞不能取消：已赞后禁用，不提供取消入口 -->
+                    <el-button
+                        class="like-btn"
+                        :type="detail.liked ? 'primary' : 'default'"
+                        :disabled="detail.liked === true"
+                        :loading="liking"
+                        round
+                        size="small"
+                        @click="like"
+                    >
+                        {{ detail.liked ? '已赞' : '赞' }} {{ detail.likeCount ?? 0 }}
+                    </el-button>
                 </div>
 
                 <!-- 正文已过 DOMPurify 白名单清洗 -->
@@ -274,6 +317,13 @@ h1 {
     color: #6b7280;
     padding-bottom: 16px;
     border-bottom: 1px solid var(--border);
+    /* 窄屏时允许换行，点赞按钮不被裁切 */
+    flex-wrap: wrap;
+}
+
+/* 点赞是轻量互动：small + round 与 meta 行文字高度协调，视觉权重低于标题正文 */
+.like-btn {
+    margin-left: 2px;
 }
 
 .avatar {

@@ -83,6 +83,9 @@ public class PostVO implements Serializable {
     /** 评论数 */
     private Integer commentCount;
 
+    /** 点赞数（冗余列；管理端审核时可据此判断内容热度） */
+    private Integer likeCount;
+
     /** 是否置顶 */
     private Integer pinned;
 

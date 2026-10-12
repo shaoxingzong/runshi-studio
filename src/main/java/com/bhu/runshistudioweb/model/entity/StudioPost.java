@@ -146,6 +146,18 @@ public class StudioPost implements Serializable {
     private Integer commentCount;
 
     /**
+     * 点赞数（冗余列，由点赞时原子自增维护）
+     *
+     * <p>与 {@link #commentCount} 同属「为规避列表页 N+1 而冗余的计数列」，
+     * 但维护成本更低：本模块<b>只能赞、不能取消</b>，该列只增不减，
+     * 不存在「取消时要把计数减回去」的对冲操作。
+     *
+     * <p>自增必须是 SQL 级的 {@code SET like_count = like_count + 1}，
+     * 绝不能「读出来 +1 再写回」——并发下两个请求互相覆盖，计数会偏小。
+     */
+    private Integer likeCount;
+
+    /**
      * 是否置顶：0-否, 1-是
      *
      * <p>用 {@code Integer} 而不是 {@code Boolean}：DDL 是 tinyint，

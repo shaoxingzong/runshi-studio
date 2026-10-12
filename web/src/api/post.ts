@@ -35,6 +35,15 @@ export const postApi = {
     add: (body: { title: string; content: string; summary?: string; coverImage?: string }) =>
         http.post<string>('/post/add', body),
 
+    /**
+     * 点赞帖子（需登录）
+     *
+     * <p><b>只能赞、不能取消</b>：后端幂等，重复点击不会重复计数。
+     * 返回值就是点赞后的最新点赞数——前端直接用它刷新界面，
+     * <b>不要自己做 +1</b>（否则重复点击会让数字跳两次）。
+     */
+    like: (postId: string) => http.post<number>('/post/like', { postId }),
+
     /** 某帖子的公开评论：已通过，楼中楼已由后端组装好 */
     commentList: (postId: string) => http.get<PostComment[]>('/post/comment/list', { postId }),
 

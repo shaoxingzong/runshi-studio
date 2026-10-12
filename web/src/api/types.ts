@@ -225,6 +225,10 @@ export interface Post {
     authorName?: string | null;
     viewCount?: number | null;
     commentCount?: number | null;
+    /** 点赞数（后端冗余列维护，点赞时原子自增） */
+    likeCount?: number | null;
+    /** 当前登录用户是否已赞；游客恒为 false（带「当前用户」语义，不可整体缓存） */
+    liked?: boolean | null;
     /** 是否置顶：0-否，1-是 */
     pinned?: number | null;
     createdAt?: string;
@@ -270,6 +274,8 @@ export interface PostAudit {
     aiAt?: string | null;
     viewCount?: number | null;
     commentCount?: number | null;
+    /** 点赞数（管理端展示内容热度用） */
+    likeCount?: number | null;
     pinned?: number | null;
     createdAt?: string;
 }

@@ -48,6 +48,23 @@ public interface PostService extends IService<StudioPost> {
     long addPost(PostAddRequest request);
 
     /**
+     * 点赞帖子（<b>必须登录</b>，幂等）
+     *
+     * <p>本模块<b>只能赞、不能取消</b>：没有 unlike 接口，也没有 toggle。
+     * 重复点赞是幂等的——直接返回当前点赞数，不会重复计数
+     * （数据库唯一键 {@code uk_post_user} 在并发下兜底）。
+     *
+     * <p>只有<b>已通过审核</b>的帖子可赞；待审 / 驳回对公众等同于不存在，
+     * 与 {@link #getApprovedDetail} 同一口径（同码同提示，不暴露存在性）。
+     *
+     * @param userId 登录用户 ID（由 Controller 从登录态取，不接受请求体传入）
+     * @param postId 被点赞的帖子 ID
+     * @return 点赞后的最新点赞数（已赞过时原样返回，不重复 +1）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 帖子不存在或尚未通过审核时抛出（A0402）
+     */
+    Long likePost(long userId, long postId);
+
+    /**
      * 公开列表：仅已通过，置顶优先 + 时间倒序（游客可调用）
      *
      * @param current  页码（< 1 时按 1 处理）
