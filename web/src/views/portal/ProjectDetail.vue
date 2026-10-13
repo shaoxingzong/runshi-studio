@@ -1,14 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { portalApi } from '@/api/portal';
+import ErrorRetry from '@/components/ErrorRetry.vue';
 import type { ProjectDetail as ProjectDetailType } from '@/api/types';
 
 const route = useRoute();
+const router = useRouter();
 const detail = ref<ProjectDetailType | null>(null);
 const loading = ref(false);
+/** 加载失败（含 id 不存在）：此前提炼只有 v-if="detail"，失败时整页空白 */
+const error = ref('');
 
 const STATUS_TEXT: Record<string, string> = { 0: '研发中', 1: '已上线', 2: '已结题' };
 
@@ -38,8 +42,11 @@ const contentHtml = computed(() => {
 
 async function load() {
     loading.value = true;
+    error.value = '';
     try {
         detail.value = await portalApi.projectDetail(String(route.params.id));
+    } catch (e) {
+        error.value = (e as Error).message || '项目不存在或加载失败';
     } finally {
         loading.value = false;
     }
@@ -50,7 +57,15 @@ onMounted(load);
 
 <template>
     <div class="page" v-loading="loading">
-        <template v-if="detail">
+        <!-- 失败 / 不存在：给出原因与返回入口，而不是一片空白 -->
+        <template v-if="error || !detail">
+            <ErrorRetry v-if="error" :message="error" @retry="load" />
+            <div v-else class="card muted">项目加载中…</div>
+            <div class="actions">
+                <el-button @click="router.push('/projects')">返回项目列表</el-button>
+            </div>
+        </template>
+        <template v-else>
             <div class="card">
                 <img v-if="detail.coverImage" :src="detail.coverImage" :alt="detail.title" class="cover" />
                 <h1>{{ detail.title }}</h1>
@@ -79,7 +94,6 @@ onMounted(load);
 
             <div class="card block">
                 <h2>参与成员（{{ detail.members.length }}）</h2>
-                <p class="muted small">队长必然在列表中：后端把 leader_id 作为权威源，建/改项目时同步写入关联表。</p>
                 <el-empty v-if="detail.members.length === 0" description="暂无成员" />
                 <div v-else class="grid cards-3">
                     <!-- ⚠️ 成员信息「不对外展示」（业务规则）：这里只作为项目参与者的信息卡，**不做跳转**。
@@ -139,10 +153,6 @@ h1 {
     display: flex;
     gap: 16px;
     margin-top: 12px;
-}
-
-.small {
-    font-size: 12px;
 }
 
 .member {

@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { postApi } from '@/api/post';
+import ErrorRetry from '@/components/ErrorRetry.vue';
 import type { PageResult, PostAudit } from '@/api/types';
 
 /**
@@ -16,6 +17,8 @@ const router = useRouter();
 const page = reactive({ current: 1, pageSize: 10 });
 const result = ref<PageResult<PostAudit> | null>(null);
 const loading = ref(false);
+/** 加载失败：非空时展示错误条 + 重试 */
+const error = ref('');
 
 /** 审核状态：0-待审, 1-已通过, 2-已驳回 */
 const STATUS_TEXT: Record<number, { text: string; type: 'warning' | 'success' | 'danger' }> = {
@@ -24,24 +27,13 @@ const STATUS_TEXT: Record<number, { text: string; type: 'warning' | 'success' | 
     2: { text: '已驳回', type: 'danger' },
 };
 
-/**
- * AI 初判结论：0-未判, 1-安全, 2-违规, 3-灰色, 4-判定失败
- *
- * <p>展示它是为了让作者知道内容在正常流转：
- * 「AI 认为需要人工复核」远比只显示「审核中」更有信息量。
- */
-const AI_TEXT: Record<number, string> = {
-    0: '等待 AI 初判',
-    1: 'AI 判为安全，已自动通过',
-    2: 'AI 判为违规，已自动驳回',
-    3: 'AI 认为需要人工复核',
-    4: 'AI 不可用，等待人工审核',
-};
-
 async function load() {
     loading.value = true;
+    error.value = '';
     try {
         result.value = await postApi.my({ ...page });
+    } catch (e) {
+        error.value = (e as Error).message || '加载失败';
     } finally {
         loading.value = false;
     }
@@ -70,6 +62,8 @@ onMounted(load);
             <el-button type="primary" @click="router.push('/posts/new')">写文章</el-button>
         </div>
 
+        <ErrorRetry v-if="error" :message="error" @retry="load" />
+
         <div class="card" v-loading="loading">
             <el-empty v-if="result && result.records.length === 0" description="还没有发过帖子" />
 
@@ -97,14 +91,11 @@ onMounted(load);
                             <el-tag :type="STATUS_TEXT[row.status ?? 0]?.type ?? 'info'" size="small">
                                 {{ STATUS_TEXT[row.status ?? 0]?.text ?? '未知' }}
                             </el-tag>
-                        </template>
-                    </el-table-column>
-
-                    <el-table-column label="AI 初判" min-width="180">
-                        <template #default="{ row }">
-                            <span class="ai">{{ AI_TEXT[row.aiAuditStatus ?? 0] ?? '—' }}</span>
-                            <div v-if="row.aiReason" class="ai-reason">{{ row.aiReason }}</div>
-                            <div v-if="row.aiAt" class="ai-time">{{ row.aiAt.slice(0, 16) }}</div>
+                            <!-- 驳回理由直接跟在状态下：作者只关心「为什么不通过、怎么改」，
+                                 审核链路内部状态（AI 初判/判定时间）不对外暴露 -->
+                            <div v-if="row.status === 2 && row.rejectReason" class="reject">
+                                理由：{{ row.rejectReason }}
+                            </div>
                         </template>
                     </el-table-column>
 
@@ -123,7 +114,8 @@ onMounted(load);
 
                     <el-table-column label="操作" width="110">
                         <template #default="{ row }">
-                            <!-- 只有已通过的才看得进详情：待审与驳回的内容对外不存在 -->
+                            <!-- 只有已通过的才看得进详情：待审与驳回的内容对外不存在。
+                                 驳回稿额外给「修改重投」入口（仅已驳回可改，后端同样校验） -->
                             <el-button
                                 v-if="row.status === 1"
                                 link
@@ -132,9 +124,14 @@ onMounted(load);
                             >
                                 查看
                             </el-button>
-                            <span v-else-if="row.status === 2 && row.rejectReason" class="reject">
-                                理由：{{ row.rejectReason }}
-                            </span>
+                            <el-button
+                                v-else-if="row.status === 2"
+                                link
+                                type="primary"
+                                @click="router.push(`/posts/new?edit=${row.id}`)"
+                            >
+                                修改重投
+                            </el-button>
                             <span v-else class="muted">—</span>
                         </template>
                     </el-table-column>
@@ -197,12 +194,6 @@ onMounted(load);
     color: #9ca3af;
 }
 
-.ai-time {
-    margin-top: 2px;
-    font-size: 12px;
-    color: #9ca3af;
-}
-
 .stat {
     display: inline-block;
     margin-right: 8px;
@@ -210,19 +201,11 @@ onMounted(load);
     color: #6b7280;
 }
 
-.ai {
-    font-size: 13px;
-    color: #4b5563;
-}
-
-.ai-reason {
-    margin-top: 2px;
-    font-size: 12px;
-    color: #9ca3af;
-}
-
+/* 驳回理由：跟在状态标签下方，用警示色让作者一眼看到「为什么不通过」 */
 .reject {
+    margin-top: 4px;
     font-size: 12px;
+    line-height: 1.5;
     color: #dc2626;
 }
 

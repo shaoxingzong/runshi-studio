@@ -7,6 +7,7 @@ const router = useRouter();
 const user = useUserStore();
 
 const menus = [
+    { path: '/admin/dashboard', label: '首页概览' },
     { path: '/admin/members', label: '成员管理' },
     // 用户管理 = 「给注册用户授予成员身份」的地方：注册只能得到普通用户（user），
     // 管理员在这里把角色改成 member（或 admin），或封禁账号
@@ -17,6 +18,7 @@ const menus = [
     { path: '/admin/posts', label: '帖子审核' },
     { path: '/admin/post-manage', label: '帖子管理' },
     { path: '/admin/post-comments', label: '评论审核' },
+    { path: '/admin/traffic', label: '流量分析' },
 ];
 
 function logout() {

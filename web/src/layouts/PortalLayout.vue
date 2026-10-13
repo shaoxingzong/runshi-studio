@@ -57,8 +57,8 @@ async function logout() {
  * 自定义高亮判断，<b>不用</b> router-link 自带的 router-link-active。
  *
  * 原因：那是「前缀匹配」——`/` 是所有路径的前缀，于是首页会在每个页面都高亮
- * （实测：进入「团队成员」时首页与团队成员同时亮）。
- * 这里显式区分：首页要精确相等，其余允许 `/members` 匹配 `/members/{id}` 这类子路径。
+ * （实测：进入「项目案例」时首页与项目案例同时亮）。
+ * 这里显式区分：首页要精确相等，其余允许 `/projects` 匹配 `/projects/{id}` 这类子路径。
  */
 /**
  * 实际渲染的导航项：带 memberOnly 的项只在确认是成员后才出现
@@ -114,7 +114,7 @@ function isActive(path: string): boolean {
         <footer class="site-footer">
             <div class="inner">
                 <span>© {{ new Date().getFullYear() }} 润石工作室</span>
-                <span class="muted"> · 成员 / 项目 / 荣誉 / 智能问答</span>
+                <span class="muted"> · 项目 / 荣誉 / 社区 / 智能问答</span>
             </div>
         </footer>
     </div>

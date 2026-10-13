@@ -29,6 +29,15 @@ const input = ref('');
 const sessionId = ref(localStorage.getItem(SESSION_KEY) || '');
 const streaming = ref(false);
 
+/**
+ * AI 服务是否不可用（用于输入区上方的持续提示条）
+ *
+ * <p><b>为什么不用全局红色弹窗</b>：token 被冻结这类持续性故障下，用户每问一次
+ * 就弹一次红窗，除了反复宣告同一件事没有任何帮助。改成一条**可持续显示**的提示，
+ * 下次成功自动消失——既不打断输入，也不会被「关掉了就忘了」。
+ */
+const aiDown = ref(false);
+
 /** 历史会话（接口要求登录，游客侧这一栏不出现） */
 const sessionList = ref<AiSession[]>([]);
 const user = useUserStore();
@@ -66,18 +75,27 @@ async function send() {
                     answer.sources = sources;
                 },
                 onDelta: (delta) => {
+                    // 收到内容说明服务恢复了，撤掉提示条
+                    aiDown.value = false;
                     answer.content += delta;
                     void scrollBottom();
                 },
                 onError: (payload) => {
+                    // SSE 的失败契约：error 事件里带业务码与文案（可能是参数错误、
+                    // 配额超限，也可能是 AI 不可用）。统一挂上提示条，让用户知道要重试
+                    aiDown.value = true;
                     answer.content = `（回答失败）${payload.message || ''}`;
                 },
             },
             controller.signal,
         );
+        // 走到这里说明整条流正常收尾：清除提示条。
+        // （不能只在 onDelta 里清——回答为空时没有增量，提示会一直挂着）
+        aiDown.value = false;
     } catch (e) {
         if ((e as Error).name !== 'AbortError') {
-            ElMessage.error((e as Error).message || '请求失败');
+            // 不再弹全局红窗：挂持续提示条 + 气泡内说明，同一次失败不打扰两次
+            aiDown.value = true;
             answer.content = '（请求失败，请稍后重试）';
         }
     } finally {
@@ -177,18 +195,14 @@ onMounted(() => {
     <div class="page">
         <div class="page-head">
             <h1>AI 助手</h1>
-            <p>
-                基于工作室资料回答，命中资料时会在回答下方给出来源。
-                普通用户可免费提问 5 次，成员与管理员不限次数。
-            </p>
+            <p>基于工作室资料回答，命中资料时会在回答下方给出来源。</p>
         </div>
 
-        <!-- 未登录：AI 服务需登录后使用 -->
+        <!-- 未登录：AI 服务需登录后使用（配额规则放在登录后的界面里说，避免游客被用不上的信息干扰） -->
         <div v-if="!user.isLogin" class="card gate">
             <el-empty description="">
                 <template #description>
                     <p class="gate-title">登录后即可使用 AI 助手</p>
-                    <p class="gate-sub">普通用户可免费提问 5 次，成员与管理员不限次数。</p>
                 </template>
                 <el-button type="primary" @click="router.push('/login')">去登录</el-button>
             </el-empty>
@@ -222,6 +236,19 @@ onMounted(() => {
             </aside>
 
             <div class="card chat">
+                <!--
+                  AI 不可用的持续提示条：替代此前的全局红色弹窗。
+                  持续性故障（token 冻结等）下用户会连续提问，每问一次弹一次红窗
+                  只会造成骚扰；这条提示会一直挂在这里，下次回答成功自动消失
+                -->
+                <el-alert
+                    v-if="aiDown"
+                    type="warning"
+                    :closable="false"
+                    title="AI 服务暂时不可用，可稍后重试"
+                    class="down-alert"
+                />
+
                 <div ref="windowRef" class="window">
                 <el-empty v-if="messages.length === 0" description="问点什么吧，例如「星盘计划用了什么技术？」" />
                 <div v-for="(msg, index) in messages" :key="index" class="msg" :class="msg.role">
@@ -277,9 +304,10 @@ onMounted(() => {
                     <el-button @click="newChat">新会话</el-button>
                 </div>
             </div>
-
-            <p v-if="sessionId" class="muted session">当前会话：{{ sessionId }}</p>
             </div>
+
+            <!-- 配额规则只在登录后展示：游客用不上这段信息（门禁已挡在前头） -->
+            <p class="muted quota">普通用户可免费提问 5 次，成员与管理员不限次数。</p>
         </div>
     </div>
 </template>
@@ -289,17 +317,22 @@ onMounted(() => {
     padding: 40px 20px;
 }
 
+/* 提示条贴在卡片顶部：不加圆角，让它看起来是卡片的一部分而不是浮层 */
+.down-alert {
+    border-radius: var(--radius) var(--radius) 0 0;
+    margin-bottom: 0;
+}
+
+.quota {
+    margin: 10px 2px 0;
+    font-size: 12px;
+}
+
 .gate-title {
     margin: 0 0 6px;
     font-size: 15px;
     font-weight: 500;
     color: #1f2937;
-}
-
-.gate-sub {
-    margin: 0;
-    font-size: 13px;
-    color: #6b7280;
 }
 
 .ai-layout {
@@ -501,10 +534,5 @@ onMounted(() => {
     display: flex;
     flex-direction: column;
     gap: 8px;
-}
-
-.session {
-    font-size: 12px;
-    margin: 0;
 }
 </style>

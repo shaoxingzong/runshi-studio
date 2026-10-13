@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { postApi } from '@/api/post';
+import ErrorRetry from '@/components/ErrorRetry.vue';
 import { useUserStore } from '@/stores/user';
 import type { PageResult, Post } from '@/api/types';
 
@@ -12,11 +13,16 @@ const user = useUserStore();
 const page = reactive({ current: 1, pageSize: 9 });
 const result = ref<PageResult<Post> | null>(null);
 const loading = ref(false);
+/** 加载失败：非空时展示错误条 + 重试 */
+const error = ref('');
 
 async function load() {
     loading.value = true;
+    error.value = '';
     try {
         result.value = await postApi.list({ ...page });
+    } catch (e) {
+        error.value = (e as Error).message || '加载失败';
     } finally {
         loading.value = false;
     }
@@ -48,6 +54,8 @@ onMounted(load);
                 写文章
             </el-button>
         </div>
+
+        <ErrorRetry v-if="error" :message="error" @retry="load" />
 
         <div v-loading="loading">
             <!-- 空状态要有引导：干巴巴一句「没有数据」等于把人劝退，

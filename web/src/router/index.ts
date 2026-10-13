@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import { useUserStore } from '@/stores/user';
+import { deviceType, referrerHost, trafficApi, visitorId } from '@/api/traffic';
 
 /**
  * 路由表
@@ -50,7 +51,9 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/layouts/AdminLayout.vue'),
         meta: { requiresAuth: true },
         children: [
-            { path: '', redirect: '/admin/members' },
+            // 落地页：先看概览（待审积压、各项计数），再进具体管理页
+            { path: '', redirect: '/admin/dashboard' },
+            { path: 'dashboard', name: 'admin-dashboard', component: () => import('@/views/admin/Dashboard.vue') },
             { path: 'members', name: 'admin-members', component: () => import('@/views/admin/Members.vue') },
             { path: 'users', name: 'admin-users', component: () => import('@/views/admin/Users.vue') },
             { path: 'projects', name: 'admin-projects', component: () => import('@/views/admin/Projects.vue') },
@@ -71,6 +74,11 @@ const routes: RouteRecordRaw[] = [
                 path: 'post-comments',
                 name: 'admin-post-comments',
                 component: () => import('@/views/admin/PostCommentAudit.vue'),
+            },
+            {
+                path: 'traffic',
+                name: 'admin-traffic',
+                component: () => import('@/views/admin/Traffic.vue'),
             },
         ],
     },
@@ -98,6 +106,34 @@ router.beforeEach((to) => {
         return { name: 'admin-login', query: { redirect: to.fullPath } };
     }
     return true;
+});
+
+/**
+ * 页面访问埋点（门户与后台都记）
+ *
+ * <p><b>为什么放在 afterEach 而不是 beforeEach</b>：导航被守卫拦截时
+ * （未登录跳后台登录页等）不算一次「成功的页面访问」，afterEach 只在真正到达后触发。
+ *
+ * <p><b>为什么用 to.path 而不是 to.fullPath</b>：query 里可能带 token
+ * （分享链接、营销参数），而埋点只该记「哪个页面」。分页参数同理——
+ * {@code /posts?current=2} 与 {@code /posts} 是同一个页面。
+ *
+ * <p><b>刻意不排除后台路径</b>：知道管理员活跃在哪些页面有运维价值，
+ * 且热门页面榜里出现 /admin/* 正好说明「内部使用也被统计到了」，口径一致比看似干净更重要。
+ * 若将来要区分门户/后台，应按路径前缀在统计侧拆分，而不是在埋点侧静默丢弃。
+ *
+ * <p><b>失败静默</b>：埋点是旁路，不 await、不抛错、不弹窗——
+ * 它不该让任何一次导航变慢或变红。
+ */
+router.afterEach((to) => {
+    void trafficApi.report({
+        pagePath: to.path,
+        visitorId: visitorId(),
+        referrerHost: referrerHost(),
+        deviceType: deviceType(),
+    }).catch(() => {
+        // 静默：旁路故障不影响主流程（与 RAG 检索失败降级同一条纪律）
+    });
 });
 
 export default router;

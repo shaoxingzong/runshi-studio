@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, onMounted, reactive, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { MdEditor } from 'md-editor-v3';
 import 'md-editor-v3/lib/style.css';
@@ -8,18 +8,29 @@ import { postApi, uploadPostImage } from '@/api/post';
 import { useUserStore } from '@/stores/user';
 
 /**
- * 发帖（仅工作室成员）
+ * 发帖 / 修改被驳回的稿子（仅工作室成员）
  *
  * <p><b>准入判断</b>：进入页面时会主动拉一次「我的成员档案」——
  * 不能只看 localStorage 里的角色（角色是权限标签，可能与成员档案不同步）。
  * 后端同样只准成员发帖，这里是同一规则的界面表达，不是真正的拦截。
+ *
+ * <p><b>改稿模式</b>：从「我的发帖」点「修改重投」进来时带 {@code ?edit=<帖子id>}。
+ * 该模式下加载原稿内容、提交走 {@code /post/update-mine}，保存后回到待审。
  */
 const router = useRouter();
+const route = useRoute();
 const user = useUserStore();
 
 const form = reactive({ title: '', content: '', summary: '', coverImage: '' });
 const submitting = ref(false);
 const coverInput = ref<HTMLInputElement | null>(null);
+
+/** 改稿模式：正在修改的帖子 id（空串 = 新建） */
+const editingId = ref('');
+/** 改稿模式下原稿的加载态：正文没回来之前禁用保存，避免提交半模态数据 */
+const loadingDraft = ref(false);
+
+const isEditing = computed(() => !!editingId.value);
 
 onMounted(async () => {
     // 布局不会在路由切换时重建，这里主动拉一次确保拿到最新的成员身份
@@ -27,8 +38,36 @@ onMounted(async () => {
     if (!user.isMember) {
         ElMessage.warning('仅工作室成员可以发帖');
         router.replace('/posts');
+        return;
+    }
+    const editId = typeof route.query.edit === 'string' ? route.query.edit : '';
+    if (editId) {
+        await loadDraft(editId);
     }
 });
+
+/**
+ * 加载待修改的原稿
+ *
+ * <p>正文必须单独拉：列表 VO 刻意不含 content，而公开详情只返回已通过的帖子。
+ */
+async function loadDraft(postId: string) {
+    loadingDraft.value = true;
+    try {
+        const detail = await postApi.myDetail(postId);
+        editingId.value = postId;
+        form.title = detail.title;
+        form.summary = detail.summary ?? '';
+        form.coverImage = detail.coverImage ?? '';
+        form.content = detail.content ?? '';
+    } catch (e) {
+        // 读不到（不是本人 / 不是待审或已驳回）：说明入口不合法，回列表并说明
+        ElMessage.error((e as Error).message || '原稿加载失败');
+        router.replace('/posts/my');
+    } finally {
+        loadingDraft.value = false;
+    }
+}
 
 /**
  * 编辑器上传图片
@@ -136,6 +175,10 @@ async function onCoverPicked(event: Event) {
     try {
         form.coverImage = await uploadPostImage(file);
         ElMessage.success('封面已上传');
+    } catch (e) {
+        // 上传失败（格式不支持 / 体积超限 / 服务端 5xx）：必须让用户知道，
+        // 否则他只会看到「点了没反应」，然后反复点
+        ElMessage.error((e as Error).message || '封面上传失败，请重试');
     } finally {
         // 清空 value，否则连续选同一张图不会再触发 change
         input.value = '';
@@ -153,15 +196,22 @@ async function submit() {
     }
     submitting.value = true;
     try {
-        await postApi.add({
+        const payload = {
             title: form.title.trim(),
             content: form.content,
             summary: form.summary.trim() || undefined,
             // 封面留空时后端会自动取正文首图
             coverImage: form.coverImage || undefined,
-        });
-        // 先审后发：此刻内容是待审状态，不会出现在公开列表里
-        ElMessage.success('已提交，审核通过后可见');
+        };
+        if (isEditing.value) {
+            await postApi.updateMine({ id: editingId.value, ...payload });
+            // 改完必然回到待审：这句话必须说清楚，否则作者会以为改完就生效了
+            ElMessage.success('已保存，修改内容将重新送审');
+        } else {
+            await postApi.add(payload);
+            // 先审后发：此刻内容是待审状态，不会出现在公开列表里
+            ElMessage.success('已提交，审核通过后可见');
+        }
         router.push('/posts/my');
     } finally {
         submitting.value = false;
@@ -173,8 +223,9 @@ async function submit() {
     <div class="page">
         <div class="page-head">
             <div>
-                <h1>写文章</h1>
-                <p>支持 Markdown；可直接粘贴或拖拽图片，也可点工具栏上传。</p>
+                <h1>{{ isEditing ? '修改被驳回的文章' : '写文章' }}</h1>
+                <p v-if="isEditing">修改后将重新送审，审核通过才会出现在社区。</p>
+                <p v-else>支持 Markdown；可直接粘贴或拖拽图片，也可点工具栏上传。</p>
             </div>
             <el-button @click="router.push('/posts/my')">我的发帖</el-button>
         </div>
@@ -217,7 +268,14 @@ async function submit() {
                     <template v-if="uploading">正在上传图片…</template>
                     <template v-else>提交后需要审核，通过后才会出现在社区列表</template>
                 </span>
-                <el-button type="primary" :loading="submitting" @click="submit">提交</el-button>
+                <el-button
+                    type="primary"
+                    :loading="submitting"
+                    :disabled="loadingDraft"
+                    @click="submit"
+                >
+                    {{ isEditing ? '保存修改' : '提交' }}
+                </el-button>
             </div>
         </div>
     </div>

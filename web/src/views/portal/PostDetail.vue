@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import { postApi } from '@/api/post';
+import ErrorRetry from '@/components/ErrorRetry.vue';
 import { useUserStore } from '@/stores/user';
 import type { PostComment, PostDetail } from '@/api/types';
 
@@ -17,6 +18,8 @@ const id = String(route.params.id);
 const detail = ref<PostDetail | null>(null);
 const comments = ref<PostComment[]>([]);
 const loading = ref(false);
+/** 加载失败 / 帖子不存在：非空时展示错误条 + 重试 */
+const error = ref('');
 
 /** 顶层评论输入框 */
 const commentText = ref('');
@@ -69,9 +72,13 @@ const contentHtml = computed(() => {
 
 async function load() {
     loading.value = true;
+    error.value = '';
     try {
         detail.value = await postApi.detail(id);
         comments.value = await postApi.commentList(id);
+    } catch (e) {
+        // 失败 / 帖子不存在：给出原因与重试，而不是整页空白
+        error.value = (e as Error).message || '加载失败';
     } finally {
         loading.value = false;
     }
@@ -180,7 +187,15 @@ onMounted(load);
 
 <template>
     <div class="page" v-loading="loading">
-        <template v-if="detail">
+        <!-- 失败 / 不存在：错误条 + 重试 + 返回社区，而不是整页空白 -->
+        <template v-if="error || !detail">
+            <ErrorRetry v-if="error" :message="error" @retry="load" />
+            <div v-else class="card muted">帖子加载中…</div>
+            <div class="actions">
+                <el-button @click="router.push('/posts')">返回社区</el-button>
+            </div>
+        </template>
+        <template v-else>
             <article class="card post">
                 <h1>{{ detail.title }}</h1>
                 <!-- 作者区：把「谁写的、什么时候、有多少互动」聚在一起，

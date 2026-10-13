@@ -114,6 +114,13 @@ export interface AdminProject extends Project {
     content?: string | null;
     /** 置顶权重（后台内部字段，仅 admin 接口返回；`sort_order` 倒序） */
     sortOrder?: number | null;
+    /**
+     * 首页轮播排名（仅 admin 接口返回）：1-6 表示排官网首页第 N 位，null 表示不进首页
+     *
+     * 排名按**全局**口径计算（sortOrder 倒序 → 创建时间倒序 → id 倒序的前 6 条），
+     * 不受后台筛选影响——所以按标题筛选时看到的「首页 #N」仍然是全局名次
+     */
+    homeRank?: number | null;
     /** 审计时间：列表页用来展示「最近维护」 */
     createdAt?: string;
     updatedAt?: string;
@@ -298,6 +305,47 @@ export interface PostAudit {
 export interface PostAdminDetail extends PostAudit {
     /** 正文（Markdown，图片内嵌其中；⚠️ 成员提交的内容，按需做清洗处理） */
     content?: string | null;
+}
+
+/**
+ * 作者看自己「未公开」帖子的详情（后端 PostSelfDetailVO = PostVO + 正文）
+ *
+ * <p>改驳回稿的前置步骤：公开详情只返回已通过的帖子，驳回稿的正文只能从这里读。
+ * 仅本人 + 仅待审/已驳回，且<b>不累加浏览量</b>（自己预览不算一次访问）。
+ */
+export interface PostSelfDetail extends PostAudit {
+    content?: string | null;
+}
+
+/** 单日流量（每日趋势的一行） */
+export interface DailyTraffic {
+    /** 日期（yyyy-MM-dd） */
+    date: string;
+    pv: number;
+    /** 当日 UV（按 visitor_id 去重） */
+    uv: number;
+}
+
+/** 单个页面的流量（热门页面榜的一行） */
+export interface PageTraffic {
+    pagePath: string;
+    pv: number;
+    uv: number;
+}
+
+/**
+ * 流量总览（管理端「流量分析」页）
+ *
+ * <p><b>UV 口径</b>：按前端 localStorage 的随机 uuid 去重，
+ * 因此同一人换设备 / 清缓存 / 无痕浏览会算成多个 UV——页面需注明。
+ */
+export interface TrafficOverview {
+    totalPv: number;
+    totalUv: number;
+    todayPv: number;
+    todayUv: number;
+    daily: DailyTraffic[];
+    topPages: PageTraffic[];
 }
 
 /** 公开评论（后端 PostCommentVO，楼中楼） */

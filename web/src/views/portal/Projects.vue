@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue';
 import { portalApi } from '@/api/portal';
+import ErrorRetry from '@/components/ErrorRetry.vue';
 import type { PageResult, Project } from '@/api/types';
 
 /** 项目案例列表（C 端真分页，列表 VO 不含正文——正文只在详情页取） */
@@ -8,13 +9,18 @@ const filter = reactive({ title: '', status: '' as string });
 const page = reactive({ current: 1, pageSize: 6 });
 const result = ref<PageResult<Project> | null>(null);
 const loading = ref(false);
+/** 加载失败信息：非空时展示错误条 + 重试，而不是留一个空白列表让人猜 */
+const error = ref('');
 
 const STATUS_TEXT: Record<string, string> = { 0: '研发中', 1: '已上线', 2: '已结题' };
 
 async function load() {
     loading.value = true;
+    error.value = '';
     try {
         result.value = await portalApi.projectList({ ...filter, ...page });
+    } catch (e) {
+        error.value = (e as Error).message || '加载失败';
     } finally {
         loading.value = false;
     }
@@ -42,7 +48,7 @@ onMounted(load);
     <div class="page">
         <div class="page-head">
             <h1>项目案例</h1>
-            <p>我们做过的真实项目。</p>
+            <p>工作室的项目列表。</p>
         </div>
 
         <div class="card filters">
@@ -60,6 +66,8 @@ onMounted(load);
             </el-select>
             <el-button type="primary" @click="search">搜索</el-button>
         </div>
+
+        <ErrorRetry v-if="error" :message="error" @retry="load" />
 
         <div v-loading="loading">
             <el-empty v-if="result && result.records.length === 0" description="没有符合条件的项目" />

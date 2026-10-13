@@ -30,7 +30,6 @@ onMounted(load);
     <div class="page">
         <div class="page-head">
             <h1>荣誉墙</h1>
-            <p>工作室历年获奖、软著、专利与论文。</p>
         </div>
 
         <div v-loading="loading" class="card">

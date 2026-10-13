@@ -226,11 +226,35 @@ onMounted(load);
 
         <el-table v-loading="loading" :data="result?.records ?? []" border>
             <el-table-column prop="title" label="项目" min-width="180" />
+            <el-table-column label="封面" width="90">
+                <template #default="{ row }">
+                    <img v-if="row.coverImage" :src="row.coverImage" :alt="row.title" class="cover-thumb" />
+                    <span v-else class="muted">—</span>
+                </template>
+            </el-table-column>
             <el-table-column label="状态" width="100">
                 <template #default="{ row }">
                     <el-tag :type="row.status === 1 ? 'success' : 'info'">
                         {{ STATUS_TEXT[String(row.status)] || row.status }}
                     </el-tag>
+                </template>
+            </el-table-column>
+            <!--
+              权重与首页排名：这是「首页项目怎么放」的唯一抓手。
+              排名由后端按官网口径（权重倒序 → 创建时间倒序 → id 倒序）算出前 6 条，
+              列表默认顺序与之相同，所以这里看到的名次就是门户首页上的名次
+            -->
+            <el-table-column label="权重" width="80">
+                <template #default="{ row }">
+                    {{ row.sortOrder ?? 0 }}
+                </template>
+            </el-table-column>
+            <el-table-column label="首页" width="90">
+                <template #default="{ row }">
+                    <el-tag v-if="row.homeRank" size="small" type="warning" effect="plain">
+                        #{{ row.homeRank }}
+                    </el-tag>
+                    <span v-else class="muted">—</span>
                 </template>
             </el-table-column>
             <el-table-column prop="description" label="摘要" min-width="200" show-overflow-tooltip />
@@ -403,6 +427,14 @@ h2 {
 
 .member-select {
     flex: 1;
+}
+
+.cover-thumb {
+    width: 48px;
+    height: 34px;
+    border-radius: 4px;
+    object-fit: cover;
+    display: block;
 }
 
 .full {

@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { adminApi } from '@/api/admin';
+import ImageUploader from '@/components/ImageUploader.vue';
 import type { AdminUser, PageResult } from '@/api/types';
 
 /**
@@ -248,6 +249,49 @@ async function removeUser(row: AdminUser) {
     }
 }
 
+// ===== 编辑用户资料（昵称 + 头像）=====
+//
+// 后端 /user/update 是「部分更新」：传 null 的字段不改，空串会写入。
+// 所以本弹窗**预填现有值、提交什么就改什么**——只想改头像时昵称原样提交等于没改；
+// 两项都清空也允许（昵称为空时，列表与门户的作者名会兜底显示账号名）。
+const editVisible = ref(false);
+const editTarget = ref<AdminUser | null>(null);
+const editForm = reactive({
+    userName: '',
+    userAvatar: '',
+});
+
+function openEdit(row: AdminUser) {
+    editTarget.value = row;
+    Object.assign(editForm, {
+        userName: row.userName ?? '',
+        userAvatar: row.userAvatar ?? '',
+    });
+    editVisible.value = true;
+}
+
+async function submitEdit() {
+    const target = editTarget.value;
+    if (!target) {
+        return;
+    }
+    try {
+        await adminApi.userUpdate({
+            id: target.id,
+            userName: editForm.userName,
+            userAvatar: editForm.userAvatar,
+        });
+        ElMessage.success('资料已更新');
+        editVisible.value = false;
+        await load();
+    } catch (e) {
+        // 失败也刷新：与 changeRole / toggleStatus 一致，
+        // 让弹窗里的输入回到服务端的真实值，而不是停在「已保存」的假象
+        console.warn('更新用户资料失败', e);
+        await load();
+    }
+}
+
 onMounted(load);
 </script>
 
@@ -272,6 +316,14 @@ onMounted(load);
 
         <el-table v-loading="loading" :data="records" class="card table">
             <el-table-column prop="userAccount" label="账号" min-width="140" />
+            <el-table-column label="头像" width="80">
+                <template #default="{ row }">
+                    <img v-if="row.userAvatar" :src="row.userAvatar" :alt="row.userName" class="avatar" />
+                    <span v-else class="avatar fallback">
+                        {{ (row.userName || row.userAccount || '?').slice(0, 1) }}
+                    </span>
+                </template>
+            </el-table-column>
             <el-table-column prop="userName" label="昵称" min-width="120" />
             <el-table-column label="角色" min-width="160">
                 <template #default="{ row }">
@@ -293,8 +345,9 @@ onMounted(load);
             </el-table-column>
             <el-table-column prop="aiQueryCount" label="AI 次数" width="100" />
             <el-table-column prop="createdAt" label="注册时间" min-width="170" />
-            <el-table-column label="操作" width="220" fixed="right">
+            <el-table-column label="操作" width="270" fixed="right">
                 <template #default="{ row }">
+                    <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
                     <el-button
                         v-if="row.userRole === 'user'"
                         link
@@ -361,6 +414,28 @@ onMounted(load);
             </template>
         </el-dialog>
 
+        <el-dialog v-model="editVisible" title="编辑用户资料" width="440px">
+            <p class="muted">
+                为账号「{{ editTarget?.userAccount }}」修改昵称与头像。角色、状态与密码请用行内操作，不走这里。
+            </p>
+            <el-form label-position="top">
+                <el-form-item label="昵称">
+                    <el-input
+                        v-model="editForm.userName"
+                        maxlength="64"
+                        placeholder="留空则各处显示兜底为账号名"
+                    />
+                </el-form-item>
+                <el-form-item label="头像">
+                    <ImageUploader v-model="editForm.userAvatar" tip="仅支持 PNG / JPEG；移除即清空头像" />
+                </el-form-item>
+            </el-form>
+            <template #footer>
+                <el-button @click="editVisible = false">取消</el-button>
+                <el-button type="primary" @click="submitEdit">保存</el-button>
+            </template>
+        </el-dialog>
+
         <el-dialog v-model="pwdVisible" title="重置密码" width="380px">
             <p class="muted">为账号「{{ pwdTarget?.userAccount }}」设置新密码（8-20 位）</p>
             <el-input v-model="newPassword" placeholder="新密码" show-password />
@@ -407,6 +482,24 @@ onMounted(load);
 </template>
 
 <style scoped>
+.avatar {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+/* 没有头像时用昵称/账号首字兜底，避免表格里出现空列 */
+.avatar.fallback {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--brand);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 600;
+}
+
 .toolbar {
     display: flex;
     align-items: center;

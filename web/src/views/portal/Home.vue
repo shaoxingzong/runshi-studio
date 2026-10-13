@@ -110,7 +110,7 @@ onMounted(load);
     <div class="page">
         <section class="hero">
             <h1>润石工作室</h1>
-            <p>做真实的项目，拿真实的奖。这里有我们的作品与荣誉——也可以直接问 AI 助手。</p>
+            <p>这里陈列我们做过的项目与获得的荣誉，也可以直接向 AI 助手提问。</p>
             <div class="actions">
                 <router-link to="/projects" class="btn primary">看看项目</router-link>
                 <router-link to="/ai" class="btn ghost">问问 AI 助手</router-link>

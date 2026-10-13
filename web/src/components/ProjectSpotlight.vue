@@ -16,7 +16,8 @@ import type { Project } from '@/api/types';
  *     <li>没填 → 用「渐变底 + 项目名首字」占位，不依赖任何图片资源。</li>
  * </ol>
  *
- * <p><b>失败/空数据就整块不渲染</b>：留一个空轮播框比没有轮播更糟。
+ * <p><b>失败与空数据的区别</b>：失败（接口报错）显示一条错误提示 + 重试按钮——
+ * 与门户其它页面同一套错误态；确实没有项目时才整块不渲染（空轮播框比没有轮播更糟）。
  */
 const MAX_COUNT = 6;
 
@@ -39,17 +40,31 @@ const COVER_GRADIENTS = [
 
 const projects = ref<Project[]>([]);
 const failed = ref(false);
+/** 失败原因：展示给用户而不是静默消失（此前 failed 时整块无提示） */
+const failedReason = ref('');
 
-onMounted(async () => {
+/** 拉取项目；失败置标记 + 记原因，供模板展示错误条与重试 */
+async function loadProjects() {
     try {
         const page = await portalApi.projectList({ current: 1, pageSize: MAX_COUNT });
         // 后端已按 sort_order 倒序返回，这里直接取前 N 条即可（置顶的项目自然在最前）
         projects.value = page.records ?? [];
+        failed.value = false;
+        failedReason.value = '';
     } catch (e) {
         console.warn('项目轮播加载失败', e);
         failed.value = true;
+        failedReason.value = (e as Error).message || '项目加载失败';
     }
-});
+}
+
+/** 重试：先清掉旧数据再拉，避免「新的没回来、旧的还挂着」的中间态 */
+function retry() {
+    projects.value = [];
+    loadProjects();
+}
+
+onMounted(loadProjects);
 
 function gradientOf(index: number): string {
     return COVER_GRADIENTS[index % COVER_GRADIENTS.length];
@@ -66,8 +81,23 @@ function statusOf(status?: number | null) {
 </script>
 
 <template>
+    <!-- 失败时显示一条带重试的提示：此前是整块静默消失，
+         首页看起来像「没有项目」，与「项目接口坏了」完全无法区分 -->
+    <el-alert
+        v-if="failed"
+        type="error"
+        :closable="false"
+        show-icon
+        class="spotlight-failed"
+    >
+        <template #title>
+            <span class="failed-msg">{{ failedReason }}</span>
+            <el-button link type="primary" @click="retry">重试</el-button>
+        </template>
+    </el-alert>
+
     <el-carousel
-        v-if="!failed && projects.length"
+        v-else-if="projects.length"
         height="300px"
         :interval="5000"
         arrow="hover"
@@ -113,6 +143,22 @@ function statusOf(status?: number | null) {
 </template>
 
 <style scoped>
+.spotlight-failed {
+    margin-bottom: 16px;
+}
+
+.spotlight-failed :deep(.el-alert__title) {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.failed-msg {
+    flex: 1;
+    min-width: 0;
+    word-break: break-all;
+}
+
 .spotlight {
     border-radius: var(--radius);
     overflow: hidden;

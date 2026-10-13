@@ -8,6 +8,7 @@ import type {
     PostComment,
     PostCommentAudit,
     PostDetail,
+    PostSelfDetail,
 } from './types';
 
 /**
@@ -32,9 +33,31 @@ export const postApi = {
     /** 我的发帖：含待审 / 已驳回（带理由），仅作者本人可见 */
     my: (params: Record<string, unknown>) => http.get<PageResult<PostAudit>>('/post/my', params),
 
+    /**
+     * 读自己「未公开」帖子的正文（改驳回稿的前置步骤）
+     *
+     * <p>公开详情只返回已通过的帖子，驳回稿的正文只能从这里读；
+     * 与公开详情不同，本接口<b>不累加浏览量</b>（自己预览不该算一次访问）。
+     */
+    myDetail: (id: string) => http.get<PostSelfDetail>('/post/my/detail', { id }),
+
     /** 发帖（仅工作室成员） */
     add: (body: { title: string; content: string; summary?: string; coverImage?: string }) =>
         http.post<string>('/post/add', body),
+
+    /**
+     * 作者修改自己被驳回的帖子（改完重新送审）
+     *
+     * <p>仅<b>本人 + 已驳回</b>可调：其余情况后端按「帖子不存在」返回，
+     * 不暴露存在性。保存后帖子回到待审——前端必须提示「已重新提交审核」。
+     */
+    updateMine: (body: {
+        id: string;
+        title: string;
+        content: string;
+        summary?: string;
+        coverImage?: string;
+    }) => http.post<boolean>('/post/update-mine', body),
 
     /**
      * 点赞帖子（需登录）

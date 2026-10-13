@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { attendanceApi } from '@/api/attendance';
+import ErrorRetry from '@/components/ErrorRetry.vue';
 import { userApi } from '@/api/user';
 import { useUserStore } from '@/stores/user';
 import type { AttendanceBoardItem, AttendanceRecord } from '@/api/types';
@@ -25,6 +26,8 @@ const board = ref<AttendanceBoardItem[]>([]);
 const history = ref<AttendanceRecord[]>([]);
 /** 当前登录账号 ID：用于在看板里定位「我」这一行 */
 const userId = ref('');
+/** 加载失败：非空时展示错误条 + 重试 */
+const error = ref('');
 
 /** 看板里属于我的那一行 */
 const me = computed(() => board.value.find((item) => item.userId === userId.value));
@@ -33,6 +36,7 @@ const checkedToday = computed(() => !!me.value?.checkedIn);
 
 async function load() {
     loading.value = true;
+    error.value = '';
     try {
         // 三个请求互不依赖，并发拉取
         const [current, boardData, historyData] = await Promise.all([
@@ -43,6 +47,10 @@ async function load() {
         userId.value = current.id;
         board.value = boardData ?? [];
         history.value = historyData ?? [];
+    } catch (e) {
+        // 三个并发请求任一失败都会落到这里：给出原因与重试，
+        // 而不是 loading 一关、整个工作台空白
+        error.value = (e as Error).message || '加载失败';
     } finally {
         loading.value = false;
     }
@@ -91,6 +99,8 @@ onMounted(async () => {
                 <p>成员签到与出勤情况，仅工作室成员可见。</p>
             </div>
         </div>
+
+        <ErrorRetry v-if="error" :message="error" @retry="load" />
 
         <!-- 签到卡片：品牌蓝渐变，页面里唯一的重色块，用来强调「今天要做的那件事」 -->
         <section class="checkin-card">
