@@ -112,6 +112,14 @@ public class AiManager {
     /** 对外统一的失败文案：不复述底层细节（超时、限流、解析失败在用户眼里是同一件事） */
     private static final String AI_UNAVAILABLE_MESSAGE = "AI 服务暂时不可用，请稍后重试";
 
+    /**
+     * 熔断器
+     *
+     * <p>注入而非内部 new：熔断器是有状态的单例，必须与 {@link #invokeChat} 等调用点
+     * 共享同一份失败计数；同时也让测试能直接替换它。
+     */
+    private final AiCircuitBreaker circuitBreaker;
+
     private final AiProperties aiProperties;
 
     /**
@@ -314,11 +322,16 @@ public class AiManager {
      * @throws BusinessException 未配置、调用失败或回答为空时抛出（C0200）
      */
     private String invokeChat(List<ChatMessage> messages) {
-        // 未配置时直接失败：ApplicationContext 已经起来了，这里只影响这一次调用
+        // 未配置时直接失败：ApplicationContext 已经起来了，这里只影响这一次调用。
+        // 注意这是**配置问题而非服务故障**，因此不记录熔断失败——
+        // 否则本地没配 AI 也会被「熔断」，而那是启动时就已经知道的事
         if (chatModel == null) {
             log.warn("调用 AI 失败：studio.ai.base-url 或 api-key 未配置（本地不配置不影响其它接口）");
             throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, AI_UNAVAILABLE_MESSAGE);
         }
+
+        // 熔断中：毫秒级失败，不再发起外部请求（持续性故障下没必要反复打服务商）
+        rejectIfCircuitOpen();
 
         ChatRequest chatRequest = ChatRequest.builder()
                 .messages(messages)
@@ -331,12 +344,30 @@ public class AiManager {
         } catch (Exception e) {
             // 超时、连接失败、4xx/5xx、限流都在这里被收敛。不把 e 直接抛出：
             // 响应会变成 B0001，且异常信息里可能带着服务商返回的原始报文
+            circuitBreaker.recordFailure();
             log.error("调用 AI 服务失败 | baseUrl={} | model={}", aiProperties.getBaseUrl(),
                     aiProperties.getModel(), e);
             throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, AI_UNAVAILABLE_MESSAGE);
         }
 
+        circuitBreaker.recordSuccess();
         return extractAnswer(chatResponse);
+    }
+
+    /**
+     * 熔断中则立即失败（带剩余秒数的友好文案）
+     *
+     * <p>与 {@link #AI_UNAVAILABLE_MESSAGE} 分开：熔断是「我们知道它在恢复中」，
+     * 告诉用户还要等多久，比一句无法行动的空话更有用。
+     */
+    private void rejectIfCircuitOpen() {
+        if (circuitBreaker.allowRequest()) {
+            return;
+        }
+        long seconds = circuitBreaker.remainingSeconds();
+        log.warn("AI 服务熔断中，本次调用快速失败 | 剩余约 {} 秒", seconds);
+        throw new BusinessException(ErrorCode.AI_SERVICE_ERROR,
+                seconds > 0 ? "AI 服务恢复中，请约 " + seconds + " 秒后再试" : AI_UNAVAILABLE_MESSAGE);
     }
 
     /**
@@ -366,6 +397,9 @@ public class AiManager {
             log.warn("调用 AI 失败：studio.ai.base-url 或 api-key 未配置（本地不配置不影响其它接口）");
             throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, AI_UNAVAILABLE_MESSAGE);
         }
+
+        // 熔断中：与同步接口同一口径，毫秒级失败
+        rejectIfCircuitOpen();
 
         ChatRequest chatRequest = ChatRequest.builder()
                 .messages(buildMessages(history, userMessage))
@@ -401,6 +435,7 @@ public class AiManager {
             // 等待回调收尾。超时给模型 timeout 再加 5s 余量：真超时了也必须有结论，
             // 否则线程会一直挂在闩锁上（它比「多等 5s」危险得多）
             if (!latch.await(REQUEST_TIMEOUT.plusSeconds(5).toMillis(), TimeUnit.MILLISECONDS)) {
+                circuitBreaker.recordFailure();
                 log.error("等待 AI 流式响应超时 | baseUrl={} | model={}",
                         aiProperties.getBaseUrl(), aiProperties.getModel());
                 throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, AI_UNAVAILABLE_MESSAGE);
@@ -410,9 +445,11 @@ public class AiManager {
         } catch (InterruptedException e) {
             // 恢复中断标记：吞掉中断会让上层（例如应用关闭）失去感知
             Thread.currentThread().interrupt();
+            // 中断不算服务故障：不记录熔断失败（应用关闭时不该把熔断打开）
             log.error("AI 流式调用被中断", e);
             throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, AI_UNAVAILABLE_MESSAGE);
         } catch (Exception e) {
+            circuitBreaker.recordFailure();
             log.error("调用 AI 流式服务失败 | baseUrl={} | model={}", aiProperties.getBaseUrl(),
                     aiProperties.getModel(), e);
             throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, AI_UNAVAILABLE_MESSAGE);
@@ -420,10 +457,12 @@ public class AiManager {
 
         if (errorRef.get() != null) {
             // 流中途报错（连接断了、服务商限流）也走同一个出口
+            circuitBreaker.recordFailure();
             log.error("AI 流式响应出错 | baseUrl={} | model={}", aiProperties.getBaseUrl(),
                     aiProperties.getModel(), errorRef.get());
             throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, AI_UNAVAILABLE_MESSAGE);
         }
+        circuitBreaker.recordSuccess();
         return extractAnswer(responseRef.get());
     }
 
@@ -449,6 +488,10 @@ public class AiManager {
         }
         ThrowUtils.throwIf(texts == null || texts.isEmpty(), ErrorCode.PARAMS_ERROR, "待向量化的文本为空");
 
+        // 与对话共用同一个熔断器：向量化失败同样说明 AI 服务整体不可用
+        // （token 被冻结时对话与向量化会一起失败，只熔断一边没有意义）
+        rejectIfCircuitOpen();
+
         // LangChain4j 的 embedAll 收 TextSegment：这里先包一层，
         // 让上层只跟「字符串」打交道（切分块的文本本身就是字符串）
         List<TextSegment> segments = texts.stream().map(TextSegment::from).toList();
@@ -457,11 +500,13 @@ public class AiManager {
             List<Embedding> embeddings = response == null ? null : response.content();
             ThrowUtils.throwIf(embeddings == null || embeddings.size() != texts.size(),
                     ErrorCode.AI_SERVICE_ERROR, AI_UNAVAILABLE_MESSAGE);
+            circuitBreaker.recordSuccess();
             return embeddings;
         } catch (BusinessException e) {
             throw e;
         } catch (Exception e) {
             // 超时、限流、协议错误都收敛成同一句提示，不把服务商的原始报文带出去
+            circuitBreaker.recordFailure();
             log.error("调用 Embedding 服务失败 | baseUrl={} | model={} | 文本数={}",
                     aiProperties.getBaseUrl(), aiProperties.getEmbeddingModel(), texts.size(), e);
             throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, AI_UNAVAILABLE_MESSAGE);

@@ -79,6 +79,38 @@ public class AiProperties {
     private String systemPromptLocation = "classpath:prompts/system-prompt.txt";
 
     /**
+     * 熔断打开前允许的连续失败次数
+     *
+     * <p>单次失败可能是瞬时抖动（网络、服务商限流），连续 N 次才认定为持续性故障。
+     * 3 次是「不漏判故障」与「不把抖动当故障」的折中；服务商确实不稳定时可调大。
+     */
+    private int circuitBreakerFailureThreshold = 3;
+
+    /**
+     * 熔断持续时间（秒）
+     *
+     * <p>到期后放行一个请求试探（半开），成功即闭合。取 300 秒（5 分钟）：
+     * 短于故障自愈周期会反复打开，长于它则用户干等。
+     */
+    private long circuitBreakerOpenSeconds = 300L;
+
+    public int getCircuitBreakerFailureThreshold() {
+        return circuitBreakerFailureThreshold;
+    }
+
+    public void setCircuitBreakerFailureThreshold(int circuitBreakerFailureThreshold) {
+        this.circuitBreakerFailureThreshold = circuitBreakerFailureThreshold;
+    }
+
+    public long getCircuitBreakerOpenSeconds() {
+        return circuitBreakerOpenSeconds;
+    }
+
+    public void setCircuitBreakerOpenSeconds(long circuitBreakerOpenSeconds) {
+        this.circuitBreakerOpenSeconds = circuitBreakerOpenSeconds;
+    }
+
+    /**
      * 普通登录用户的提问次数上限（成员与管理员不限额、也不计数）
      *
      * <p>预检命中时返回 A0501。默认 5 次：AI 服务对游客关闭，

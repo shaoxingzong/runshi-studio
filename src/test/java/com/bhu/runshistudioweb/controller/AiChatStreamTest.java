@@ -1,6 +1,7 @@
 package com.bhu.runshistudioweb.controller;
 
 import com.bhu.runshistudioweb.constant.UserRoleConstant;
+import com.bhu.runshistudioweb.manager.AiCircuitBreaker;
 import com.bhu.runshistudioweb.manager.AiQueryCountManager;
 import com.bhu.runshistudioweb.mapper.SysUserMapper;
 import com.bhu.runshistudioweb.model.entity.SysUser;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -78,6 +80,20 @@ class AiChatStreamTest {
     /** 起配额计数走 Redis，测试里读「用量」必须取合并值（DB 基准 + Redis 增量） */
     @Resource
     private AiQueryCountManager aiQueryCountManager;
+
+    /**
+     * AI 熔断器：每个用例前重置。
+     *
+     * <p>本类有用例会让流式调用失败（连接断开、服务商 5xx），而熔断器是<b>进程内单例</b>，
+     * 不重置会把失败传染给同一 JVM 里后跑的测试类（2026-10-13 实测踩坑）。
+     */
+    @Resource
+    private AiCircuitBreaker circuitBreaker;
+
+    @BeforeEach
+    void resetCircuitBreaker() {
+        circuitBreaker.reset();
+    }
 
     // ==================== 本地 AI Stub（SSE 版） ====================
 

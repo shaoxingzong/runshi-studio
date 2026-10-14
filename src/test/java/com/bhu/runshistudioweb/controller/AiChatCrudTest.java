@@ -2,6 +2,7 @@ package com.bhu.runshistudioweb.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.bhu.runshistudioweb.constant.UserRoleConstant;
+import com.bhu.runshistudioweb.manager.AiCircuitBreaker;
 import com.bhu.runshistudioweb.manager.AiQueryCountManager;
 import com.bhu.runshistudioweb.mapper.StudioAiMessageMapper;
 import com.bhu.runshistudioweb.mapper.StudioAiSessionMapper;
@@ -15,6 +16,7 @@ import jakarta.annotation.Resource;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -96,6 +98,23 @@ class AiChatCrudTest {
     /** 起配额计数走 Redis，测试里读「用量」必须取合并值（DB 基准 + Redis 增量） */
     @Resource
     private AiQueryCountManager aiQueryCountManager;
+
+    /**
+     * AI 熔断器
+     *
+     * <p>本类有「故意让 AI 失败」的用例，连续失败会打开熔断；而熔断器是<b>进程内单例</b>，
+     * 不重置的话同一 JVM 里后跑的 AI 测试会被快速失败成一批 C0200（2026-10-13 实测踩坑）。
+     */
+    @Resource
+    private AiCircuitBreaker circuitBreaker;
+
+    /**
+     * 每个用例前重置熔断：让本类的失败用例只影响自己，不污染后续测试类
+     */
+    @BeforeEach
+    void resetCircuitBreaker() {
+        circuitBreaker.reset();
+    }
 
     // ==================== 本地 AI Stub ====================
 

@@ -1,6 +1,7 @@
 package com.bhu.runshistudioweb.controller;
 
 import com.bhu.runshistudioweb.constant.UserRoleConstant;
+import com.bhu.runshistudioweb.manager.AiCircuitBreaker;
 import com.bhu.runshistudioweb.manager.AiQueryCountManager;
 import com.bhu.runshistudioweb.mapper.SysUserMapper;
 import com.bhu.runshistudioweb.model.entity.SysUser;
@@ -87,6 +88,20 @@ class AiKnowledgeRetrievalTest {
     /** 起配额计数走 Redis，测试里读「用量」必须取合并值（DB 基准 + Redis 增量） */
     @Resource
     private AiQueryCountManager aiQueryCountManager;
+
+    /**
+     * AI 熔断器：每个用例前重置。
+     *
+     * <p>本类同时打 Embedding 与 Chat 两个端点，任一端失败都会累计进熔断器；
+     * 而它是<b>进程内单例</b>，不重置会把失败传染给后跑的测试类。
+     */
+    @Resource
+    private AiCircuitBreaker circuitBreaker;
+
+    @BeforeEach
+    void resetCircuitBreaker() {
+        circuitBreaker.reset();
+    }
 
     // ==================== 本地 Stub（Embedding + Chat 双端点） ====================
 

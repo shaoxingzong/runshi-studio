@@ -12,6 +12,7 @@ import com.bhu.runshistudioweb.constant.UserRoleConstant;
 import com.bhu.runshistudioweb.exception.BusinessException;
 import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.exception.ThrowUtils;
+import com.bhu.runshistudioweb.manager.AiCircuitBreaker;
 import com.bhu.runshistudioweb.manager.AiManager;
 import com.bhu.runshistudioweb.manager.AiQueryCountManager;
 import com.bhu.runshistudioweb.mapper.StudioAiMessageMapper;
@@ -147,6 +148,14 @@ public class AiChatServiceImpl implements AiChatService {
      * 不依赖本类，因此不构成循环。
      */
     private final KnowledgeDocService knowledgeDocService;
+
+    /**
+     * AI 熔断器
+     *
+     * <p>只用于「提前绕开注定失败的检索」这类<b>只读判断</b>（见 {@link #retrieveSafely}）；
+     * 真正的失败计数在 {@link AiManager} 内部完成——那里才是外部调用的发生地。
+     */
+    private final AiCircuitBreaker circuitBreaker;
 
     /** SSE 事件负载的 JSON 序列化：复用容器里被 JsonConfig 定制过的那个 JsonMapper */
     private final JsonMapper jsonMapper;
@@ -411,14 +420,22 @@ public class AiChatServiceImpl implements AiChatService {
      * 内存向量库还没重建，都不该让用户问不出话。<b>不新增错误码</b>，
      * 只在日志里留痕，用户侧表现为「这次回答没有溯源」。
      *
-     * <p>为什么抓 {@code Exception} 而不是具体异常：检索链路里有
-     * 「HTTP 超时 / 业务异常 / 解析失败 / 配置缺失」多种可能，
-     * 它们对提问链路的意义完全一致——都是「这次没有资料」。
+     * <p><b>熔断时直接跳过检索</b>：AI 整体不可用（token 被冻结等）时，
+     * embedding 调用必然同样失败，还要白等一次外部往返/超时。
+     * 此时返回空结果，把等待留给随后的模型调用——而它会被熔断挡在毫秒级。
+     *
+     * <p>这里用<b>只读</b>的 {@code isOpen()} 而不是 {@code allowRequest()}：
+     * 后者会消耗半开状态下唯一一次试探机会，而本方法无论检索成功失败
+     * 都不会回报结果，用了它熔断将永远无法自愈。
      *
      * @param question 用户提问
      * @return 检索结果；任何失败都返回空结果
      */
     private KnowledgeDocService.RetrievalResult retrieveSafely(String question) {
+        if (circuitBreaker.isOpen()) {
+            log.warn("AI 服务熔断中，跳过知识库检索（embedding 调用必然失败，不再白等外部往返）");
+            return KnowledgeDocService.RetrievalResult.empty();
+        }
         try {
             return knowledgeDocService.retrieve(question);
         } catch (Exception e) {

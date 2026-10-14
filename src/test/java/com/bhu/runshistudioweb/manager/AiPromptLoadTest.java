@@ -36,8 +36,10 @@ class AiPromptLoadTest {
     private AiManager managerWith(String location) {
         AiProperties properties = new AiProperties();
         properties.setSystemPromptLocation(location);
-        // 构造器注入后不再需要 setField：依赖在构造时一次性给全，顺序与字段声明一致
-        AiManager manager = new AiManager(properties, new DefaultResourceLoader());
+        // 构造器注入后不再需要 setField：依赖在构造时一次性给全，顺序与字段声明一致。
+        // circuitBreaker 传一个全新实例：本类只验证「提示词文件 → 字段」这条链，
+        // 熔断状态无关（且 initModels 在 base-url 为空时只加载提示词，不会走到调用点）
+        AiManager manager = new AiManager(new AiCircuitBreaker(properties), properties, new DefaultResourceLoader());
         manager.initModels();
         return manager;
     }

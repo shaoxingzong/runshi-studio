@@ -1,6 +1,7 @@
 package com.bhu.runshistudioweb.controller;
 
 import com.bhu.runshistudioweb.constant.UserRoleConstant;
+import com.bhu.runshistudioweb.manager.AiCircuitBreaker;
 import com.bhu.runshistudioweb.mapper.SysUserMapper;
 import com.bhu.runshistudioweb.model.entity.SysUser;
 import com.bhu.runshistudioweb.utils.PasswordUtils;
@@ -8,6 +9,7 @@ import com.sun.net.httpserver.HttpServer;
 import jakarta.annotation.Resource;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -55,6 +57,20 @@ class AiPromptFallbackTest {
 
     @Resource
     private SysUserMapper sysUserMapper;
+
+    /**
+     * AI 熔断器：每个用例前重置。
+     *
+     * <p>本类的 Stub 会返回 500 / 空响应来验证降级，这些失败会累计进熔断器；
+     * 而它是<b>进程内单例</b>，不重置会把失败传染给后跑的测试类。
+     */
+    @Resource
+    private AiCircuitBreaker circuitBreaker;
+
+    @BeforeEach
+    void resetCircuitBreaker() {
+        circuitBreaker.reset();
+    }
 
     private static HttpServer stub;
 
