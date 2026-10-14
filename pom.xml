@@ -216,6 +216,29 @@
                 <artifactId>spring-boot-maven-plugin</artifactId>
             </plugin>
             <!--
+                把 application-local.yml 挡在 jar 之外。
+
+                它是本机私有配置（真实 API Key + 数据库/Redis 口令），.gitignore 已保证它不进 Git，
+                但它位于 src/main/resources 下，默认会被 resources 插件拷进 target/classes 并**打进 jar**——
+                制品一旦被分发、上传制品库或打进 Docker 镜像，密钥随之外泄。
+
+                这里只排除 jar 归档、不动 target/classes：`spring-boot:run` 与 IDE 里跑 main 方法
+                仍能从 classpath 读到它，本地开发零影响；生产本来也不该有这份文件
+                （真实密钥由 application-prod.yml 的环境变量注入，见 DEPLOY.md）。
+
+                为什么不用 spring-boot-maven-plugin 的 <excludes>：那个元素排除的是**依赖**
+                （把某些 starter 从 fat jar 里摘掉），不是 classpath 资源，用它达不到目的。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <excludes>
+                        <exclude>application-local.yml</exclude>
+                    </excludes>
+                </configuration>
+            </plugin>
+            <!--
                 测试期把上传根目录指向 target 下，而不是真实上传目录（D:/runshi-studio-upload）。
 
                 为什么用系统属性而不是在每个测试类上写 @SpringBootTest(properties = "...")：

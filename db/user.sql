@@ -438,16 +438,51 @@ CREATE TABLE `studio_post_like` (
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '帖子点赞表';
 
 -- ============================================================================================================
--- 附：可选初始数据（只有一个管理员账号）
+-- 16. 门户页面访问记录表（流量统计埋点）
 -- ============================================================================================================
--- 为什么需要它：前台注册只能得到 user 角色，没有管理员就进不了后台。
--- 账号 shaoshing / 密码 123456（哈希与开发库一致，BCrypt）。
--- ⚠️ 生产环境请务必改密码（后台「用户管理 → 重置密码」），或整段删掉本附节。
--- ⚠️ 本脚本可重复执行（上方有 DROP），所以这里的 INSERT 不会因重复而报错。
+-- 为什么单独建表而不是用日志：流量要能「查」（PV/UV、每日趋势、热门页面），
+-- 日志只能「看」—— grep 不出来报表，也聚不了合。
+--
+-- 埋点方式：前端路由变化时调 POST /traffic/report（匿名可访问，游客也要统计），
+-- 后端从登录态取 user_id（未登录为 NULL），**不信前端传的用户身份**。
+--
+-- ⚠️ 隐私口径（刻意为之，改动前想清楚）：
+--   - 记 visitor_id（前端 localStorage 里的随机 uuid）而**不记 IP/UA**：
+--     UV 去重只需要一个稳定标识，IP 属于个人数据，多存一份多一分泄露面；
+--   - referrer 只存**域名**不存完整 URL——完整 URL 的 query 可能带 token；
+--   - page_path 同样**不含 query**（分页参数、搜索词都不记），
+--     既避免 token 泄露，也让「/posts 第 1 页」和「第 2 页」算同一个页面。
+--
+-- ⚠️ 本表只增不改不删：**没有 deleted_at**（访问记录没有「改」和「删」的场景，
+-- 加了只会让每个查询多带一个条件），也没有 updated_by。
+-- 代价是数据只涨——量级到百万行后应按 created_at 归档/分区（DDL 注释即约定，
+-- 本期不做自动清理，见 Service 的同类注释）。
+CREATE TABLE `studio_page_visit` (
+    `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
+    `page_path` varchar(256) NOT NULL COMMENT '页面路径（如 /posts、/projects/123；不含 query）',
+    `visitor_id` varchar(64) NOT NULL COMMENT '访客标识（前端 localStorage 随机 uuid；UV 去重依据，非设备指纹）',
+    `user_id` bigint DEFAULT NULL COMMENT '登录用户 ID（关联 sys_user.id；未登录为 NULL，由后端从登录态取）',
+    `referrer_host` varchar(256) DEFAULT NULL COMMENT '来源域名（外站跳转进来才有值；站内跳转不记）',
+    `device_type` varchar(16) DEFAULT NULL COMMENT '设备类型：pc / mobile（按 UA 粗分，仅作参考维度）',
+    `created_at` datetime NOT NULL COMMENT '访问时间',
+    `created_by` bigint NOT NULL DEFAULT '0' COMMENT '创建人 ID（匿名埋点填 0）',
+    PRIMARY KEY (`id`),
+    -- 每日趋势 / 时间段统计：按页 + 时间
+    KEY `idx_path_time` (`page_path`, `created_at`),
+    -- UV 去重（COUNT(DISTINCT visitor_id)）与「回头访客」分析
+    KEY `idx_visitor_time` (`visitor_id`, `created_at`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '门户页面访问记录表（流量统计）';
+
 -- ============================================================================================================
-INSERT INTO `sys_user`
-(`id`, `user_account`, `user_password`, `user_name`, `user_role`, `user_status`,
- `ai_query_count`, `created_at`, `updated_at`, `created_by`, `updated_by`, `deleted_at`)
-VALUES
-    (1910000000000000001, 'shaoshing', '$2a$10$UNF7ccXfN9s2rQ0kaYE59.7ceI0EIcpKz9tRXXFAVnaqckWAle3.S',
-     'shaoshing', 'admin', 0, 0, NOW(), NOW(), 0, 0, 0);
+-- 附：初始管理员（刻意不内置，防弱口令上线）
+-- ============================================================================================================
+-- 历史教训：本脚本曾内置管理员 shaoshing / 123456。脚本可重复执行且上线必跑，
+-- 等于「上线即留下一个已知口令的 admin」——弱口令是安全事故，不是配置问题，已整段删除。
+--
+-- 生产初始化管理员的正确做法（完整步骤见仓库根目录 DEPLOY.md）：
+--   ① 前台注册一个普通账号（/user/register）；
+--   ② 在库里把它提升为管理员：
+--        UPDATE sys_user SET user_role = 'admin' WHERE user_account = '你的账号' AND deleted_at = 0;
+--   ③ 立即改密（后台「用户管理 → 重置密码」），并使用强口令。
+-- ⚠️ 不要在 Git 仓库里提交任何带口令的 INSERT——哈希可复用不等于口令可公开。
+-- ============================================================================================================

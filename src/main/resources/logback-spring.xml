@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ============================================================================
+  日志配置（上线前补齐：此前只有 application-prod.yml 里一行 logging.file.name）
+  ============================================================================
+  为什么需要这个文件：单文件 app.log 无滚动、无上限、无分级。
+  日志是持续写入的，磁盘总有打满的一天——而后果不是「少几条日志」，
+  是**整个服务随磁盘写满而中断**，且这类故障在监控里表现为数据库/缓存先挂，极难归因。
+
+  设计（与 application-prod.yml 的 logging.file.name 保持单一数据源，不写死路径）：
+    - 控制台：dev 彩色、prod 纯色（容器化部署时 ANSI 转义会污染日志收集）
+    - 文件：按天 + 按大小双滚动（只按天的话，一天的量也能撑爆单文件）
+    - ERROR 单独归档：排障时不必在几十万行 INFO 里翻错误
+    - 保留策略：maxHistory 14 天 + totalSizeCap 1GB，双保险，先到先滚
+    - 异步队列（prod 文件 appender）：日志写盘不阻塞业务线程
+
+  注意：一旦提供本文件，Spring Boot 的日志自动配置整体让位给它，
+  但 application.yml 里的 logging.level.* 仍然生效（Boot 会把级别应用到上下文）。
+  ============================================================================
+-->
+<configuration>
+    <!-- 应用名与日志路径从 Spring 环境读取：路径的唯一事实来源仍是 application-prod.yml 的
+         logging.file.name，这里只是引用，避免两处配置漂移 -->
+    <springProperty scope="context" name="APP_NAME" source="spring.application.name" defaultValue="runshi-studio-web"/>
+    <springProperty scope="context" name="LOG_FILE" source="logging.file.name" defaultValue="./logs/app.log"/>
+
+    <!-- 控制台 pattern：Spring Boot 默认风格（带 PID 与线程名），排障时够用 -->
+    <property name="CONSOLE_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} %5p ${PID:-} --- [%t] %-40.40logger{39} : %m%n"/>
+    <!-- 文件 pattern 与 console 一致（logback-spring.xml 全权接管后不再有 Boot 的默认配色差异，
+         统一一种 pattern 能让「控制台看到的」和「文件里查到的」逐字对齐） -->
+    <property name="FILE_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} %5p ${PID:-} --- [%t] %-40.40logger{39} : %m%n"/>
+
+    <!-- ==================== 开发环境：只打控制台 ==================== -->
+    <!-- 本地开发写文件只会多一份要手动清理的副本；控制台更好读。
+         active: dev 是 application.yml 的默认 profile，这里用 name="dev" 精确匹配。 -->
+    <springProfile name="dev">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>${CONSOLE_PATTERN}</pattern>
+                <charset>UTF-8</charset>
+            </encoder>
+        </appender>
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+        </root>
+    </springProfile>
+
+    <!-- ==================== 生产环境：控制台 + 滚动文件 + ERROR 归档 ==================== -->
+    <springProfile name="prod">
+        <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+            <encoder>
+                <pattern>${FILE_PATTERN}</pattern>
+                <charset>UTF-8</charset>
+            </encoder>
+        </appender>
+
+        <!--
+          全量日志：按天 + 按大小双滚动。
+          %d{yyyy-MM-dd} 按天分文件；maxFileSize 100MB 是单文件上限——
+          两者是「或」的关系：任意一个先触发就滚动，防单日暴涨把磁盘写满。
+          maxHistory 14 天：超过 14 天的归档自动删。
+          totalSizeCap 1GB：所有归档的总容量上限，先到先删（防 maxHistory 内的小文件堆积）。
+        -->
+        <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${LOG_FILE}</file>
+            <encoder>
+                <pattern>${FILE_PATTERN}</pattern>
+                <charset>UTF-8</charset>
+            </encoder>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_FILE}.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+                <maxFileSize>100MB</maxFileSize>
+                <maxHistory>14</maxHistory>
+                <totalSizeCap>1GB</totalSizeCap>
+                <!-- 启动时清理过期归档：否则重启前的那段永远不会被清掉 -->
+                <cleanHistoryOnStart>true</cleanHistoryOnStart>
+            </rollingPolicy>
+        </appender>
+
+        <!--
+          ERROR 单独归档：用 LevelFilter 只放 ERROR 进这个文件。
+          为什么不用 ThresholdFilter：本 appender 要的是「只有 ERROR」，
+          ThresholdFilter 是「>= 阈值全收」（会把 WARN 也收进来）。
+          同样按天 + 大小滚动 + 14 天保留，与全量日志对齐。
+        -->
+        <appender name="ERROR_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+            <file>${LOG_FILE}.error</file>
+            <filter class="ch.qos.logback.classic.filter.LevelFilter">
+                <level>ERROR</level>
+                <onMatch>ACCEPT</onMatch>
+                <onMismatch>DENY</onMismatch>
+            </filter>
+            <encoder>
+                <pattern>${FILE_PATTERN}</pattern>
+                <charset>UTF-8</charset>
+            </encoder>
+            <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+                <fileNamePattern>${LOG_FILE}.error.%d{yyyy-MM-dd}.%i.log.gz</fileNamePattern>
+                <maxFileSize>100MB</maxFileSize>
+                <maxHistory>14</maxHistory>
+                <totalSizeCap>1GB</totalSizeCap>
+                <cleanHistoryOnStart>true</cleanHistoryOnStart>
+            </rollingPolicy>
+        </appender>
+
+        <!--
+          异步包装：写盘走有界队列，与业务线程解耦——磁盘卡顿不会拖慢请求线程。
+          两个参数用显式值而非默认 256，防日志暴涨时缓冲太浅：
+            queueSize 2048          队列深度，有界防内存无上限增长
+            discardingThreshold 20  队列剩余容量低于 20% 时开始丢弃 DEBUG/INFO/TRACE；
+                                    WARN/ERROR 永不丢（排障日志的底线）
+          neverBlock 保持默认 false：队列满时业务线程阻塞等待而非丢事件——
+          宁可慢一拍，不让日志凭空消失。
+        -->
+        <appender name="ASYNC_FILE" class="ch.qos.logback.classic.AsyncAppender">
+            <appender-ref ref="FILE"/>
+            <queueSize>2048</queueSize>
+            <discardingThreshold>20</discardingThreshold>
+        </appender>
+        <appender name="ASYNC_ERROR_FILE" class="ch.qos.logback.classic.AsyncAppender">
+            <appender-ref ref="ERROR_FILE"/>
+            <queueSize>2048</queueSize>
+            <discardingThreshold>20</discardingThreshold>
+        </appender>
+
+        <root level="INFO">
+            <appender-ref ref="CONSOLE"/>
+            <appender-ref ref="ASYNC_FILE"/>
+            <appender-ref ref="ASYNC_ERROR_FILE"/>
+        </root>
+    </springProfile>
+</configuration>
