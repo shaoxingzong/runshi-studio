@@ -92,6 +92,10 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
             // 注意**不放行** /post/comment/add（发评论要登录）——只登记读的路径，
             // 写路径仍走默认要求登录的规则
             "/post/comment/list",
+            // 流量埋点：匿名可访问（游客的访问也要统计，只统计登录用户等于只看到冰山一角）。
+            // ⚠️ 只登记这一条精确路径，禁止 /traffic/**——管理端的统计接口挂在
+            // /admin/traffic 下（另走 @SaCheckRole），通配符会把它们一起放行
+            "/traffic/report",
             // 上传后的图片访问路径：官网展示成员头像/证书图片时游客必须能看到。
             // 注意这是「读」的路径；「写」的路径 /file/upload 不在这里，仍然要求登录
             "/uploads/**",
