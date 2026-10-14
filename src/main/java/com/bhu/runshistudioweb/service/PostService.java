@@ -9,6 +9,7 @@ import com.bhu.runshistudioweb.model.dto.post.PostUpdateRequest;
 import com.bhu.runshistudioweb.model.entity.StudioPost;
 import com.bhu.runshistudioweb.model.vo.PostFrontDetailVO;
 import com.bhu.runshistudioweb.model.vo.PostFrontVO;
+import com.bhu.runshistudioweb.model.vo.PostSelfDetailVO;
 import com.bhu.runshistudioweb.model.vo.PostVO;
 import com.bhu.runshistudioweb.model.vo.PostAdminDetailVO;
 
@@ -204,6 +205,21 @@ public interface PostService extends IService<StudioPost> {
     void updatePost(PostUpdateRequest request);
 
     /**
+     * 作者修改<b>自己被驳回</b>的帖子（改完重新送审）
+     *
+     * <p>与 {@link #updatePost}（管理员代改任何帖子）共用同一套改稿实现，
+     * 差别只在准入：本方法额外要求「是作者本人」且「状态为已驳回」。
+     * 待审帖不许作者改（审核对象会不断变化），已通过帖更不许（公开内容
+     * 作者随手改等于给审核开后门）——这两种情况都按「帖子不存在」同码返回，
+     * 不暴露存在性。
+     *
+     * @param request 改稿请求（id、标题、正文必填；摘要与封面选填）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 未登录、帖子不存在、
+     *         非本人、非已驳回状态、正文过长、含外链图片时抛出
+     */
+    void updateMyRejectedPost(PostUpdateRequest request);
+
+    /**
      * 管理端帖子详情（含 Markdown 正文）
      *
      * <p><b>为什么不能复用公开详情 {@link #getApprovedDetail}</b>：
@@ -221,4 +237,20 @@ public interface PostService extends IService<StudioPost> {
      * @throws com.bhu.runshistudioweb.exception.BusinessException 帖子不存在时抛出（A0402）
      */
     PostAdminDetailVO getPostForAdmin(long id);
+
+    /**
+     * 作者读自己「未公开」帖子的详情（含正文），<b>不累加浏览量</b>
+     *
+     * <p><b>为什么不能复用公开详情</b>：{@link #getApprovedDetail} 只返回已通过的帖子，
+     * 而驳回稿的正文作者本来就读不到——他要改稿就必须先看到自己写了什么。
+     *
+     * <p><b>覆盖范围</b>：仅<b>本人</b> + <b>待审或已驳回</b>。已通过的走公开详情即可。
+     * 非本人、状态不符一律按「帖子不存在」返回，不暴露存在性。
+     *
+     * @param id 帖子 ID
+     * @return 详情（含正文）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 未登录、帖子不存在、
+     *         非本人、状态不是待审/已驳回时抛出
+     */
+    PostSelfDetailVO getMyPostDetail(long id);
 }

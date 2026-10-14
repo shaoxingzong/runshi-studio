@@ -29,6 +29,7 @@ import com.bhu.runshistudioweb.model.enums.AuditStatusEnum;
 import com.bhu.runshistudioweb.model.enums.MemberStatusEnum;
 import com.bhu.runshistudioweb.model.vo.PostFrontDetailVO;
 import com.bhu.runshistudioweb.model.vo.PostFrontVO;
+import com.bhu.runshistudioweb.model.vo.PostSelfDetailVO;
 import com.bhu.runshistudioweb.model.vo.PostVO;
 import com.bhu.runshistudioweb.model.vo.PostAdminDetailVO;
 import com.bhu.runshistudioweb.service.PostService;
@@ -595,6 +596,53 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         StudioPost post = this.getById(request.getId());
         ThrowUtils.throwIf(post == null, ErrorCode.NOT_FOUND_ERROR, "帖子不存在");
 
+        applyPostEdit(post, request);
+        log.info("管理员编辑帖子 | postId={} | operatorId={}", post.getId(), operatorId);
+    }
+
+    /**
+     * 作者修改自己被驳回的帖子（改完重新送审）
+     *
+     * <p><b>为什么作者只能改「已驳回」的</b>：待审帖正在队列里，让作者反复改会让
+     * 审核对象不断变化（管理员可能正看着旧版本）；已通过的帖子更不允许改——
+     * 那是公开内容，作者随手改等于给审核开后门（要改只能让管理员代改）。
+     *
+     * <p>改完与管理员代改走同一条链路：重置为待审、清掉上一轮审核痕迹、重新送 AI 初判。
+     */
+    @Override
+    public void updateMyRejectedPost(PostUpdateRequest request) {
+        ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR, "修改内容不能为空");
+        ThrowUtils.throwIf(!StpUtil.isLogin(), ErrorCode.NOT_LOGIN_ERROR, "请先登录");
+        long userId = StpUtil.getLoginIdAsLong();
+
+        StudioPost post = this.getById(request.getId());
+        ThrowUtils.throwIf(post == null, ErrorCode.NOT_FOUND_ERROR, "帖子不存在");
+
+        // ① 只能改自己的：同码同提示，不暴露「这篇帖子其实存在但不是你的」
+        ThrowUtils.throwIf(post.getAuthorId() == null || post.getAuthorId() != userId,
+                ErrorCode.NOT_FOUND_ERROR, "帖子不存在");
+        // ② 只能改已驳回的：其余状态一律按「不存在」处理（同口径，不暴露存在性）
+        ThrowUtils.throwIf(post.getStatus() == null
+                        || post.getStatus() != AuditStatusEnum.REJECTED.getValue(),
+                ErrorCode.NOT_FOUND_ERROR, "只能修改已驳回的帖子");
+
+        applyPostEdit(post, request);
+        log.info("作者修改被驳回帖子 | postId={} | authorId={}", post.getId(), userId);
+    }
+
+    /**
+     * 改稿的公共实现（管理员代改与作者自助改共用）
+     *
+     * <p><b>为什么抽出来</b>：两条入口的规则完全一致——校验正文、重置待审、
+     * 清审核痕迹、重新送审。复制一份意味着将来改规则要改两处，
+     * 而漏改任何一处都会造成「管理员改的会重新送审、作者改的不会」这类难查差异。
+     *
+     * <p>调用方负责自己的准入校验（管理员权限 / 作者本人 + 已驳回），本方法只管改稿本身。
+     *
+     * @param post    已取出的帖子实体（调用方保证非空且有权限）
+     * @param request 改稿请求（标题、正文必填；摘要与封面选填）
+     */
+    private void applyPostEdit(StudioPost post, PostUpdateRequest request) {
         // 校验与 addPost 完全同源：正文长度 + 图片必须是站内路径
         String content = StrUtil.trim(request.getContent());
         ThrowUtils.throwIf(content.length() > CONTENT_MAX_LENGTH, ErrorCode.PARAMS_ERROR,
@@ -632,7 +680,6 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         }
 
         ThrowUtils.throwIf(!this.update(wrapper), ErrorCode.OPERATION_ERROR, "保存失败，数据库异常");
-        log.info("管理员编辑帖子 | postId={} | operatorId={} | 重新送审={}", post.getId(), operatorId, backToPending);
 
         // 重新送 AI 初判：与 addPost 同一条链路（异步、不阻塞保存）。
         // 编辑待审帖时同样要重送——它可能已经带了一轮针对旧正文的结论（灰色/判定失败），
@@ -659,6 +706,35 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         PostAdminDetailVO vo = new PostAdminDetailVO();
         BeanUtils.copyProperties(post, vo);
         vo.setAuthorName(adminAuthorNames(List.of(post.getAuthorId())).get(post.getAuthorId()));
+        vo.setContent(post.getContent());
+        return vo;
+    }
+
+    /**
+     * 作者读自己未公开帖子的详情：仅本人 + 仅待审/已驳回，不累加浏览量
+     *
+     * <p>已通过的帖子走公开详情接口即可，这里刻意不覆盖——少一条能读到
+     * 公开内容的私有路径，就少一处需要维护的边界。
+     */
+    @Override
+    public PostSelfDetailVO getMyPostDetail(long id) {
+        ThrowUtils.throwIf(!StpUtil.isLogin(), ErrorCode.NOT_LOGIN_ERROR, "请先登录");
+        long userId = StpUtil.getLoginIdAsLong();
+        ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "帖子 id 不合法");
+
+        StudioPost post = this.getById(id);
+        ThrowUtils.throwIf(post == null, ErrorCode.NOT_FOUND_ERROR, "帖子不存在");
+        // 与 updateMyRejectedPost 同一条边界：非本人按「不存在」处理，不暴露存在性
+        ThrowUtils.throwIf(post.getAuthorId() == null || post.getAuthorId() != userId,
+                ErrorCode.NOT_FOUND_ERROR, "帖子不存在");
+        // 只覆盖待审与已驳回：已通过的走公开详情
+        ThrowUtils.throwIf(post.getStatus() == null
+                        || (post.getStatus() != AuditStatusEnum.PENDING.getValue()
+                        && post.getStatus() != AuditStatusEnum.REJECTED.getValue()),
+                ErrorCode.NOT_FOUND_ERROR, "帖子不存在");
+
+        PostSelfDetailVO vo = new PostSelfDetailVO();
+        BeanUtils.copyProperties(post, vo);
         vo.setContent(post.getContent());
         return vo;
     }

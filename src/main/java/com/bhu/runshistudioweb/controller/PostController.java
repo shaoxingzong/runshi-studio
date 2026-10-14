@@ -9,8 +9,10 @@ import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.exception.ThrowUtils;
 import com.bhu.runshistudioweb.model.dto.post.PostAddRequest;
 import com.bhu.runshistudioweb.model.dto.post.PostLikeRequest;
+import com.bhu.runshistudioweb.model.dto.post.PostUpdateRequest;
 import com.bhu.runshistudioweb.model.vo.PostFrontDetailVO;
 import com.bhu.runshistudioweb.model.vo.PostFrontVO;
+import com.bhu.runshistudioweb.model.vo.PostSelfDetailVO;
 import com.bhu.runshistudioweb.model.vo.PostVO;
 import com.bhu.runshistudioweb.service.PostService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -146,5 +148,41 @@ public class PostController {
             @RequestParam(value = "current", defaultValue = "1") long current,
             @RequestParam(value = "pageSize", defaultValue = "10") long pageSize) {
         return ResultUtils.success(postService.listMyByPage(current, pageSize));
+    }
+
+    /**
+     * 作者修改自己被驳回的帖子（改完重新送审）
+     *
+     * <p>与发帖一样只要求<b>登录</b>（不挂成员角色）：「是不是成员、是不是本人、
+     * 是不是已驳回」全由 Service 判定——作者只能改自己的、且只能改已驳回的，
+     * 其余情况按「帖子不存在」返回，不暴露存在性。
+     *
+     * <p>保存后帖子回到<b>待审</b>：内容变了就必须重新过审，这是「先审后发」的底线。
+     */
+    @PostMapping("/update-mine")
+    @SaCheckLogin
+    @Operation(summary = "【作者】修改被驳回的自己的帖子", description = "仅本人 + 仅已驳回；保存后重置为待审重新送审")
+    public BaseResponse<Boolean> updateMyRejectedPost(@RequestBody @Valid PostUpdateRequest request) {
+        // @Valid 只校验字段级约束，请求体整体为 null 时不会触发，兜一层防 NPE
+        ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
+        postService.updateMyRejectedPost(request);
+        return ResultUtils.success(true);
+    }
+
+    /**
+     * 作者读自己「未公开」帖子的详情（含正文，不累加浏览量）
+     *
+     * <p>改稿的前置步骤：驳回稿的正文作者本来读不到（公开详情只返回已通过），
+     * 要改就得先看到自己写了什么。仅本人 + 仅待审/已驳回。
+     *
+     * @param id 帖子 ID
+     * @return 详情（含正文）；非本人或状态不符按「不存在」返回
+     */
+    @GetMapping("/my/detail")
+    @SaCheckLogin
+    @Operation(summary = "【作者】我的未公开帖子详情", description = "仅本人 + 仅待审/已驳回；含正文，不累加浏览量")
+    public BaseResponse<PostSelfDetailVO> getMyDetail(@RequestParam("id") long id) {
+        ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "帖子 id 不合法");
+        return ResultUtils.success(postService.getMyPostDetail(id));
     }
 }
