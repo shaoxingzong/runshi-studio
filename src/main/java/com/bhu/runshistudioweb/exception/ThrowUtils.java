@@ -18,8 +18,6 @@ package com.bhu.runshistudioweb.exception;
  * ThrowUtils.throwIf(user == null, ErrorCode.NOT_FOUND_ERROR);
  * }</pre>
  *
- * <p><b>注意</b>：这是「断言式」写法，只适合表达「不满足前置条件就直接失败」。
- * 如果条件成立后还要做别的事情，请老老实实写 if 块，不要为了短而牺牲可读性。
  */
 public class ThrowUtils {
 

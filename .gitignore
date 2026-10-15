@@ -36,6 +36,13 @@ build/
 # 根目录下的 ai-code-helper-master 是参考项目源码副本，只做本地参考，不应被提交
 /ai-code-helper-master/
 
+# repro-docs 是「从零复现本项目」的任务书草稿，同理：只做本地参考，不应被提交。
+# 且它按阶段描述项目，内容会随代码漂移（如仍写 15 张表，实际已是 16 张）
+/repro-docs/
+
+### 历史备份：git bundle 全量备份，体积大且只用于本地灾难恢复 ###
+*.bundle
+
 ### 本地私有配置：含密钥/服务商地址，绝不提交 ###
 # application-dev.yml 用 spring.config.import 引入本地私有配置；文件不存在也能正常启动
 application-local.yml
