@@ -307,7 +307,7 @@ onMounted(() => {
             </div>
 
             <!-- 配额规则只在登录后展示：游客用不上这段信息（门禁已挡在前头） -->
-            <p class="muted quota">普通用户可免费提问 5 次，成员与管理员不限次数。</p>
+            <p class="muted quota">普通用户可免费提问 5 次。</p>
         </div>
     </div>
 </template>

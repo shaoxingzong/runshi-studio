@@ -87,7 +87,6 @@ onMounted(load);
                         <h3>{{ post.title }}</h3>
                         <p class="summary">{{ post.summary || '暂无摘要' }}</p>
                         <div class="meta">
-                            <span class="avatar">{{ (post.authorName || '成').slice(0, 1) }}</span>
                             <span class="author">{{ post.authorName || '工作室成员' }}</span>
                             <span class="date">{{ post.createdAt?.slice(0, 10) }}</span>
                             <span class="spacer" />
@@ -206,21 +205,6 @@ h3 {
     gap: 6px;
     font-size: 12px;
     color: #6b7280;
-}
-
-/* 姓名首字徽标：列表拿不到头像图源，用它让「人」出现在卡片上，
-   比只放一个名字更有社区感 */
-.avatar {
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #2563eb, #1d4ed8);
-    color: #fff;
-    font-size: 12px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
 }
 
 .author {

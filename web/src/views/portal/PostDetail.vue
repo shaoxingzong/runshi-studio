@@ -201,7 +201,6 @@ onMounted(load);
                 <!-- 作者区：把「谁写的、什么时候、有多少互动」聚在一起，
                      正文之前先给读者一个上下文 -->
                 <div class="meta">
-                    <span class="avatar">{{ (detail.authorName || '成').slice(0, 1) }}</span>
                     <div class="author-box">
                         <span class="author">{{ detail.authorName || '工作室成员' }}</span>
                         <span class="date">{{ detail.createdAt?.slice(0, 16) }}</span>
@@ -339,19 +338,6 @@ h1 {
 /* 点赞是轻量互动：small + round 与 meta 行文字高度协调，视觉权重低于标题正文 */
 .like-btn {
     margin-left: 2px;
-}
-
-.avatar {
-    width: 38px;
-    height: 38px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #2563eb, #1d4ed8);
-    color: #fff;
-    font-size: 16px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
 }
 
 .author-box {
