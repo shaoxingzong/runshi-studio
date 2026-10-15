@@ -95,6 +95,19 @@ public class ProjectVO implements Serializable {
     private Integer sortOrder;
 
     /**
+     * 首页轮播排名（<b>仅管理端列表返回</b>，1-6 表示排官网首页第 N 位；null 表示不进首页）
+     *
+     * <p>首页轮播取的是「官网口径前 6 条」，而官网口径是
+     * {@code sort_order DESC → created_at DESC → id DESC}。运营在后台要能一眼看出
+     * 「这条排第几、能不能进首页」——否则只能凭权重数字猜，而猜错的代价是
+     * 「后台改了权重，首页却没动静」这类难排查的困惑。
+     *
+     * <p>刻意<b>不</b>放进 {@code ProjectFrontVO}：排名是运营视角的信息，
+     * 对外暴露它等于告诉访客「我们是怎么排首页的」。
+     */
+    private Integer homeRank;
+
+    /**
      * 创建时间
      */
     private LocalDateTime createdAt;

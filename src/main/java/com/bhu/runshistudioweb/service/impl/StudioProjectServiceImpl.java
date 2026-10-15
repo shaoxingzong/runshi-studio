@@ -25,7 +25,9 @@ import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 项目案例服务实现
@@ -62,6 +64,15 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
 
     /** 置顶权重不传时的默认值（0 表示不置顶，与 DDL 默认值一致） */
     private static final int DEFAULT_SORT_ORDER = 0;
+
+    /**
+     * 首页轮播展示的项目数
+     *
+     * <p>⚠️ 必须与门户 {@code ProjectSpotlight.MAX_COUNT} 保持一致：
+     * 后台按它计算「首页 #N」，门户按它决定渲染几条，两边对不上时
+     * 后台显示的排名就是假的。
+     */
+    private static final long HOME_SPOTLIGHT_COUNT = 6L;
 
     /**
      * tech_stack 序列化后的长度上限，与 DDL 的 {@code varchar(256)} 对齐。
@@ -472,7 +483,40 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
     private Page<ProjectVO> toProjectVOPage(Page<StudioProject> entityPage) {
         Page<ProjectVO> voPage = new Page<>(entityPage.getCurrent(), entityPage.getSize(), entityPage.getTotal());
         voPage.setRecords(entityPage.getRecords().stream().map(this::getProjectVO).toList());
+        fillHomeRank(voPage.getRecords());
         return voPage;
+    }
+
+    /**
+     * 给管理端 VO 补「首页轮播排名」
+     *
+     * <p>首页轮播（{@code ProjectSpotlight}）取的是<b>官网口径</b>前 6 条，
+     * 而官网口径是 {@code sort_order DESC → created_at DESC → id DESC}——
+     * 与管理端列表的默认排序恰好一致，所以「列表顺序 = 首页顺序」，
+     * 运营翻列表时看到的名次就是首页上的名次。
+     *
+     * <p><b>排名按全局计算，不按当前筛选结果</b>：管理员按标题 / 状态筛选时，
+     * 本页只是全量的一个子集，用子集内的名次会严重误导
+     * （筛选结果里的「第 1 名」全局可能排第 20）。
+     *
+     * <p>⚠️ {@link #HOME_SPOTLIGHT_COUNT} 必须与门户 {@code ProjectSpotlight.MAX_COUNT}
+     * 保持一致：两边对不上时，后台显示的「首页 #N」会是假的。
+     */
+    private void fillHomeRank(List<ProjectVO> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        List<StudioProject> top = this.page(new Page<>(1, HOME_SPOTLIGHT_COUNT),
+                new LambdaQueryWrapper<StudioProject>()
+                        .orderByDesc(StudioProject::getSortOrder)
+                        .orderByDesc(StudioProject::getCreatedAt)
+                        .orderByDesc(StudioProject::getId)).getRecords();
+
+        Map<Long, Integer> rankOfId = new HashMap<>();
+        for (int i = 0; i < top.size(); i++) {
+            rankOfId.put(top.get(i).getId(), i + 1);
+        }
+        records.forEach(vo -> vo.setHomeRank(rankOfId.get(vo.getId())));
     }
 
     /**
