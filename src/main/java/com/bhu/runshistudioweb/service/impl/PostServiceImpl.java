@@ -34,6 +34,7 @@ import com.bhu.runshistudioweb.model.vo.PostVO;
 import com.bhu.runshistudioweb.model.vo.PostAdminDetailVO;
 import com.bhu.runshistudioweb.service.PostService;
 import com.bhu.runshistudioweb.service.StudioMemberService;
+import com.bhu.runshistudioweb.utils.MarkdownSanitizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
@@ -154,7 +155,11 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         ThrowUtils.throwIf(content.length() > CONTENT_MAX_LENGTH, ErrorCode.PARAMS_ERROR,
                 "正文过长，请控制在 " + CONTENT_MAX_LENGTH + " 字以内");
 
-        // ① 图片必须是站内路径：外链图会成为追踪像素（泄露访客 IP），也可能将来裂图
+        // ① XSS 兜底：入库前白名单清洗（详见 MarkdownSanitizer）。
+        //    放在最前面，让后续的图片校验、摘要/封面兜底、AI 送审看到的都是清洗后的内容
+        content = MarkdownSanitizer.sanitize(content);
+
+        // ② 图片必须是站内路径：外链图会成为追踪像素（泄露访客 IP），也可能将来裂图
         assertImagesAreInternal(content);
 
         StudioPost post = new StudioPost();
@@ -643,10 +648,11 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
      * @param request 改稿请求（标题、正文必填；摘要与封面选填）
      */
     private void applyPostEdit(StudioPost post, PostUpdateRequest request) {
-        // 校验与 addPost 完全同源：正文长度 + 图片必须是站内路径
+        // 校验与 addPost 完全同源：正文长度 + XSS 兜底清洗 + 图片必须是站内路径
         String content = StrUtil.trim(request.getContent());
         ThrowUtils.throwIf(content.length() > CONTENT_MAX_LENGTH, ErrorCode.PARAMS_ERROR,
                 "正文过长，请控制在 " + CONTENT_MAX_LENGTH + " 字以内");
+        content = MarkdownSanitizer.sanitize(content);
         assertImagesAreInternal(content);
 
         // 摘要与封面的兜底规则同 addPost：不填也能有列表展示效果

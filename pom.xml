@@ -202,6 +202,22 @@
             <artifactId>lombok</artifactId>
             <optional>true</optional>
         </dependency>
+        <!--
+            HTML 白名单清洗（Jsoup）：帖子 / 项目正文入库前的 XSS 兜底。
+
+            前端渲染链路是 marked → DOMPurify → v-html（门户已全覆盖），但后端此前
+            **零输出编码**——正文字段原样入库、原样下发，任何非本前端的消费方
+            （爬虫展示、第三方客户端、未来的小程序）直接渲染它就是存储型 XSS。
+            这里在写入入口补上兜底：Markdown 源不允许任何原始 HTML（空前缀白名单，
+            比前端渲染层白名单更严——两者对象不同：前端管 marked 生成的 HTML，
+            后端管入库前的 Markdown 源），链接目的地里的危险 scheme 一并中和。
+            实现见 utils/MarkdownSanitizer，行为由 MarkdownSanitizerTest 锁定。
+        -->
+        <dependency>
+            <groupId>org.jsoup</groupId>
+            <artifactId>jsoup</artifactId>
+            <version>1.18.3</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webmvc-test</artifactId>
@@ -258,6 +274,10 @@
                              一旦默认开启，跑到第 6 个用例就会集体 42900——那是假失败，会掩盖真实问题。
                              限流专项测试类用 @DynamicPropertySource 覆盖为 true（优先级高于系统属性）。 -->
                         <studio.ai.guest-ip-limits-enabled>false</studio.ai.guest-ip-limits-enabled>
+                        <!-- 同理关闭登录/注册 IP 限流：MockMvc 下所有请求同源，
+                             既有登录/注册用例密集，不关会跑到上限后集体 429。
+                             限流行为本身由 IpRateLimitManagerTest 纯单测覆盖，不依赖该开关。 -->
+                        <studio.auth.rate-limit.enabled>false</studio.auth.rate-limit.enabled>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

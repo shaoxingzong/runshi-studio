@@ -18,6 +18,7 @@ import com.bhu.runshistudioweb.model.vo.ProjectFrontVO;
 import com.bhu.runshistudioweb.model.vo.ProjectVO;
 import com.bhu.runshistudioweb.service.MemberProjectService;
 import com.bhu.runshistudioweb.service.StudioProjectService;
+import com.bhu.runshistudioweb.utils.MarkdownSanitizer;
 import org.springframework.beans.BeanUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -125,7 +126,10 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
         project.setTitle(projectAddRequest.getTitle().trim());
         project.setDescription(projectAddRequest.getDescription().trim());
         project.setCoverImage(projectAddRequest.getCoverImage());
-        project.setContent(projectAddRequest.getContent());
+        // XSS 兜底：正文入库前白名单清洗（与帖子同一策略，详见 MarkdownSanitizer）。
+        // 项目正文此前是裸 setContent、零校验——管理员录入的内容同样不该成为
+        // 非前端消费方的存储型 XSS 载体
+        project.setContent(MarkdownSanitizer.sanitize(projectAddRequest.getContent()));
         // 序列化 + 长度校验（超长抛 A0401）都在这里完成
         project.setTechStack(serializeTechStack(projectAddRequest.getTechStack()));
         project.setDemoUrl(projectAddRequest.getDemoUrl());
@@ -187,7 +191,8 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
         update.setDescription(projectUpdateRequest.getDescription() == null
                 ? null : projectUpdateRequest.getDescription().trim());
         update.setCoverImage(projectUpdateRequest.getCoverImage());
-        update.setContent(projectUpdateRequest.getContent());
+        // XSS 兜底：同 addProject。null 表示「不修改」，sanitize 对 null 原样返回
+        update.setContent(MarkdownSanitizer.sanitize(projectUpdateRequest.getContent()));
         // techStack 传了即整体替换快照；传空数组表示清空（序列化成 "[]"，
         // 不能用 null——updateById 会跳过 null 字段，等于「清不掉」）
         update.setTechStack(projectUpdateRequest.getTechStack() == null

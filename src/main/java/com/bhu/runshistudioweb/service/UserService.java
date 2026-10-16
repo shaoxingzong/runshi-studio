@@ -42,25 +42,44 @@ public interface UserService extends IService<SysUser> {
     /**
      * 用户注册
      *
+     * <p><b>为什么带 IP 三参</b>：注册接口是账号存在性探测器（「账号已存在」的提示差异是
+     * 功能需要，不能隐藏），防批量扫描只能靠 IP 级限流。限流判定需要客户端真实 IP，
+     * 而本层刻意不认识 HTTP（与 {@code AttendanceService} 同一纪律）——由 Controller
+     * 从请求里取出原始值传进来，内部再用 {@code ClientIpManager} 解析。
+     *
      * @param userAccount   用户账号（唯一，长度与字符集规则见 UserRegisterRequest）
      * @param userPassword  用户密码（明文，方法内部会用 BCrypt 加密后再入库）
      * @param checkPassword 校验密码，必须与 userPassword 完全一致
+     * @param remoteAddr    TCP 对端地址（Controller 从 {@code request.getRemoteAddr()} 取）
+     * @param xRealIp       {@code X-Real-IP} 头原始值，可为 null（Nginx 惯用配置）
+     * @param xForwardedFor {@code X-Forwarded-For} 头原始值，可为 null
      * @return 新注册用户 ID（雪花算法生成）
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数不合法、两次密码不一致、账号已存在或入库失败时抛出
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数不合法、两次密码不一致、账号已存在、
+     *         触发 IP 限流（A0501）或入库失败时抛出
      */
-    long userRegister(String userAccount, String userPassword, String checkPassword);
+    long userRegister(String userAccount, String userPassword, String checkPassword,
+                      String remoteAddr, String xRealIp, String xForwardedFor);
 
     /**
      * 用户登录
      *
      * <p>成功后由 Sa-Token 建立会话（存放于 Redis），并返回带 token 的用户信息。
      *
+     * <p><b>为什么带 IP 三参</b>：登录接口此前无验证码、无失败锁定、无频率限制，
+     * 等于把「账号口令空间」开放给无限次尝试（爆破）。入参原因同 {@link #userRegister}：
+     * 限流需要客户端真实 IP，但本层不认识 HTTP，原始值由 Controller 传入。
+     *
      * @param userAccount  用户账号
      * @param userPassword 用户密码（明文，内部用 BCrypt 与库中哈希串比对）
+     * @param remoteAddr   TCP 对端地址（Controller 从 {@code request.getRemoteAddr()} 取）
+     * @param xRealIp      {@code X-Real-IP} 头原始值，可为 null（Nginx 惯用配置）
+     * @param xForwardedFor {@code X-Forwarded-For} 头原始值，可为 null
      * @return 脱敏后的登录用户信息（含 Token）
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 账号或密码错误、账号被封禁时抛出
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 账号或密码错误、账号被封禁、
+     *         触发 IP 限流（A0501）时抛出
      */
-    LoginUserVO userLogin(String userAccount, String userPassword);
+    LoginUserVO userLogin(String userAccount, String userPassword,
+                          String remoteAddr, String xRealIp, String xForwardedFor);
 
     /**
      * 获取当前登录用户

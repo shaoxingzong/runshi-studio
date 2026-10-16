@@ -108,12 +108,16 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
             // 因此这里只保留真正需要匿名访问的静态资源：上传的图片 /uploads/**。
 
             // ===== 接口文档（Knife4j / OpenAPI）=====
-            // 注意：生产环境更稳妥的做法是直接关闭文档（knife4j.enable=false），
-            // 而不是长期把这些路径挂在白名单上
-            "/doc.html",        // Knife4j 文档页
-            "/webjars/**",      // 文档页依赖的静态资源
-            "/v3/api-docs/**",  // OpenAPI JSON
-            "/swagger-ui/**",   // 备用 swagger-ui 路径
+            // 这里**刻意一条都不登记**。曾经挂着 /doc.html、/webjars/**、/v3/api-docs/**、
+            // /swagger-ui/** 四条，等于把接口文档的匿名访问权做成了「常驻配置」——
+            // 而真正的开关明明是 knife4j.enable / springdoc.api-docs.enabled
+            // （默认 false，生产同样不打开）。两处控制同一件事，改一处漏一处就是事故：
+            // 哪天为了排查把 knife4j 打开，白名单还在，文档裸奔没有任何提示。
+            // 现在的分工：**配置关文档（安全边界），白名单不留文档路径（少一个失控面）**。
+            // 本地开发要看文档时，临时切 dev profile（knife4j.enable=true 只写在
+            // application-dev.yml，生产 profile 结构上就开不了）——注意即便如此，
+            // 文档页仍需登录（未登录访问 /doc.html 会得到 A0201，这是可接受的：
+            // 看文档的人本来就有账号）。
             "/favicon.ico",
 
             // ===== 框架内部路径 =====

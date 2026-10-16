@@ -102,6 +102,26 @@ studio:
     guest-ip-daily-limit: 50
     guest-ip-limits-enabled: ${AI_GUEST_IP_LIMITS_ENABLED:true}
 
+  # ===== 登录 / 注册防爆破限流 =====
+  # 登录接口此前的状况：无验证码、无失败锁定、无任何频率限制——
+  # 等于把「账号口令空间」开放给无限次尝试；注册接口还是账号存在性探测器。
+  # 这里按 IP 兜底（与游客提问限流同一套 Lua 双窗口实现，见 manager/IpRateLimitManager）。
+  # ⚠️ 它挡不住分布式慢速爆破（海量 IP 各试几次）——那个需要验证码 / 失败锁定，
+  #    属于后续增强；当前先堵「单 IP 高频尝试」这个最常见形态。
+  auth:
+    rate-limit:
+      # 总开关：测试环境由 surefire 置 false（MockMvc 下来源 IP 都是 127.0.0.1，
+      # 不关的话既有登录/注册用例跑几个就集体 429，那是假失败）
+      enabled: ${AUTH_RATE_LIMIT_ENABLED:true}
+      # 登录：正常用户忘密码重试几次远达不到 10 次/分钟；爆破脚本则是每秒级尝试。
+      # NAT 出口共享 IP 的场景（工作室多人同一出口）也远低于此限，不会误伤
+      login-minute-limit: 10
+      login-daily-limit: 100
+      # 注册：比登录更严——注册是一次性行为，正常用户不会分钟级连续注册；
+      # 且注册接口是账号存在性探测器，限流是防批量扫描的主要手段
+      register-minute-limit: 5
+      register-daily-limit: 20
+
   # ===== 考勤签到 =====
   attendance:
     # 工作室局域网网段：命中任一即判为「内网签到」。

@@ -19,6 +19,7 @@ import com.bhu.runshistudioweb.model.vo.UserVO;
 import com.bhu.runshistudioweb.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -71,25 +72,38 @@ public class UserController {
      */
     private final UserService userService;
 
+    /** Nginx 惯用配置 {@code proxy_set_header X-Real-IP $remote_addr;} 对应的头名 */
+    private static final String HEADER_X_REAL_IP = "X-Real-IP";
+
+    /** 逐跳追加的代理链，形如 {@code 客户端, 代理1, 代理2} */
+    private static final String HEADER_X_FORWARDED_FOR = "X-Forwarded-For";
+
     // ==================== C 端：用户自己 ====================
 
     /**
      * 用户注册
      *
      * @param userRegisterRequest 注册请求体（账号、密码、确认密码）
+     * @param request             当前请求（只用于取 IP 三参，供 Service 层做防批量注册限流）
      * @return 新注册用户的 ID（雪花算法生成的 Long，序列化时已是字符串，前端不会精度丢失）
      */
     @PostMapping("/register")
-    @Operation(summary = "用户注册", description = "校验账号唯一性与密码格式后创建账号，新账号默认为普通用户角色")
-    public BaseResponse<Long> userRegister(@RequestBody @Valid UserRegisterRequest userRegisterRequest) {
+    @Operation(summary = "用户注册", description = "校验账号唯一性与密码格式后创建账号，新账号默认为普通用户角色；按 IP 限流防批量注册")
+    public BaseResponse<Long> userRegister(@RequestBody @Valid UserRegisterRequest userRegisterRequest,
+                                           HttpServletRequest request) {
         // @Valid 只保证「字段级约束」被校验，请求体整体为 null 时不会触发，
         // 因此这里兜一层，避免下面直接 getXxx() 抛 NPE 变成 500 系统错误
         ThrowUtils.throwIf(userRegisterRequest == null, ErrorCode.PARAMS_ERROR);
 
+        // IP 三参必须在当前请求线程内取好：它们是 ThreadLocal / socket 层的东西，
+        // 与 AttendanceController 同一处理（限流判定用，Service 层不认识 HTTP）
         long id = userService.userRegister(
                 userRegisterRequest.getUserAccount(),
                 userRegisterRequest.getUserPassword(),
-                userRegisterRequest.getCheckPassword());
+                userRegisterRequest.getCheckPassword(),
+                request.getRemoteAddr(),
+                request.getHeader(HEADER_X_REAL_IP),
+                request.getHeader(HEADER_X_FORWARDED_FOR));
         return ResultUtils.success(id);
     }
 
@@ -97,16 +111,21 @@ public class UserController {
      * 用户登录
      *
      * @param userLoginRequest 登录请求体（账号、密码）
+     * @param request          当前请求（只用于取 IP 三参，供 Service 层做防爆破限流）
      * @return 脱敏后的登录用户信息，其中 token 需要前端保存（请求头 satoken: xxx）
      */
     @PostMapping("/login")
-    @Operation(summary = "用户登录", description = "校验密码并下发 token（含 Cookie，见 sa-token 配置）")
-    public BaseResponse<LoginUserVO> userLogin(@RequestBody @Valid UserLoginRequest userLoginRequest) {
+    @Operation(summary = "用户登录", description = "校验密码并下发 token（含 Cookie，见 sa-token 配置）；按 IP 限流防爆破")
+    public BaseResponse<LoginUserVO> userLogin(@RequestBody @Valid UserLoginRequest userLoginRequest,
+                                               HttpServletRequest request) {
         ThrowUtils.throwIf(userLoginRequest == null, ErrorCode.PARAMS_ERROR);
 
         LoginUserVO loginUserVO = userService.userLogin(
                 userLoginRequest.getUserAccount(),
-                userLoginRequest.getUserPassword());
+                userLoginRequest.getUserPassword(),
+                request.getRemoteAddr(),
+                request.getHeader(HEADER_X_REAL_IP),
+                request.getHeader(HEADER_X_FORWARDED_FOR));
         return ResultUtils.success(loginUserVO);
     }
 

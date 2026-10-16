@@ -8,7 +8,11 @@ import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.bhu.runshistudioweb.exception.BusinessException;
 import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.exception.ThrowUtils;
+import com.bhu.runshistudioweb.constant.AuthRateLimitConstant;
+import com.bhu.runshistudioweb.config.AuthRateLimitProperties;
 import com.bhu.runshistudioweb.manager.AiQueryCountManager;
+import com.bhu.runshistudioweb.manager.ClientIpManager;
+import com.bhu.runshistudioweb.manager.IpRateLimitManager;
 import com.bhu.runshistudioweb.mapper.SysUserMapper;
 import com.bhu.runshistudioweb.model.dto.user.UserAddRequest;
 import com.bhu.runshistudioweb.model.dto.user.UserQueryRequest;
@@ -80,14 +84,36 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
      */
     private final AiQueryCountManager aiQueryCountManager;
 
+    /**
+     * 客户端 IP 解析（与考勤模块共用同一个 Manager）
+     *
+     * <p>登录 / 注册限流按 IP 计数，必须先拿到「真实客户端 IP」：
+     * 直接取 TCP 对端在 Nginx 部署下拿到的是代理地址（全员同一 IP，限流形同虚设），
+     * 因此复用考勤已验证的 {@code resolveClientIp}——只有对端是可信代理时才采信
+     * {@code X-Real-IP} / {@code X-Forwarded-For}，防伪造头绕过限流。
+     */
+    private final ClientIpManager clientIpManager;
+
+    /** IP 级双窗口限流（登录 / 注册共用，与游客提问限流同一套实现） */
+    private final IpRateLimitManager ipRateLimitManager;
+
+    /** 登录 / 注册限流的阈值与总开关 */
+    private final AuthRateLimitProperties authRateLimitProperties;
+
     // ==================== C 端：用户自己 ====================
 
     @Override
-    public long userRegister(String userAccount, String userPassword, String checkPassword) {
+    public long userRegister(String userAccount, String userPassword, String checkPassword,
+                             String remoteAddr, String xRealIp, String xForwardedFor) {
         // 空值兜底：Controller 的 @Valid 已经拦了一道，这里再拦一次是因为
         // Service 也可能被其他入口（管理端、定时任务、测试）直接调用，不能只依赖 Web 层校验
         ThrowUtils.throwIf(StrUtil.isBlank(userAccount) || StrUtil.isBlank(userPassword),
                 ErrorCode.PARAMS_ERROR, "用户账号或密码为空");
+
+        // 防批量注册：IP 级限流放在所有校验与查库之前——被拒的请求不产生任何后续开销
+        // （注册接口是账号存在性探测器，限流是防批量扫描的主要手段）
+        assertRegisterRateAllowed(remoteAddr, xRealIp, xForwardedFor);
+
         ThrowUtils.throwIf(!userPassword.equals(checkPassword), ErrorCode.PARAMS_ERROR, "两次输入的密码不一致");
 
         // 长度规则与 DTO 上的 @Size 保持同一套（常量定义在类顶部）：
@@ -159,8 +185,13 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
      * @return 脱敏用户信息（含 token）
      */
     @Override
-    public LoginUserVO userLogin(String userAccount, String userPassword) {
+    public LoginUserVO userLogin(String userAccount, String userPassword,
+                                 String remoteAddr, String xRealIp, String xForwardedFor) {
         ThrowUtils.throwIf(userAccount == null || userPassword == null, ErrorCode.PARAMS_ERROR, "用户账号或密码为空");
+
+        // 防爆破：IP 级限流放在查库与密码比对之前——每一次尝试（含失败的）都计数，
+        // 被拒的请求不产生任何数据库开销
+        assertLoginRateAllowed(remoteAddr, xRealIp, xForwardedFor);
 
         LambdaQueryWrapper<SysUser> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(SysUser::getUserAccount, userAccount);
@@ -449,10 +480,39 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         // 注意：这里必须明确告知「账号已存在」，不能像登录那样统一成「账号或密码错误」——
         // 注册的对手是普通用户（需要明确反馈才能完成注册），登录的对手是攻击者（提示差异是他唯一的探测手段）。
         // 注册接口本身就是账号存在性探测器，这是它的功能；防的是「被批量扫描」，
-        // 靠限流 + 验证码，而不是靠隐藏提示。
-        // 注：注册限流目前尚未接入；将来要加可直接复用 AiRateLimitManager 的 Lua 双窗口模式
-        // （游客提问限流已是该实现），不必另起一套
+        // 靠 IP 级限流（见 assertRegisterRateAllowed），而不是靠隐藏提示。
         ThrowUtils.throwIf(count > 0, ErrorCode.PARAMS_ERROR, "账号已存在");
+    }
+
+    /**
+     * 注册限流：按 IP 双窗口计数，超限抛 A0501
+     *
+     * <p>开关关闭（测试环境由 surefire 统一置 false）时直接放行。
+     */
+    private void assertRegisterRateAllowed(String remoteAddr, String xRealIp, String xForwardedFor) {
+        if (Boolean.FALSE.equals(authRateLimitProperties.getEnabled())) {
+            return;
+        }
+        String ip = clientIpManager.resolveClientIp(remoteAddr, xRealIp, xForwardedFor);
+        ipRateLimitManager.assertAllowed(ip, AuthRateLimitConstant.REGISTER_KEY_PREFIX,
+                authRateLimitProperties.getRegisterMinuteLimit(),
+                authRateLimitProperties.getRegisterDailyLimit(), "注册");
+    }
+
+    /**
+     * 登录限流：按 IP 双窗口计数，超限抛 A0501
+     *
+     * <p>与注册限流的差别只是阈值与键前缀（被登录限流不该连带堵死注册，反之亦然）。
+     * 开关关闭（测试环境）时直接放行。
+     */
+    private void assertLoginRateAllowed(String remoteAddr, String xRealIp, String xForwardedFor) {
+        if (Boolean.FALSE.equals(authRateLimitProperties.getEnabled())) {
+            return;
+        }
+        String ip = clientIpManager.resolveClientIp(remoteAddr, xRealIp, xForwardedFor);
+        ipRateLimitManager.assertAllowed(ip, AuthRateLimitConstant.LOGIN_KEY_PREFIX,
+                authRateLimitProperties.getLoginMinuteLimit(),
+                authRateLimitProperties.getLoginDailyLimit(), "登录");
     }
 
     /**
