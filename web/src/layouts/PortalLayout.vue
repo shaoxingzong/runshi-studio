@@ -80,7 +80,7 @@ function isActive(path: string): boolean {
             <div class="inner">
                 <router-link to="/" class="logo">
                     <img src="/logo.png" alt="润石工作室" class="logo-img" />
-                    润石工作室
+                    <span class="logo-text">润石工作室</span>
                 </router-link>
                 <nav class="nav">
                     <router-link
@@ -212,5 +212,66 @@ main {
     background: var(--surface);
     padding: 18px 0;
     font-size: 13px;
+}
+
+/* ===== 小屏适配（手机）=====
+   头部的天然矛盾：左侧 logo + 中间 6 个导航 + 右侧登录/后台入口，
+   横排总宽约 830px，窄于这个宽度就会互相挤压、换行后把 header 撑高。
+   策略不是「藏起来」而是「重新分配」：
+     1) 导航区横向滚动（保留全部入口，滑一下就能看到）；
+     2) 账号名让位（退出按钮保留，功能不丢）；
+     3) 超窄屏再收起 logo 文字（图标足以标识站点）。 */
+@media (max-width: 860px) {
+    .inner {
+        gap: 0;
+        padding: 0 14px;
+    }
+
+    .logo {
+        margin-right: 10px;
+        font-size: 16px;
+        flex-shrink: 0;
+    }
+
+    .logo-img {
+        width: 28px;
+        height: 28px;
+    }
+
+    /* 导航吃掉剩余空间并横向滚动；滚动条隐藏（触摸屏本来就是滑动操作） */
+    .nav {
+        flex: 1;
+        min-width: 0;
+        overflow-x: auto;
+        scrollbar-width: none;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .nav::-webkit-scrollbar {
+        display: none;
+    }
+
+    /* 导航项不参与压缩：压缩会让文字换行，反而更难看 */
+    .nav-item {
+        flex-shrink: 0;
+        padding: 8px 10px;
+        font-size: 14px;
+        white-space: nowrap;
+    }
+
+    /* 账号名是纯展示，空间紧张时第一个让位 */
+    .who {
+        display: none;
+    }
+}
+
+@media (max-width: 560px) {
+    .logo-text {
+        display: none;
+    }
+
+    .site-footer .inner {
+        padding: 0 14px;
+    }
 }
 </style>
