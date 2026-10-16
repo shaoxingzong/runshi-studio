@@ -1,0 +1,196 @@
+# 部署指南
+
+> 阅读顺序：① 前置要求 → ② 构建 → ③ 环境变量 → ④ 初始化管理员 → ⑤ Nginx → ⑥ **上线检查清单**（第 6 节是上线前最后一道关，逐条过）。
+
+---
+
+## 1. 前置要求
+
+| 组件 | 要求 | 说明 |
+|---|---|---|
+| JDK | 21 | 后端构建与运行 |
+| MySQL | 8.0+ | 库名 `studio_db`，字符集 utf8mb4 |
+| Redis | **6.2+** | Sa-Token 用 `KEEPTTL`（6.0+）、AI 配额回刷用 `GETDEL`（6.2+）；低于 6.0 登录接口直接 500 |
+| Nginx | 任意稳定版 | 反向代理 + 静态资源 + HTTPS 终止（配置样例见 `deploy/nginx.conf`） |
+| Node.js | 20+ | 仅构建前端需要 |
+
+---
+
+## 2. 构建
+
+### 2.1 后端
+
+```bash
+.\mvnw.cmd clean package -DskipTests
+```
+
+产物在 `target/runshi-studio-web-0.0.1-SNAPSHOT.jar`。
+
+> **密钥不会进 jar**：`pom.xml` 里 maven-jar-plugin 排除了 `application-local.yml`，
+> 本机调试用的 AI Key 与数据库口令不会随制品分发。生产密钥一律走第 3 节的环境变量。
+
+### 2.2 前端
+
+```bash
+cd web
+npm install
+npm run build        # 产物在 web/dist/，交由 Nginx 托管
+```
+
+> `npm run build` 自带 `vue-tsc --noEmit` 类型检查，类型不过会直接构建失败——这是前端的质量门禁，别跳过。
+
+### 2.3 建库
+
+在**全新的空库**上执行一次：
+
+```bash
+mysql -uroot -p < db/user.sql
+```
+
+> ⚠️ 脚本是「先 DROP 再 CREATE」，会清空数据；已在使用中的库不要整跑，
+> 按脚本注释的约定「改结构只改本文件，再手工执行对应 ALTER」。
+
+---
+
+## 3. 环境变量清单
+
+按 `application-prod.yml` 的约定分两组：**密钥类不给默认值**（缺了启动就失败，比运行时才报错好排查），路径类有默认值。
+
+### 3.1 必填（缺失则启动失败）
+
+| 变量 | 说明 |
+|---|---|
+| `MYSQL_PASSWORD` | MySQL 口令 |
+| `REDIS_PASSWORD` | Redis 口令 |
+| `AI_BASE_URL` | AI 服务商地址（OpenAI 兼容，如 `https://dashscope.aliyuncs.com/compatible-mode/v1`） |
+| `AI_API_KEY` | AI 服务商密钥 |
+| `AI_MODEL` | 对话模型完整标识（如 `deepseek-v4-flash`） |
+| `AI_EMBEDDING_MODEL` | 向量模型标识（如 `qwen3.7-text-embedding`） |
+
+### 3.2 建议配置（有默认值，但生产应按实际情况改）
+
+| 变量 | 默认值 | 什么时候必须改 |
+|---|---|---|
+| `MYSQL_URL` | `jdbc:mysql://127.0.0.1:3306/studio_db` | 数据库不在本机时 |
+| `MYSQL_USERNAME` | `runshi` | 与数据库实际账号不一致时 |
+| `FILE_ROOT_DIR` | `/data/runshi-studio-upload` | 上传目录想放别处时（改了记得同步 Nginx 的 `/uploads/` 代理目标） |
+| `ATTENDANCE_LAN_CIDRS` | 空 | **只要用考勤功能就必须配**，否则全员签到记为「外网」（见第 5 节） |
+| `ATTENDANCE_TRUSTED_PROXIES` | `127.0.0.1,::1` | Nginx 与应用**不同机**时必须填入 Nginx 的地址，否则考勤拿到的是 Nginx 的 IP |
+| `WEB_ALLOWED_ORIGINS` | `https://你的域名`（占位符） | 前后端**不同域**部署时必须填真实域名；同域部署（Nginx 代理 `/api`）则无需跨域，保持占位即可 |
+| `AUTH_RATE_LIMIT_ENABLED` | `true` | 一般不用动；排查误伤时可临时关闭 |
+| `AI_GUEST_IP_LIMITS_ENABLED` | `true` | 同上 |
+
+### 3.3 启动
+
+```bash
+java -jar runshi-studio-web-0.0.1-SNAPSHOT.jar --spring.profiles.active=prod
+```
+
+或用 systemd（示例，按需调整路径与用户）：
+
+```ini
+[Unit]
+Description=runshi-studio-web
+After=network.target mysql.service redis.service
+
+[Service]
+User=runshi
+Environment=MYSQL_PASSWORD=xxx
+Environment=REDIS_PASSWORD=xxx
+Environment=AI_BASE_URL=xxx
+Environment=AI_API_KEY=xxx
+Environment=AI_MODEL=xxx
+Environment=AI_EMBEDDING_MODEL=xxx
+ExecStart=/usr/bin/java -jar /opt/runshi/runshi-studio-web-0.0.1-SNAPSHOT.jar --spring.profiles.active=prod
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+---
+
+## 4. 初始化管理员（**建库脚本不再内置账号**）
+
+历史教训：建库脚本曾内置 `shaoshing/123456`，而脚本上线必跑——等于上线即留下一个已知口令的管理员。现已删除，改为文档化流程：
+
+1. **前台注册**一个普通账号（`/register`）；
+2. 在库里把它提升为管理员：
+   ```sql
+   UPDATE sys_user SET user_role = 'admin' WHERE user_account = '你的账号' AND deleted_at = 0;
+   ```
+3. **立即修改密码**（后台「用户管理 → 重置密码」），使用强口令；
+4. 用这个账号登录后台，后续再按需给其他成员授「成员」身份（用户管理里改角色即可）。
+
+> ⚠️ 不要在 Git 仓库里提交任何带口令的 `INSERT`——BCrypt 哈希可复用不等于口令可公开。
+
+---
+
+## 5. 考勤内外网配置（`ATTENDANCE_LAN_CIDRS`）
+
+判定逻辑：服务端解析客户端真实 IP，命中配置的任一工作室网段即记「内网」，否则记「外网」。**留空不报错，但所有签到都会记为外网**（安全侧默认：宁可记录不准，也不把未知地址当成内网），只有一条启动 warn——这类静默失效最难发现，所以上线 checklist 里有一条专门验它。
+
+### 怎么取网段
+
+在工作室任一联网电脑上执行 `ipconfig`，看 `IPv4 地址` 与 `子网掩码`：
+
+```
+IPv4 地址. . . . . . . . . . . . . : 192.168.1.23
+子网掩码  . . . . . . . . . . . . . : 255.255.255.0
+```
+
+掩码 `255.255.255.0` 对应前缀 `/24`，网段写成 **网络地址**（主机位清零）：`192.168.1.0/24`。
+
+多个网段用逗号分隔：`ATTENDANCE_LAN_CIDRS=192.168.1.0/24,10.0.5.0/24`。
+
+### 配错的两种表现（对照排查）
+
+| 现象 | 原因 |
+|---|---|
+| 全员记「外网」 | 网段没配 / 配错 / 掩码换算错 |
+| 全员记「外网」且你确信网段没错 | Nginx 与应用不同机，且 `ATTENDANCE_TRUSTED_PROXIES` 没填 Nginx 地址——拿到的是 Nginx 自己的 IP |
+
+> 安全边界说明：请求头（`X-Real-IP` 等）是客户端可伪造的，只有 TCP 对端在 `ATTENDANCE_TRUSTED_PROXIES` 里时才采信。默认值 `127.0.0.1,::1` 覆盖「Nginx 与应用同机」这一最常见形态。
+
+---
+
+## 6. Nginx
+
+配置样例：[`deploy/nginx.conf`](deploy/nginx.conf)。它包含：前端静态资源托管（SPA fallback）、`/api` 与 `/uploads` 反向代理、gzip、安全响应头。
+
+使用时的三个注意点：
+
+1. **`/api` 代理必须传 `X-Real-IP` 与 `X-Forwarded-For`**（样例里已带），否则考勤与限流拿到的全是 Nginx 的 IP；
+2. **`client_max_body_size` 与后端一致**（后端 multipart 上限 10MB，样例设为 `10m`）；
+3. **HTPT/HSTS**：样例里 HSTS 默认注释掉，确认证书与跳转配置无误后再打开。
+
+---
+
+## 7. 上线检查清单（上线前逐条过）
+
+这是上线前安全评审沉淀出来的阻塞项，按「不解决会出事故」的程度排序：
+
+- [ ] **HTTPS 已启用**（证书 + 跳转 + HSTS），数据库连接若跨机走内网或 TLS——明文传输下登录口令与 token 可被中间人截获
+- [ ] **建库脚本未在生产库上整跑**（DROP+CREATE 会清空数据）；管理员已按第 4 节流程创建并改密
+- [ ] **环境变量 6 个必填项全部注入**（缺一个启动就失败，这恰好是最好的验证）
+- [ ] `ATTENDANCE_LAN_CIDRS` 已配真实网段，且**启动日志确认** `考勤内外网判定已启用`（不是 warn）
+- [ ] Nginx 与应用同机（或 `ATTENDANCE_TRUSTED_PROXIES` 已含 Nginx 地址）；签到一次验证「本次网络」显示内网
+- [ ] `WEB_ALLOWED_ORIGINS` 已填真实域名（跨域部署时）；同域部署则确认前端 `.env.production` 的 `VITE_API_BASE_URL=/api`
+- [ ] 上传目录 `FILE_ROOT_DIR` 已建且**应用用户可写**；传一张图验证 `/uploads/` 可达
+- [ ] 日志目录 `/data/logs/runshi-studio/` 已建；确认 `app.log` 按天滚动、`app.log.error` 单独归档（14 天 / 1GB 上限）
+- [ ] 登录 / 注册限流生效：同一 IP 连续错误登录 11 次后返回「太频繁」（A0501）
+- [ ] AI 功能冒烟：问一个问题，确认有回答、配额计数正常（普通用户第 6 次起被限）
+- [ ] 备份策略：MySQL 定时备份 + 上传目录备份（git bundle 只备份代码，不备份数据）
+
+---
+
+## 8. 常见问题
+
+| 现象 | 原因与处理 |
+|---|---|
+| 启动即失败，提示某环境变量缺失 | 设计如此（密钥类无默认值）。按第 3.1 节补齐 |
+| 登录接口 500 | Redis 低于 6.0 不支持 `KEEPTTL`；或 Redis 实际没设密码而配置里写了 |
+| 全员签到记「外网」 | 见第 5 节两张排查表 |
+| 前端页面 404 但接口正常 | Nginx 少了 SPA fallback（`try_files ... /index.html`），见样例配置 |
+| 上传成功但图片裂图 | `/uploads/` 没代理到后端，或 `FILE_ROOT_DIR` 与应用实际写入目录不一致 |
+| 日志把磁盘写满 | 不可能——`logback-spring.xml` 有按天+大小双滚动与 1GB 总容量上限；若看到异常增长，检查是否有高频 warn（如限流触发、AI 熔断） |

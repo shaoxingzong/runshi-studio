@@ -65,7 +65,11 @@ logs/
 Thumbs.db
 *.swp
 *~
-/deploy/
+# deploy/ 收录「配置样例」（如 nginx.conf，对部署有参考价值，必须入库）；
+# 本机的真实部署产物（jar、.env、密钥、备份）一律不入库——白名单式忽略：
+# 先忽略整个目录，再放行样例文件。新增样例时记得同步 ! 放行行
+/deploy/*
+!/deploy/nginx.conf
 
 ### IDE 项目数据（含本地计划草稿，不入库） ###
 .codebuddy/
