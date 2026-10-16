@@ -1,6 +1,6 @@
 import { createApp } from 'vue';
 import { createPinia } from 'pinia';
-import { ElLoading } from 'element-plus';
+import { ElLoading, ElMessage } from 'element-plus';
 
 import App from './App.vue';
 import router from './router';
@@ -22,5 +22,25 @@ app.use(createPinia());
 app.use(router);
 // v-loading 指令：按需模式下必须显式注册
 app.directive('loading', ElLoading.directive);
+
+/**
+ * 全局渲染异常兜底
+ *
+ * <p><b>为什么需要它</b>：Vue 组件渲染 / 生命周期里抛出的未捕获错误，
+ * 默认只在控制台留一行，用户看到的是**白屏**——没有提示、没有原因、没有恢复手段。
+ * 请求层错误不走这里（axios 拦截器已统一处理 A0201 / 业务码），
+ * 这里是渲染期的最后一道网。
+ *
+ * <p>处理口径：控制台保留完整现场（错误 + 组件名 + 阶段，便于排查），
+ * 用户侧给一条可操作的提示（刷新重试）。不在 try-catch 里吞掉异常——
+ * 吞掉会让「错了但看起来没事」，比白屏更难查。
+ */
+app.config.errorHandler = (err, instance, info) => {
+    console.error('[Vue 渲染异常]', err, {
+        component: instance?.$options?.name ?? '(匿名组件)',
+        info,
+    });
+    ElMessage.error('页面显示异常，请刷新重试');
+};
 
 app.mount('#app');

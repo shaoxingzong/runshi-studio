@@ -8,6 +8,7 @@ import VChart from 'vue-echarts';
 import type { EChartsOption } from 'echarts';
 import { portalApi } from '@/api/portal';
 import type { Overview } from '@/api/types';
+import ErrorRetry from '@/components/ErrorRetry.vue';
 import ProjectSpotlight from '@/components/ProjectSpotlight.vue';
 
 /**
@@ -120,7 +121,9 @@ onMounted(load);
         <!-- 项目精选：数据驱动轮播（后台增删项目，首页自动跟着变；封面未上传时用渐变占位） -->
         <ProjectSpotlight />
 
-        <el-alert v-if="error" :title="error" type="error" show-icon class="block" />
+        <!-- 大盘数据加载失败：用带重试按钮的统一组件。此前是裸 el-alert——
+             提示会一直在，但没有恢复手段，用户只能刷新整个页面 -->
+        <ErrorRetry v-if="error" :message="error" @retry="load" />
 
         <div v-loading="loading">
             <template v-if="overview">
@@ -189,10 +192,6 @@ onMounted(load);
 .btn:hover {
     text-decoration: none;
     opacity: 0.9;
-}
-
-.block {
-    margin-top: 20px;
 }
 
 .stat {

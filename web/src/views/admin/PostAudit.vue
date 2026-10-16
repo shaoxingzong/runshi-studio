@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { postApi } from '@/api/post';
+import ErrorRetry from '@/components/ErrorRetry.vue';
 import type { PageResult, PostAudit } from '@/api/types';
 
 /**
@@ -15,6 +16,8 @@ const page = reactive({ current: 1, pageSize: 10 });
 const result = ref<PageResult<PostAudit> | null>(null);
 const selected = ref<string[]>([]);
 const loading = ref(false);
+/** 队列加载失败的原因（空 = 正常）。失败时给原因 + 重试，而不是留一张空白表格 */
+const error = ref('');
 
 /** AI 初判结论：0-未判, 1-安全, 2-违规, 3-灰色待人工, 4-判定失败 */
 const AI_TAG: Record<number, { text: string; type: 'success' | 'warning' | 'danger' | 'info' }> = {
@@ -28,8 +31,11 @@ const AI_TAG: Record<number, { text: string; type: 'success' | 'warning' | 'dang
 
 async function load() {
     loading.value = true;
+    error.value = '';
     try {
         result.value = await postApi.pending({ ...page });
+    } catch (e) {
+        error.value = (e as Error).message || '加载失败';
     } finally {
         loading.value = false;
     }
@@ -96,6 +102,7 @@ onMounted(load);
 
 <template>
     <div v-loading="loading">
+        <ErrorRetry v-if="error" :message="error" @retry="load" />
         <div class="bar">
             <div>
                 <h2>帖子审核</h2>

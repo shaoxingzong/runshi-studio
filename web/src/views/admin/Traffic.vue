@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { trafficApi } from '@/api/traffic';
+import ErrorRetry from '@/components/ErrorRetry.vue';
 import type { TrafficOverview } from '@/api/types';
 
 /**
@@ -70,12 +71,9 @@ onMounted(load);
             title="UV 按浏览器标识去重：同一人换设备、清缓存或使用无痕模式会被记为多个 UV。只统计页面路径，不记录 IP、UA 与网址参数。"
         />
 
-        <el-alert v-if="error" type="error" :closable="false" show-icon class="notice">
-            <template #title>
-                <span class="msg">{{ error }}</span>
-                <el-button link type="primary" @click="load">重试</el-button>
-            </template>
-        </el-alert>
+        <!-- 错误态改用共享组件 ErrorRetry：此前的内联手写 alert 与组件 markup 重复，
+             正是该组件要消除的「各写一遍」——改组件样式时不会漏掉这里 -->
+        <ErrorRetry v-if="error" :message="error" @retry="load" />
 
         <template v-if="overview">
             <div class="grid">

@@ -82,7 +82,17 @@ const routes: RouteRecordRaw[] = [
             },
         ],
     },
-    { path: '/:pathMatch(.*)*', redirect: '/' },
+    {
+        // 403：权限不足。已登录但非管理员访问后台时落到这里——
+        // 此前是统一跳登录页，等于对已登录的人说「你还没登录」，信息是错的
+        path: '/403',
+        name: 'forbidden',
+        component: () => import('@/views/Forbidden.vue'),
+    },
+    // 404：未匹配路径。此前是静默 redirect '/'——用户输错网址被悄悄送回首页，
+    // 既不知道发生了什么，也无法判断「页面没了」还是「自己打错了」。
+    // 注意：真正的权限判定在后端 @SaCheckRole，本页与路由守卫都只是体验层
+    { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('@/views/NotFound.vue') },
 ];
 
 const router = createRouter({
@@ -100,10 +110,10 @@ router.beforeEach((to) => {
     if (!user.isLogin) {
         return { name: 'admin-login', query: { redirect: to.fullPath } };
     }
-    // 已登录但不是管理员（例如门户注册的普通用户）：同样送回登录页。
+    // 已登录但不是管理员（例如门户注册的普通用户）：跳 403 页。
     // 这只是体验层——真正的权限判定在后端 @SaCheckRole("admin")，前端判断永远可以被绕过
     if (!user.isAdmin) {
-        return { name: 'admin-login', query: { redirect: to.fullPath } };
+        return { name: 'forbidden' };
     }
     return true;
 });

@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { postApi } from '@/api/post';
+import ErrorRetry from '@/components/ErrorRetry.vue';
 import ImageUploader from '@/components/ImageUploader.vue';
 import type { PageResult, PostAdminDetail, PostAudit } from '@/api/types';
 
@@ -36,6 +37,8 @@ const filters = reactive({
 
 const result = ref<PageResult<PostAudit> | null>(null);
 const loading = ref(false);
+/** 列表加载失败的原因（空 = 正常）。失败时给原因 + 重试，而不是留一张空白表格 */
+const error = ref('');
 
 /** AI 初判结论：与「帖子审核」页保持同一套映射（同一字段两处展示，映射不一致会误导人） */
 const AI_TAG: Record<number, { text: string; type: 'success' | 'warning' | 'danger' | 'info' }> = {
@@ -62,6 +65,7 @@ const STATUS_OPTIONS = [
 
 async function load() {
     loading.value = true;
+    error.value = '';
     try {
         result.value = await postApi.adminList({
             current: page.current,
@@ -71,6 +75,8 @@ async function load() {
             titleKeyword: filters.titleKeyword.trim() || undefined,
             authorKeyword: filters.authorKeyword.trim() || undefined,
         });
+    } catch (e) {
+        error.value = (e as Error).message || '加载失败';
     } finally {
         loading.value = false;
     }
@@ -227,6 +233,7 @@ onMounted(load);
 
 <template>
     <div v-loading="loading">
+        <ErrorRetry v-if="error" :message="error" @retry="load" />
         <div class="bar">
             <div>
                 <h2>帖子管理</h2>

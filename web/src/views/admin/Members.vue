@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { adminApi } from '@/api/admin';
+import ErrorRetry from '@/components/ErrorRetry.vue';
 import ImageUploader from '@/components/ImageUploader.vue';
 import type { AdminMember, AdminUser, PageResult } from '@/api/types';
 
@@ -9,6 +10,8 @@ import type { AdminMember, AdminUser, PageResult } from '@/api/types';
 const page = reactive({ current: 1, pageSize: 10 });
 const result = ref<PageResult<AdminMember> | null>(null);
 const loading = ref(false);
+/** 列表加载失败的原因（空 = 正常）。失败时给原因 + 重试，而不是留一张空白表格 */
+const error = ref('');
 
 const dialogVisible = ref(false);
 const editing = ref<AdminMember | null>(null);
@@ -54,8 +57,11 @@ function accountOf(userId: string): string {
 
 async function load() {
     loading.value = true;
+    error.value = '';
     try {
         result.value = await adminApi.memberPage({ ...page });
+    } catch (e) {
+        error.value = (e as Error).message || '加载失败';
     } finally {
         loading.value = false;
     }
@@ -155,6 +161,7 @@ onMounted(() => {
 
 <template>
     <div>
+        <ErrorRetry v-if="error" :message="error" @retry="load" />
         <div class="bar">
             <h2>成员管理</h2>
             <span class="spacer" />

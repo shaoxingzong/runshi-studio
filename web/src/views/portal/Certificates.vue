@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
+import ErrorRetry from '@/components/ErrorRetry.vue';
 import { portalApi } from '@/api/portal';
 import type { Certificate } from '@/api/types';
 
 const list = ref<Certificate[]>([]);
 const loading = ref(false);
+/** 加载失败的原因（空 = 正常）。此前本页是门户唯一没有错误态的页面：请求失败后 loading 消失、表格空白，用户分不清「没数据」还是「坏了」 */
+const error = ref('');
 
 const LEVEL_TEXT: Record<string, string> = { national: '国家级', provincial: '省级', municipal: '市级/校级' };
 const TYPE_TEXT: Record<string, string> = {
@@ -16,8 +19,11 @@ const TYPE_TEXT: Record<string, string> = {
 
 async function load() {
     loading.value = true;
+    error.value = '';
     try {
         list.value = await portalApi.certificateList();
+    } catch (e) {
+        error.value = (e as Error).message || '加载失败';
     } finally {
         loading.value = false;
     }
@@ -31,6 +37,8 @@ onMounted(load);
         <div class="page-head">
             <h1>荣誉墙</h1>
         </div>
+
+        <ErrorRetry v-if="error" :message="error" @retry="load" />
 
         <div v-loading="loading" class="card">
             <el-empty v-if="!loading && list.length === 0" description="暂无证书" />

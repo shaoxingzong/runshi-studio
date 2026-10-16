@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { postApi } from '@/api/post';
+import ErrorRetry from '@/components/ErrorRetry.vue';
 import type { PageResult, PostCommentAudit } from '@/api/types';
 
 /**
@@ -16,6 +17,8 @@ const page = reactive({ current: 1, pageSize: 10 });
 const result = ref<PageResult<PostCommentAudit> | null>(null);
 const selected = ref<string[]>([]);
 const loading = ref(false);
+/** 队列加载失败的原因（空 = 正常）。失败时给原因 + 重试，而不是留一张空白表格 */
+const error = ref('');
 
 const AI_TAG: Record<number, { text: string; type: 'success' | 'warning' | 'danger' | 'info' }> = {
     0: { text: '待 AI 初判', type: 'info' },
@@ -27,8 +30,11 @@ const AI_TAG: Record<number, { text: string; type: 'success' | 'warning' | 'dang
 
 async function load() {
     loading.value = true;
+    error.value = '';
     try {
         result.value = await postApi.commentPending({ ...page });
+    } catch (e) {
+        error.value = (e as Error).message || '加载失败';
     } finally {
         loading.value = false;
     }
@@ -88,6 +94,7 @@ onMounted(load);
 
 <template>
     <div v-loading="loading">
+        <ErrorRetry v-if="error" :message="error" @retry="load" />
         <div class="bar">
             <div>
                 <h2>评论审核</h2>

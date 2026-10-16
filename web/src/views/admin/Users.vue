@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { adminApi } from '@/api/admin';
+import ErrorRetry from '@/components/ErrorRetry.vue';
 import ImageUploader from '@/components/ImageUploader.vue';
 import type { AdminUser, PageResult } from '@/api/types';
 
@@ -23,6 +24,8 @@ const ROLES = [
 const query = reactive({ current: 1, pageSize: 10, userAccount: '', userRole: '' });
 const result = ref<PageResult<AdminUser> | null>(null);
 const loading = ref(false);
+/** 列表加载失败的原因（空 = 正常）。失败时不能只靠请求层那一次弹窗——弹窗会消失，表格却一直空白 */
+const error = ref('');
 
 const records = computed(() => result.value?.records ?? []);
 const total = computed(() => Number(result.value?.total || 0));
@@ -34,8 +37,11 @@ const newPassword = ref('');
 
 async function load() {
     loading.value = true;
+    error.value = '';
     try {
         result.value = await adminApi.userPage({ ...query });
+    } catch (e) {
+        error.value = (e as Error).message || '加载失败';
     } finally {
         loading.value = false;
     }
@@ -297,6 +303,7 @@ onMounted(load);
 
 <template>
     <div>
+        <ErrorRetry v-if="error" :message="error" @retry="load" />
         <div class="toolbar card">
             <el-input
                 v-model="query.userAccount"
