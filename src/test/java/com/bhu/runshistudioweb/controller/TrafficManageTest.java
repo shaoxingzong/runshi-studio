@@ -19,6 +19,7 @@ import tools.jackson.databind.json.JsonMapper;
 import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -172,7 +173,11 @@ class TrafficManageTest {
     void topPagesSortedByPv() throws Exception {
         String admin = tokenOf(createUser(UserRoleConstant.ADMIN));
 
-        for (int i = 0; i < 5; i++) {
+        // /hot 造 30 次 PV：TOP 10 是**全局**榜，开发库里躺着真实流量
+        // （本地起应用跑一会儿就有十几个页面、PV 6~14）。造 5 次会被真实数据挤出榜外，
+        // 断言「某页在榜」就变成了假失败——用压倒性 PV 保证在榜，
+        // 与隔壁 statisticsCountPvAndUv「库里可能有残留所以用 >=」是同一条纪律
+        for (int i = 0; i < 30; i++) {
             String r = postJson("/traffic/report",
                     "{\"pagePath\":\"/hot\",\"visitorId\":\"v-hot" + i + "\"}", null);
             assertEquals("00000", code(r), "第 " + i + " 次 /hot 埋点应成功：" + r);
@@ -185,16 +190,32 @@ class TrafficManageTest {
                 .get("data").get("topPages");
         assertTrue(topPages.size() > 0, "热门页面不应为空");
 
-        // 找本次造的两个页面，验证排序与计数（诊断信息带上完整响应，失败时一眼看出缺什么）
+        // ① 排序契约（本测试的核心）：PV 必须单调不增。
+        //    直接验「倒序」本身，不依赖任何特定页面在不在榜
+        int prevPv = Integer.MAX_VALUE;
+        for (JsonNode row : topPages) {
+            int pv = row.get("pv").asInt();
+            assertTrue(pv <= prevPv, "热门页面必须按 PV 倒序 | topPages=" + topPages);
+            prevPv = pv;
+        }
+
+        // ② 本次造的 /hot 必须入榜且 PV >= 30（诊断信息带上完整响应，失败时一眼看出缺什么）
         Integer hotPv = pvOf(topPages, "/hot");
-        Integer coldPv = pvOf(topPages, "/cold");
         assertNotNull(hotPv, "热门页面应包含 /hot | topPages=" + topPages);
-        assertNotNull(coldPv, "热门页面应包含 /cold | topPages=" + topPages);
-        assertTrue(hotPv >= 5, "/hot 应有至少 5 次 PV");
-        assertTrue(coldPv >= 1, "/cold 应有至少 1 次 PV");
-        // /hot 必须排在 /cold 前面
-        assertTrue(indexOfPath(topPages, "/hot") < indexOfPath(topPages, "/cold"),
-                "PV 多的页面应排在前面 | topPages=" + topPages);
+        assertTrue(hotPv >= 30, "/hot 应有至少 30 次 PV | topPages=" + topPages);
+
+        // ③ 排序方向复验：/cold 在榜时（PV 最小，真实流量多时可能被挤出 TOP 10，
+        //    因此不断言它在榜）必须排在 /hot 之后
+        if (pvOf(topPages, "/cold") != null) {
+            assertTrue(indexOfPath(topPages, "/hot") < indexOfPath(topPages, "/cold"),
+                    "PV 多的页面应排在前面 | topPages=" + topPages);
+        }
+
+        // ④ 路径不带 query（埋点剥离逻辑在热门页面上的复验）
+        for (JsonNode row : topPages) {
+            assertFalse(row.get("pagePath").asText().contains("?"),
+                    "热门页面路径不应含 query | topPages=" + topPages);
+        }
     }
 
     // ==================== 工具方法 ====================
