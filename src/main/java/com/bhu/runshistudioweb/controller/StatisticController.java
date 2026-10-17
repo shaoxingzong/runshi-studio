@@ -2,7 +2,7 @@ package com.bhu.runshistudioweb.controller;
 
 import com.bhu.runshistudioweb.common.BaseResponse;
 import com.bhu.runshistudioweb.common.ResultUtils;
-import com.bhu.runshistudioweb.model.vo.StatisticOverviewVO;
+import com.bhu.runshistudioweb.model.vo.statistic.StatisticOverviewVO;
 import com.bhu.runshistudioweb.service.StatisticService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;

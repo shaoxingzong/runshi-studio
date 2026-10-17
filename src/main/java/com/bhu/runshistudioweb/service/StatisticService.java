@@ -1,6 +1,6 @@
 package com.bhu.runshistudioweb.service;
 
-import com.bhu.runshistudioweb.model.vo.StatisticOverviewVO;
+import com.bhu.runshistudioweb.model.vo.statistic.StatisticOverviewVO;
 
 /**
  * 统计服务接口

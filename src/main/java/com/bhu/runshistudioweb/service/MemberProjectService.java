@@ -2,10 +2,10 @@ package com.bhu.runshistudioweb.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
 import com.bhu.runshistudioweb.model.entity.StudioMemberProject;
-import com.bhu.runshistudioweb.model.vo.MemberFrontVO;
-import com.bhu.runshistudioweb.model.vo.MemberVO;
-import com.bhu.runshistudioweb.model.vo.ProjectFrontVO;
-import com.bhu.runshistudioweb.model.vo.ProjectVO;
+import com.bhu.runshistudioweb.model.vo.member.MemberFrontVO;
+import com.bhu.runshistudioweb.model.vo.member.MemberVO;
+import com.bhu.runshistudioweb.model.vo.project.ProjectFrontVO;
+import com.bhu.runshistudioweb.model.vo.project.ProjectVO;
 
 import java.util.List;
 

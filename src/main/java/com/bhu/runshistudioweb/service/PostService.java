@@ -7,11 +7,11 @@ import com.bhu.runshistudioweb.model.dto.post.PostAddRequest;
 import com.bhu.runshistudioweb.model.dto.post.PostAdminQueryRequest;
 import com.bhu.runshistudioweb.model.dto.post.PostUpdateRequest;
 import com.bhu.runshistudioweb.model.entity.StudioPost;
-import com.bhu.runshistudioweb.model.vo.PostFrontDetailVO;
-import com.bhu.runshistudioweb.model.vo.PostFrontVO;
-import com.bhu.runshistudioweb.model.vo.PostSelfDetailVO;
-import com.bhu.runshistudioweb.model.vo.PostVO;
-import com.bhu.runshistudioweb.model.vo.PostAdminDetailVO;
+import com.bhu.runshistudioweb.model.vo.post.PostFrontDetailVO;
+import com.bhu.runshistudioweb.model.vo.post.PostFrontVO;
+import com.bhu.runshistudioweb.model.vo.post.PostSelfDetailVO;
+import com.bhu.runshistudioweb.model.vo.post.PostVO;
+import com.bhu.runshistudioweb.model.vo.post.PostAdminDetailVO;
 
 /**
  * 帖子服务接口

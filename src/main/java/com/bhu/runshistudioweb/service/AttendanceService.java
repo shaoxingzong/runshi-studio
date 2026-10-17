@@ -2,9 +2,9 @@ package com.bhu.runshistudioweb.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
 import com.bhu.runshistudioweb.model.entity.StudioAttendance;
-import com.bhu.runshistudioweb.model.vo.AttendanceBoardVO;
-import com.bhu.runshistudioweb.model.vo.AttendanceCheckInVO;
-import com.bhu.runshistudioweb.model.vo.AttendanceMeVO;
+import com.bhu.runshistudioweb.model.vo.attendance.AttendanceBoardVO;
+import com.bhu.runshistudioweb.model.vo.attendance.AttendanceCheckInVO;
+import com.bhu.runshistudioweb.model.vo.attendance.AttendanceMeVO;
 
 import java.util.List;
 

@@ -3,9 +3,9 @@ package com.bhu.runshistudioweb.service;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bhu.runshistudioweb.model.dto.ai.AiChatRequest;
 import com.bhu.runshistudioweb.model.dto.ai.AiSessionQueryRequest;
-import com.bhu.runshistudioweb.model.vo.AiChatResponseVO;
-import com.bhu.runshistudioweb.model.vo.AiMessageVO;
-import com.bhu.runshistudioweb.model.vo.AiSessionVO;
+import com.bhu.runshistudioweb.model.vo.ai.AiChatResponseVO;
+import com.bhu.runshistudioweb.model.vo.ai.AiMessageVO;
+import com.bhu.runshistudioweb.model.vo.ai.AiSessionVO;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;

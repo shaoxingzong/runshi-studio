@@ -5,7 +5,7 @@ import com.bhu.runshistudioweb.mapper.StudioCertificateMapper;
 import com.bhu.runshistudioweb.model.entity.StudioCertificate;
 import com.bhu.runshistudioweb.model.enums.CertificateLevelEnum;
 import com.bhu.runshistudioweb.model.enums.CertificateTypeEnum;
-import com.bhu.runshistudioweb.model.vo.StatisticOverviewVO;
+import com.bhu.runshistudioweb.model.vo.statistic.StatisticOverviewVO;
 import com.bhu.runshistudioweb.service.StatisticService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;

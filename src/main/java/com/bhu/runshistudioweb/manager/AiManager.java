@@ -6,7 +6,7 @@ import com.bhu.runshistudioweb.exception.BusinessException;
 import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.exception.ThrowUtils;
 import com.bhu.runshistudioweb.model.enums.AiMessageRoleEnum;
-import com.bhu.runshistudioweb.model.vo.AiMessageVO;
+import com.bhu.runshistudioweb.model.vo.ai.AiMessageVO;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.SystemMessage;

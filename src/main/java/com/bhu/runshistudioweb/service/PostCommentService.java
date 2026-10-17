@@ -5,8 +5,8 @@ import com.baomidou.mybatisplus.spring.service.IService;
 import com.bhu.runshistudioweb.model.dto.post.AuditRequest;
 import com.bhu.runshistudioweb.model.dto.post.PostCommentAddRequest;
 import com.bhu.runshistudioweb.model.entity.StudioPostComment;
-import com.bhu.runshistudioweb.model.vo.PostCommentAuditVO;
-import com.bhu.runshistudioweb.model.vo.PostCommentVO;
+import com.bhu.runshistudioweb.model.vo.post.PostCommentAuditVO;
+import com.bhu.runshistudioweb.model.vo.post.PostCommentVO;
 
 import java.util.List;
 

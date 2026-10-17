@@ -6,9 +6,9 @@ import com.bhu.runshistudioweb.model.dto.project.ProjectAddRequest;
 import com.bhu.runshistudioweb.model.dto.project.ProjectQueryRequest;
 import com.bhu.runshistudioweb.model.dto.project.ProjectUpdateRequest;
 import com.bhu.runshistudioweb.model.entity.StudioProject;
-import com.bhu.runshistudioweb.model.vo.ProjectFrontDetailVO;
-import com.bhu.runshistudioweb.model.vo.ProjectFrontVO;
-import com.bhu.runshistudioweb.model.vo.ProjectVO;
+import com.bhu.runshistudioweb.model.vo.project.ProjectFrontDetailVO;
+import com.bhu.runshistudioweb.model.vo.project.ProjectFrontVO;
+import com.bhu.runshistudioweb.model.vo.project.ProjectVO;
 
 /**
  * 项目案例服务接口

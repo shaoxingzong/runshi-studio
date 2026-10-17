@@ -2,8 +2,8 @@ package com.bhu.runshistudioweb.service;
 
 import com.baomidou.mybatisplus.spring.service.IService;
 import com.bhu.runshistudioweb.model.entity.StudioMemberCertificate;
-import com.bhu.runshistudioweb.model.vo.CertificateVO;
-import com.bhu.runshistudioweb.model.vo.MemberVO;
+import com.bhu.runshistudioweb.model.vo.certificate.CertificateVO;
+import com.bhu.runshistudioweb.model.vo.member.MemberVO;
 
 import java.util.List;
 

@@ -6,8 +6,8 @@ import com.bhu.runshistudioweb.model.dto.certificate.CertificateAddRequest;
 import com.bhu.runshistudioweb.model.dto.certificate.CertificateQueryRequest;
 import com.bhu.runshistudioweb.model.dto.certificate.CertificateUpdateRequest;
 import com.bhu.runshistudioweb.model.entity.StudioCertificate;
-import com.bhu.runshistudioweb.model.vo.CertificateFrontVO;
-import com.bhu.runshistudioweb.model.vo.CertificateVO;
+import com.bhu.runshistudioweb.model.vo.certificate.CertificateFrontVO;
+import com.bhu.runshistudioweb.model.vo.certificate.CertificateVO;
 
 import java.util.List;
 

@@ -6,7 +6,7 @@ import com.bhu.runshistudioweb.common.ResultUtils;
 import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.exception.ThrowUtils;
 import com.bhu.runshistudioweb.model.dto.post.PostCommentAddRequest;
-import com.bhu.runshistudioweb.model.vo.PostCommentVO;
+import com.bhu.runshistudioweb.model.vo.post.PostCommentVO;
 import com.bhu.runshistudioweb.service.PostCommentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;

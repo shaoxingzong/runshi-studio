@@ -6,8 +6,8 @@ import com.bhu.runshistudioweb.model.dto.member.MemberAddRequest;
 import com.bhu.runshistudioweb.model.dto.member.MemberQueryRequest;
 import com.bhu.runshistudioweb.model.dto.member.MemberUpdateRequest;
 import com.bhu.runshistudioweb.model.entity.StudioMember;
-import com.bhu.runshistudioweb.model.vo.MemberFrontVO;
-import com.bhu.runshistudioweb.model.vo.MemberVO;
+import com.bhu.runshistudioweb.model.vo.member.MemberFrontVO;
+import com.bhu.runshistudioweb.model.vo.member.MemberVO;
 
 /**
  * 工作室成员服务接口

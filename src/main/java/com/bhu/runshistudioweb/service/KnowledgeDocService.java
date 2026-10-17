@@ -4,10 +4,10 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bhu.runshistudioweb.model.dto.knowledge.KnowledgeDocQueryRequest;
 import com.bhu.runshistudioweb.model.dto.knowledge.KnowledgeManualIngestRequest;
 import com.bhu.runshistudioweb.model.dto.knowledge.KnowledgeSyncRequest;
-import com.bhu.runshistudioweb.model.vo.KnowledgeDocVO;
-import com.bhu.runshistudioweb.model.vo.KnowledgeIngestVO;
-import com.bhu.runshistudioweb.model.vo.KnowledgeSourceVO;
-import com.bhu.runshistudioweb.model.vo.KnowledgeSyncAllVO;
+import com.bhu.runshistudioweb.model.vo.knowledge.KnowledgeDocVO;
+import com.bhu.runshistudioweb.model.vo.knowledge.KnowledgeIngestVO;
+import com.bhu.runshistudioweb.model.vo.knowledge.KnowledgeSourceVO;
+import com.bhu.runshistudioweb.model.vo.knowledge.KnowledgeSyncAllVO;
 
 import java.util.List;
 

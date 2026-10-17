@@ -3,7 +3,7 @@ package com.bhu.runshistudioweb.controller;
 import com.bhu.runshistudioweb.common.BaseResponse;
 import com.bhu.runshistudioweb.common.ResultUtils;
 import com.bhu.runshistudioweb.constant.UserRoleConstant;
-import com.bhu.runshistudioweb.model.vo.TrafficOverviewVO;
+import com.bhu.runshistudioweb.model.vo.traffic.TrafficOverviewVO;
 import com.bhu.runshistudioweb.service.TrafficService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;

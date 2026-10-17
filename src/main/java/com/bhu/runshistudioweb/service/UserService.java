@@ -6,8 +6,8 @@ import com.bhu.runshistudioweb.model.dto.user.UserAddRequest;
 import com.bhu.runshistudioweb.model.dto.user.UserQueryRequest;
 import com.bhu.runshistudioweb.model.dto.user.UserUpdateRequest;
 import com.bhu.runshistudioweb.model.entity.SysUser;
-import com.bhu.runshistudioweb.model.vo.LoginUserVO;
-import com.bhu.runshistudioweb.model.vo.UserVO;
+import com.bhu.runshistudioweb.model.vo.user.LoginUserVO;
+import com.bhu.runshistudioweb.model.vo.user.UserVO;
 
 /**
  * 用户服务接口

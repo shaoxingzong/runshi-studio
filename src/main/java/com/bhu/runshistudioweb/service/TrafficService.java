@@ -3,7 +3,7 @@ package com.bhu.runshistudioweb.service;
 import com.baomidou.mybatisplus.spring.service.IService;
 import com.bhu.runshistudioweb.model.dto.traffic.TrafficReportRequest;
 import com.bhu.runshistudioweb.model.entity.StudioPageVisit;
-import com.bhu.runshistudioweb.model.vo.TrafficOverviewVO;
+import com.bhu.runshistudioweb.model.vo.traffic.TrafficOverviewVO;
 
 /**
  * 流量统计服务
