@@ -23,7 +23,9 @@ import java.io.Serializable;
  * 由全局异常处理器统一转成 A0401 与第一条错误提示。
  *
  * <p>注意：这里的规则必须与 {@code UserServiceImpl.userRegister} 里的手写校验保持一致，
- * 否则会出现「DTO 说 16 位、Service 说 20 位」两套标准（目前就不一致，建议统一为一处）。
+ * 否则会出现「DTO 说 16 位、Service 说 20 位」两套标准。当前已统一：
+ * 长度区间以 {@code UserServiceImpl} 顶部的 {@code MIN_ACCOUNT_LENGTH} 等常量为准，
+ * DTO 注解与 Service 校验引用同一组数值（改规则时两边都要改，别只改一处）。
  */
 @Data
 public class UserRegisterRequest implements Serializable {

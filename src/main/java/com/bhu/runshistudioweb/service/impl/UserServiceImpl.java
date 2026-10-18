@@ -11,6 +11,7 @@ import com.bhu.runshistudioweb.exception.ThrowUtils;
 import com.bhu.runshistudioweb.constant.AuthRateLimitConstant;
 import com.bhu.runshistudioweb.config.AuthRateLimitProperties;
 import com.bhu.runshistudioweb.manager.AiQueryCountManager;
+import com.bhu.runshistudioweb.manager.AuthLockManager;
 import com.bhu.runshistudioweb.manager.ClientIpManager;
 import com.bhu.runshistudioweb.manager.IpRateLimitManager;
 import com.bhu.runshistudioweb.mapper.SysUserMapper;
@@ -20,12 +21,14 @@ import com.bhu.runshistudioweb.model.dto.user.UserUpdateRequest;
 import com.bhu.runshistudioweb.model.entity.SysUser;
 import com.bhu.runshistudioweb.model.enums.UserRoleEnum;
 import com.bhu.runshistudioweb.model.vo.user.LoginUserVO;
+import com.bhu.runshistudioweb.model.vo.user.UserAddResultVO;
 import com.bhu.runshistudioweb.model.vo.user.UserVO;
 import com.bhu.runshistudioweb.service.UserService;
 import com.bhu.runshistudioweb.utils.PasswordUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.dao.DuplicateKeyException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.Objects;
@@ -34,6 +37,13 @@ import java.util.Objects;
  * 用户服务实现
  *
  * author: shaoshing
+ *
+ * <p><b>为什么加 {@code @Slf4j}</b>：本类继承 {@code ServiceImpl}，它自带一个
+ * {@code org.apache.ibatis.logging.Log} 实例字段（MP 用来打 SQL 日志），其
+ * {@code warn(String)} 只接受单个字符串、<b>不支持占位参数</b>。Lombok 生成的
+ * 静态 SLF4J 日志器会遮蔽那个继承字段，让本类里的 {@code log.xxx("...{}", arg)}
+ * 走标准占位写法（与 {@code PostServiceImpl} 同一模式）。
+ * 遮蔽不影响父类：父类方法里的 {@code log} 仍在它自己的作用域内解析。
  *
  * <p>为什么继承 {@code ServiceImpl<SysUserMapper, SysUser>}：
  * MyBatis-Plus 的 ServiceImpl 已经把单表 CRUD（save / getById / count / updateById 等）
@@ -47,18 +57,22 @@ import java.util.Objects;
  * 若以后注册还要写成员档案等第二张表，必须加 {@code @Transactional}，
  * 否则中途失败会留下「有账号无档案」的脏数据。
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> implements UserService {
 
     /**
-     * 管理员新增用户且未填写密码时使用的初始密码
+    /**
+     * 管理员新增用户且未填写密码时，随机初始密码的长度
      *
-     * <p>这是「可用性 vs 安全」的折中：管理员批量建号时不可能逐个设密码。
-     * 代价是初始密码可预测，因此管理员交付账号后应要求用户立即修改；
-     * 若安全要求更高，可改成随机生成密码并只在创建响应里返回一次。
+     * <p><b>为什么是随机而不是固定默认值</b>：曾经用固定的 {@code Runshi@123}，
+     * 意味着任何知道本系统存在的人都能登录所有未及时改密的账号——
+     * 把安全性寄托在「每个人都会立即改密」上，而现实里总有人不会。
+     * 随机口令只随 {@code addUser} 的返回值出现一次（后端不存明文、查不回来），
+     * 管理员必须当场转交本人。10 位是「足够复杂度」与「转告不出错」的平衡点。
      */
-    private static final String DEFAULT_INIT_PASSWORD = "Runshi@123";
+    private static final int INIT_PASSWORD_LENGTH = 10;
 
     /** 账号长度区间，必须与 UserRegisterRequest / UserAddRequest 上的 @Size 保持一致 */
     private static final int MIN_ACCOUNT_LENGTH = 4;
@@ -99,6 +113,14 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
 
     /** 登录 / 注册限流的阈值与总开关 */
     private final AuthRateLimitProperties authRateLimitProperties;
+
+    /**
+     * 账号级登录失败锁定（与 IP 限流互补：IP 限流挡单 IP 高频，本类挡分布式慢速爆破）
+     *
+     * <p>为什么两道都要：爆破的两种形态——「一个 IP 对多个账号猛试」与
+     * 「海量 IP 各试几次」——单靠任何一道都拦不全，且两道都不依赖对方可用。
+     */
+    private final AuthLockManager authLockManager;
 
     // ==================== C 端：用户自己 ====================
 
@@ -173,11 +195,16 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
     /**
      * 用户登录（接口契约见 UserService）
      *
-     * <p>实现上的三个顺序，任何一条调换都会出问题：
+     * <p>实现上的执行顺序，任何一条调换都会出问题：
      * <ol>
-     *     <li>先按账号查实体——查不到也要走完"密码比对"这一步（这里用短路统一提示）；</li>
-     *     <li>密码比对用 {@code PasswordUtils.matches}（BCrypt），不能用 equals 比哈希串；</li>
-     *     <li>封禁校验放最后——此时已确认密码正确，攻击者无法通过报错差异探测账号状态。</li>
+     *     <li><b>IP 级限流</b>：挡「单 IP 高频尝试」，每一次尝试（含失败的）都计数；</li>
+     *     <li><b>账号级锁定检查</b>：挡「分布式慢速爆破」，被锁的请求不查库、不比对密码；</li>
+     *     <li>按账号查实体——查不到也要走完"密码比对"这一步（这里用短路统一提示）；</li>
+     *     <li>密码比对用 {@code PasswordUtils.matches}（BCrypt），不能用 equals 比哈希串；
+     *     失败时仅在<b>账号存在</b>的前提下记录失败次数（账号不存在无可锁对象，
+     *     且对不存在的账号锁定会让「已锁定」提示变成账号存在性探测器）；</li>
+     *     <li>封禁校验放最后——此时已确认密码正确，攻击者无法通过报错差异探测账号状态；</li>
+     *     <li>登录成功后清零失败计数（合法用户不该被几分钟前的失误挡在门外）。</li>
      * </ol>
      *
      * @param userAccount  用户账号
@@ -189,9 +216,13 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
                                  String remoteAddr, String xRealIp, String xForwardedFor) {
         ThrowUtils.throwIf(userAccount == null || userPassword == null, ErrorCode.PARAMS_ERROR, "用户账号或密码为空");
 
-        // 防爆破：IP 级限流放在查库与密码比对之前——每一次尝试（含失败的）都计数，
+        // 防爆破第一层：IP 级限流放在查库与密码比对之前——每一次尝试（含失败的）都计数，
         // 被拒的请求不产生任何数据库开销
         assertLoginRateAllowed(remoteAddr, xRealIp, xForwardedFor);
+
+        // 防爆破第二层：账号级失败锁定检查（补 IP 限流挡不住的分布式慢速爆破）。
+        // 放在查库之前：被锁的请求连数据库都不该碰
+        authLockManager.assertNotLocked(userAccount);
 
         LambdaQueryWrapper<SysUser> queryWrapper = new LambdaQueryWrapper<>();
         queryWrapper.eq(SysUser::getUserAccount, userAccount);
@@ -200,10 +231,18 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         // 防账号枚举：账号不存在与密码错误使用**同一个提示文案**。
         // 若分开提示（"账号不存在"/"密码错误"），攻击者可用两种报错扫出一批有效账号，再集中爆破。
         boolean passwordMatched = user != null && PasswordUtils.matches(userPassword, user.getUserPassword());
+        if (!passwordMatched && user != null) {
+            // 只在账号存在时累计失败：账号不存在时没有可锁对象，
+            // 且对不存在的账号也锁定会让「已锁定」提示成为账号存在性探测器
+            authLockManager.recordFailure(userAccount);
+        }
         ThrowUtils.throwIf(!passwordMatched, ErrorCode.PARAMS_ERROR, "账号或密码错误");
 
         // 封禁校验放在密码校验之后：此时已确认密码正确，攻击者无法再通过报错差异探测账号状态
         ThrowUtils.throwIf(isBanned(user), ErrorCode.FORBIDDEN_ERROR, "账号已被封禁");
+
+        // 登录成功：清零该账号的失败计数——凭据已验对，此前的失误一笔勾销
+        authLockManager.clear(userAccount);
 
         // 登录成功：Sa-Token 会把 loginId 写入会话（Redis，见 sa-token-redis-template），
         // 并按 yml 配置把 token 写进响应 Cookie
@@ -234,6 +273,14 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         // token 还在但用户已不存在：典型场景是账号被逻辑删除，
         // 此时必须按「未登录」处理并把原因记下来，不能返回 null 让上游 NPE
         ThrowUtils.throwIf(user == null, ErrorCode.NOT_LOGIN_ERROR, "登录用户不存在");
+
+        // 封禁校验：token 在 Redis 里的有效期最长可达 7 天（sa-token.timeout），
+        // 若只依赖登录时的那一次 isBanned 检查，被封禁的用户在 token 过期前
+        // 仍可正常使用全部登录态接口（发帖、评论、点赞……）。
+        // 与上一行同口径按「未登录」处理：前端拿到 A0201 会跳登录页，
+        // 而登录接口对封禁账号有明确提示（「账号已被封禁」），链路自洽。
+        // 注意这只是兜底——真正的即时生效靠 updateUser 里的踢会话（token 直接失效）
+        ThrowUtils.throwIf(isBanned(user), ErrorCode.NOT_LOGIN_ERROR, "账号已被封禁");
 
         return user;
     }
@@ -292,11 +339,14 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
      * 其余规则（账号唯一、只存 BCrypt 哈希、昵称为空用账号兜底）完全共用同一套逻辑，
      * 因此新增账号的"最低权限"由 {@code UserRoleEnum.USER} 兜底，不会越权。
      *
-     * @param userAddRequest 新增请求（账号必填；密码留空则使用默认初始密码）
-     * @return 新用户 ID
+     * <p>初始密码：管理员指定则用他指定的，留空则<b>随机生成</b>（替代了曾经的固定默认口令），
+     * 明文只随返回值出现一次——后端不存明文，也没有二次查询的接口。
+     *
+     * @param userAddRequest 新增请求（账号必填；密码留空则使用随机初始密码）
+     * @return 新用户 ID 与本次生效的初始密码（明文，仅此一次）
      */
     @Override
-    public long addUser(UserAddRequest userAddRequest) {
+    public UserAddResultVO addUser(UserAddRequest userAddRequest) {
         ThrowUtils.throwIf(userAddRequest == null || StrUtil.isBlank(userAddRequest.getUserAccount()),
                 ErrorCode.PARAMS_ERROR, "用户账号不能为空");
         String userAccount = userAddRequest.getUserAccount().trim();
@@ -306,11 +356,18 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         // 这里绝不能用 @Pattern 把取值写死在注解上——枚举一改，注解就过期了
         UserRoleEnum role = resolveRole(userAddRequest.getUserRole(), UserRoleEnum.USER);
 
+        // 初始密码：管理员指定则用他指定的，留空则随机生成。
+        // 随机化替代了此前的固定默认口令——固定值意味着任何知道本系统的人
+        // 都能登录所有未及时改密的账号；随机口令只随返回值出现一次，攻击者无法预知。
+        // 字符集剔除 0/O/1/l/I（见 PasswordUtils.generateRandomPassword），转告时不会听错
+        String initialPassword = StrUtil.isNotBlank(userAddRequest.getUserPassword())
+                ? userAddRequest.getUserPassword()
+                : PasswordUtils.generateRandomPassword(INIT_PASSWORD_LENGTH);
+
         SysUser sysUser = new SysUser();
         sysUser.setUserAccount(userAccount);
-        // 密码为空时用默认初始密码；无论哪种情况都只存 BCrypt 哈希串
-        sysUser.setUserPassword(PasswordUtils.encrypt(
-                blankToDefault(userAddRequest.getUserPassword(), DEFAULT_INIT_PASSWORD)));
+        // 无论哪种情况都只存 BCrypt 哈希串，明文绝不入库
+        sysUser.setUserPassword(PasswordUtils.encrypt(initialPassword));
         // 昵称为空时用账号兜底（user_name 是 NOT NULL 且无默认值）
         sysUser.setUserName(blankToDefault(userAddRequest.getUserName(), userAccount));
         sysUser.setUserAvatar(userAddRequest.getUserAvatar());
@@ -321,7 +378,15 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
 
         boolean saveResult = this.save(sysUser);
         ThrowUtils.throwIf(!saveResult, ErrorCode.SYSTEM_ERROR, "新增用户失败，数据库异常");
-        return sysUser.getId();
+
+        UserAddResultVO result = new UserAddResultVO();
+        result.setId(sysUser.getId());
+        result.setInitialPassword(initialPassword);
+        // warn 级日志记录「事件」而非口令本身：日志里出现明文口令等于把它散播到日志系统。
+        // 这条提醒的是运维——有账号被创建，初始口令待转交，别只当成普通 info
+        log.warn("管理员新增用户，已生成随机初始密码 | userId={} | 待管理员通过安全渠道转交本人并督促改密",
+                sysUser.getId());
+        return result;
     }
 
     /**
@@ -371,7 +436,16 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         }
 
         // updateById 默认跳过 null 字段，这正是「传 null 表示不修改」语义成立的基础
-        return this.updateById(update);
+        boolean updated = this.updateById(update);
+
+        // 封禁即时生效：把目标账号的会话全部踢掉（token 直接失效），
+        // 而不是等 7 天后 token 自然过期——否则被封禁的用户在窗口期内
+        // 仍可用全部登录态接口。防锁死守卫已保证管理员不会封禁自己，无误踢风险。
+        // 只在这一种场景踢：改昵称/头像/角色都不影响既有会话的有效性
+        if (updated && Integer.valueOf(USER_STATUS_BANNED).equals(userUpdateRequest.getUserStatus())) {
+            StpUtil.logout(id);
+        }
+        return updated;
     }
 
     /**
@@ -407,7 +481,15 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
 
         // 逻辑删除：实际执行 UPDATE ... SET deleted_at = 毫秒时间戳，
         // 数据仍可追溯，且账号名会因为「唯一索引带 deleted_at」而被释放，可以重新注册
-        return this.removeById(id);
+        boolean removed = this.removeById(id);
+
+        // 与封禁同一理由：删除后踢掉该账号全部会话，不让已下发的 token 继续有效
+        // （getLoginUser 的 user==null 分支能兜住「当前用户」接口，
+        //   但直接拿 loginId 干活的端点看不到那一层，踢会话才是根治）
+        if (removed) {
+            StpUtil.logout(id);
+        }
+        return removed;
     }
 
     /**

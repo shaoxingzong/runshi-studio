@@ -25,13 +25,15 @@ export const adminApi = {
     // 后端是「部分更新」语义——为 null 的字段不参与 UPDATE（见 UserUpdateRequest 的 javadoc）
     userUpdate: (body: { id: string } & Record<string, unknown>) => http.post<boolean>('/user/update', body),
     // 管理员直接建账号（不必让当事人去前台自助注册；前台注册只能得到普通 user 角色）。
-    // userPassword 可省略：后端留空时用默认初始密码（DTO 里是 @Size 选填）
+    // userPassword 可省略：后端留空时生成随机初始密码（DTO 里是 @Size 选填）
+    // ⚠️ 返回的不是 id 而是 { id, initialPassword }：随机口令只随创建响应出现一次，
+    // 后端不存明文、查不回来——拿到后必须立即展示给管理员转交本人（见 Users.vue 的密码结果框）
     userAdd: (body: {
         userAccount: string;
         userPassword?: string;
         userName?: string;
         userRole?: string;
-    }) => http.post<string>('/user/add', body),
+    }) => http.post<{ id: string; initialPassword: string }>('/user/add', body),
     /** 删除账号（后端为逻辑删除） */
     userDelete: (id: string) => http.post<boolean>('/user/delete', { id }),
 

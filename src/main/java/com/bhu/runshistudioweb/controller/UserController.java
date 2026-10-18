@@ -15,6 +15,7 @@ import com.bhu.runshistudioweb.model.dto.user.UserRegisterRequest;
 import com.bhu.runshistudioweb.model.dto.user.UserUpdateRequest;
 import com.bhu.runshistudioweb.model.entity.SysUser;
 import com.bhu.runshistudioweb.model.vo.user.LoginUserVO;
+import com.bhu.runshistudioweb.model.vo.user.UserAddResultVO;
 import com.bhu.runshistudioweb.model.vo.user.UserVO;
 import com.bhu.runshistudioweb.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -165,13 +166,13 @@ public class UserController {
     /**
      * 管理员新增用户
      *
-     * @param userAddRequest 新增请求（账号必填；密码留空则使用默认初始密码）
-     * @return 新用户 ID
+     * @param userAddRequest 新增请求（账号必填；密码留空则使用随机初始密码）
+     * @return 新用户 ID 与本次生效的初始密码（明文，仅此一次返回——前端必须立即展示给管理员）
      */
     @PostMapping("/add")
     @SaCheckRole(UserRoleConstant.ADMIN)
-    @Operation(summary = "【管理员】新增用户", description = "可指定角色与状态；密码留空时使用默认初始密码")
-    public BaseResponse<Long> addUser(@RequestBody @Valid UserAddRequest userAddRequest) {
+    @Operation(summary = "【管理员】新增用户", description = "可指定角色与状态；密码留空时生成随机初始密码（仅创建响应返回一次）")
+    public BaseResponse<UserAddResultVO> addUser(@RequestBody @Valid UserAddRequest userAddRequest) {
         ThrowUtils.throwIf(userAddRequest == null, ErrorCode.PARAMS_ERROR);
         return ResultUtils.success(userService.addUser(userAddRequest));
     }

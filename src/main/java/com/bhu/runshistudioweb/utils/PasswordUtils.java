@@ -5,6 +5,8 @@ import cn.hutool.crypto.digest.BCrypt;
 import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.exception.ThrowUtils;
 
+import java.security.SecureRandom;
+
 /**
  * 密码加密与校验工具（基于 Hutool BCrypt）
  *
@@ -37,6 +39,40 @@ public class PasswordUtils {
 
     /** 私有构造：纯静态工具类，禁止外部 new（避免被当成实例工具类使用） */
     private PasswordUtils() {
+    }
+
+    /**
+     * 随机密码字符集：大小写字母 + 数字，<b>剔除易混淆字符</b>
+     *
+     * <p>剔除 0 / O / 1 / l / I 是刻意的：初始密码需要管理员看一眼再转告本人
+     * （电话、微信、纸条），这两个字符在绝大多数字体里几乎无法区分，
+     * 「0 还是 O」的电话沟通成本远比多去掉 5 个字符值钱。字符集共 57 个字符。
+     */
+    private static final String RANDOM_PASSWORD_CHARS =
+            "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
+
+    /** 随机数源：SecureRandom 而非 Random——口令生成不需要可预测性，需要不可预测性 */
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
+    /**
+     * 生成随机初始密码（管理员新增用户未指定密码时使用）
+     *
+     * <p><b>为什么要随机而不是固定默认值</b>：固定默认口令（如 {@code Runshi@123}）
+     * 意味着任何知道本系统存在的人，都能登录所有未及时改密的账号——
+     * 安全性寄托在「所有人都会立即改密」上，而现实里总有人不会。
+     * 随机化后，初始口令只可能在创建响应里出现一次，攻击者无法预知。
+     *
+     * @param length 密码长度（建议 10~16：够复杂度，又不至于转告时出错）
+     * @return 指定长度的随机明文密码（调用方负责展示一次并提示管理员转交本人）
+     */
+    public static String generateRandomPassword(int length) {
+        ThrowUtils.throwIf(length < 8, ErrorCode.PARAMS_ERROR, "随机密码长度不能少于 8 位");
+        StringBuilder sb = new StringBuilder(length);
+        for (int i = 0; i < length; i++) {
+            int index = SECURE_RANDOM.nextInt(RANDOM_PASSWORD_CHARS.length());
+            sb.append(RANDOM_PASSWORD_CHARS.charAt(index));
+        }
+        return sb.toString();
     }
 
     /**

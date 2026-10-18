@@ -138,16 +138,26 @@ class UserAdminCrudTest {
         long adminId = insertUser(adminAccount, UserRoleConstant.ADMIN);
         String token = login(adminAccount);
 
-        // ---------- 新增：不填密码与昵称，走默认值 ----------
+        // ---------- 新增：不填密码与昵称，走随机初始密码 + 账号兜底 ----------
         String newAccount = "crud" + (System.nanoTime() % 100000);
         String addBody = postJson("/user/add",
                 "{\"userAccount\":\"" + newAccount + "\",\"userRole\":\"" + UserRoleConstant.ADMIN + "\"}", token);
         assertEquals("00000", code(addBody), "新增失败：" + addBody);
-        long newId = Long.parseLong(dataValue(addBody));
+        // 响应体是对象 {id, initialPassword}：随机初始密码必须让管理员看见一次
+        long newId = Long.parseLong(data(addBody, "id"));
+        String initialPassword = data(addBody, "initialPassword");
 
         SysUser created = sysUserMapper.selectById(newId);
         assertTrue(created.getUserPassword().startsWith("$2a$"), "密码必须是 BCrypt 哈希，不能存明文");
-        assertTrue(PasswordUtils.matches("Runshi@123", created.getUserPassword()), "未填密码时应使用默认初始密码");
+        // 随机口令的三重断言：
+        // ① 库里存的哈希必须与「响应里返回的明文」匹配——证明返回的就是本次生效的口令；
+        // ② 长度 10 位（INIT_PASSWORD_LENGTH）；
+        // ③ 字符集不含 0/O/1/l/I 等易混字符——转告时不会听错（见 PasswordUtils.generateRandomPassword）
+        assertTrue(PasswordUtils.matches(initialPassword, created.getUserPassword()),
+                "入库的必须是响应里返回的那个随机口令");
+        assertEquals(10, initialPassword.length(), "随机初始密码长度应为 10 位");
+        assertTrue(initialPassword.matches("^[A-HJ-NP-Za-km-z2-9]{10}$"),
+                "随机口令不应含 0/O/1/l/I 等易混字符，实际：" + initialPassword);
         assertEquals(newAccount, created.getUserName(), "昵称不填时应以账号兜底（user_name 是 NOT NULL）");
         assertEquals(UserRoleConstant.ADMIN, created.getUserRole());
         assertEquals(0, created.getUserStatus(), "状态不填时应为 0-正常");

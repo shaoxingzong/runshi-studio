@@ -7,6 +7,7 @@ import com.bhu.runshistudioweb.model.dto.user.UserQueryRequest;
 import com.bhu.runshistudioweb.model.dto.user.UserUpdateRequest;
 import com.bhu.runshistudioweb.model.entity.SysUser;
 import com.bhu.runshistudioweb.model.vo.user.LoginUserVO;
+import com.bhu.runshistudioweb.model.vo.user.UserAddResultVO;
 import com.bhu.runshistudioweb.model.vo.user.UserVO;
 
 /**
@@ -115,11 +116,15 @@ public interface UserService extends IService<SysUser> {
      * <p>与自助注册的差别：这里**允许指定角色与状态**（这正是管理动作的一部分），
      * 但角色值必须落在枚举范围内，不允许写进任意字符串。
      *
-     * @param userAddRequest 新增请求（账号必填；密码为空时使用默认初始密码）
-     * @return 新用户 ID
+     * <p>密码留空时使用<b>随机生成的初始密码</b>（而非固定默认值）：固定口令意味着
+     * 任何知道本系统的人都能登录所有未及时改密的账号。随机口令只随本方法的返回值
+     * 出现一次，后端不存明文、也无法再次查询，管理员必须立即转交本人。
+     *
+     * @param userAddRequest 新增请求（账号必填；密码为空时使用随机初始密码）
+     * @return 新用户 ID 与本次生效的初始密码（明文，仅此一次）
      * @throws com.bhu.runshistudioweb.exception.BusinessException 账号已存在、角色非法时抛出
      */
-    long addUser(UserAddRequest userAddRequest);
+    UserAddResultVO addUser(UserAddRequest userAddRequest);
 
     /**
      * 管理员更新用户（部分更新：字段为 null 表示不修改）

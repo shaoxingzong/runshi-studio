@@ -194,6 +194,17 @@ const createForm = reactive({
     userRole: 'member',
 });
 
+/**
+ * 初始密码结果框（创建成功后弹出）
+ *
+ * <p><b>为什么必须弹这个框</b>：管理员没填密码时，后端生成的是<b>随机</b>口令，
+ * 只随创建响应返回这一次——后端不存明文、也没有二次查询的接口。
+ * 不展示就等于管理员本人也不知道密码，账号等于白建。
+ */
+const passwordResultVisible = ref(false);
+/** 待展示给管理员的初始密码明文（展示后即弃，不落任何持久化存储） */
+const initialPassword = ref('');
+
 function openCreate() {
     Object.assign(createForm, {
         userAccount: '',
@@ -207,7 +218,7 @@ function openCreate() {
 /**
  * 新增账号
  *
- * 密码留空时**不下发** userPassword 字段：后端会用默认初始密码，
+ * 密码留空时**不下发** userPassword 字段：后端会生成随机初始密码，
  * 而下发空串会撞上 DTO 的 @Size(min=8)。这与「字段为 null 即不改」的部分更新语义一致。
  */
 async function submitCreate() {
@@ -216,11 +227,11 @@ async function submitCreate() {
         return;
     }
     if (createForm.userPassword && (createForm.userPassword.length < 8 || createForm.userPassword.length > 20)) {
-        ElMessage.warning('密码长度需为 8-20 位（留空则用默认初始密码）');
+        ElMessage.warning('密码长度需为 8-20 位（留空则生成随机初始密码）');
         return;
     }
     try {
-        await adminApi.userAdd({
+        const result = await adminApi.userAdd({
             userAccount: createForm.userAccount,
             userPassword: createForm.userPassword || undefined,
             userName: createForm.userName || undefined,
@@ -228,9 +239,23 @@ async function submitCreate() {
         });
         ElMessage.success('账号已创建');
         createVisible.value = false;
+        // 初始密码只出现这一次：立即展示给管理员，由其通过安全渠道转交本人
+        initialPassword.value = result.initialPassword;
+        passwordResultVisible.value = true;
         await load();
     } catch (e) {
         console.warn('新增账号失败', e);
+    }
+}
+
+/** 复制初始密码到剪贴板：navigator.clipboard 在非安全上下文（http）下不可用，给个兜底提示 */
+async function copyInitialPassword() {
+    try {
+        await navigator.clipboard.writeText(initialPassword.value);
+        ElMessage.success('已复制，请通过安全渠道转交本人');
+    } catch {
+        // 复制失败（通常是 http 下浏览器策略）：让管理员手动选中复制，不静默
+        ElMessage.warning('浏览器不允许自动复制，请手动选中复制');
     }
 }
 
@@ -393,7 +418,7 @@ onMounted(load);
 
         <el-dialog v-model="createVisible" title="新增账号" width="440px">
             <p class="muted">
-                直接创建登录账号。密码留空则使用系统默认初始密码，创建后请通过安全渠道告知本人。
+                直接创建登录账号。密码留空则生成<b>随机初始密码</b>，创建成功后仅展示一次，请及时通过安全渠道告知本人。
             </p>
             <el-form label-position="top">
                 <el-form-item label="账号" required>
@@ -402,7 +427,7 @@ onMounted(load);
                 <el-form-item label="初始密码">
                     <el-input
                         v-model="createForm.userPassword"
-                        placeholder="留空则用默认初始密码（8-20 位）"
+                        placeholder="留空则生成随机初始密码（8-20 位）"
                         show-password
                     />
                 </el-form-item>
@@ -418,6 +443,19 @@ onMounted(load);
             <template #footer>
                 <el-button @click="createVisible = false">取消</el-button>
                 <el-button type="primary" @click="submitCreate">创建</el-button>
+            </template>
+        </el-dialog>
+
+        <!-- 初始密码结果框：随机口令只随创建响应返回这一次（后端不存明文、查不回来），
+             关掉这个框就再也看不到——所以「复制」按钮是主操作，关闭是次操作 -->
+        <el-dialog v-model="passwordResultVisible" title="账号已创建" width="420px">
+            <p class="muted">初始密码仅此一次展示，请立即复制并通过安全渠道转交本人，并督促其登录后自行修改。</p>
+            <div class="init-password">
+                <code class="init-password__value">{{ initialPassword }}</code>
+                <el-button type="primary" @click="copyInitialPassword">复制</el-button>
+            </div>
+            <template #footer>
+                <el-button @click="passwordResultVisible = false">关闭</el-button>
             </template>
         </el-dialog>
 
@@ -532,5 +570,28 @@ onMounted(load);
 p {
     margin: 0 0 10px;
     font-size: 13px;
+}
+
+/* 初始密码展示行：等宽字体 + 弱背景，让「这是一串要抄走的字符」一眼可辨 */
+.init-password {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: var(--brand-soft);
+    border: 1px dashed var(--brand);
+    border-radius: var(--radius-sm);
+}
+
+.init-password__value {
+    flex: 1;
+    min-width: 0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    color: var(--brand-dark);
+    word-break: break-all;
+    user-select: all;
 }
 </style>

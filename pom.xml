@@ -278,6 +278,11 @@
                              既有登录/注册用例密集，不关会跑到上限后集体 429。
                              限流行为本身由 IpRateLimitManagerTest 纯单测覆盖，不依赖该开关。 -->
                         <studio.auth.rate-limit.enabled>false</studio.auth.rate-limit.enabled>
+                        <!-- 同理关闭账号级登录失败锁定：既有登录类用例密集（改密码、换角色等
+                             前置步骤都要登录），不关的话跑到第 5 个就开始集体「账号已锁定」。
+                             锁定行为由 AuthLockManagerTest 纯单测 + UserLoginLockTest 端到端
+                             （@DynamicPropertySource 覆盖为 true）覆盖，不依赖该开关。 -->
+                        <studio.auth.lock.enabled>false</studio.auth.lock.enabled>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>
