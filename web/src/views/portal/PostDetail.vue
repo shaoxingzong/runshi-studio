@@ -1,11 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import DOMPurify from 'dompurify';
-import { marked } from 'marked';
 import { postApi } from '@/api/post';
+import { usePageMeta } from '@/composables/usePageMeta';
 import ErrorRetry from '@/components/ErrorRetry.vue';
+import {
+    bindCodeCopy,
+    MARKDOWN_ALLOWED_ATTR,
+    MARKDOWN_ALLOWED_TAGS,
+    observeTocHighlight,
+    renderMarkdown,
+    scrollToHeading,
+    TOC_MIN_ITEMS,
+} from '@/utils/markdown';
 import { useUserStore } from '@/stores/user';
 import type { PostComment, PostDetail } from '@/api/types';
 
@@ -30,20 +39,27 @@ const submitting = ref(false);
 /** 点赞请求中（按钮 loading，防连点） */
 const liking = ref(false);
 
+/** 正文容器：代码块复制与目录高亮都要在真实 DOM 上接线（v-html 的内容 Vue 管不着） */
+const bodyRef = ref<HTMLElement | null>(null);
+
 /**
- * 正文渲染：Markdown → HTML → **白名单清洗** → v-html
+ * 正文渲染：共享工具（renderMarkdown）→ **白名单清洗** → v-html
  *
- * <p>为什么必须清洗：marked 只负责「Markdown 转 HTML」，
- * 它 v15 起已移除内置 sanitize——正文里的 `<script>`、`onerror=` 会被原样保留，
- * 而 `v-html` 是直接写 DOM，等于把发帖人当成了可信来源。
+ * <p>为什么必须清洗：marked 只负责「Markdown 转 HTML」，它 v15 起已移除内置 sanitize——
+ * 正文里的 `<script>`、`onerror=` 会被原样保留，而 `v-html` 是直接写 DOM，
+ * 等于把发帖人当成了可信来源。
  *
  * <p>比项目详情页<b>更严一步</b>：帖子是<b>成员自己提交</b>的，
  * 可信度低于管理员录入的项目正文，因此这里额外限制 `img` 的 `src`
  * 只能是站内 `/uploads/` 路径——外链图既会被后端拒绝，
  * 也可能成为追踪像素泄露访客 IP。
+ *
+ * <p>白名单里额外放行 {@code div/button/id/type/aria-label/loading/decoding}：
+ * 这些是共享 renderer 的增强输出（代码块包装、复制按钮、标题锚点、图片懒加载），
+ * 不放行会被静默洗掉——表现是「复制按钮不见了但没人报错」。
  */
-const contentHtml = computed(() => {
-    const raw = marked.parse(detail.value?.content ?? '') as string;
+const rendered = computed(() => {
+    const result = renderMarkdown(detail.value?.content ?? '');
 
     // hook 是全局的，用完立刻摘掉：这里是同步代码块，不会影响其它页面的清洗
     DOMPurify.addHook('afterSanitizeAttributes', (node) => {
@@ -57,17 +73,50 @@ const contentHtml = computed(() => {
     });
 
     try {
-        return DOMPurify.sanitize(raw, {
-            ALLOWED_TAGS: [
-                'p', 'br', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-                'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'strong', 'em', 'del',
-                'a', 'img', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'span',
-            ],
-            ALLOWED_ATTR: ['href', 'src', 'alt', 'title', 'target', 'rel', 'class'],
-        });
+        // 白名单与工具同源（MARKDOWN_ALLOWED_*）：页面只保留自己的策略差异（img 站内限制）
+        result.html = DOMPurify.sanitize(result.html, {
+            ALLOWED_TAGS: MARKDOWN_ALLOWED_TAGS,
+            ALLOWED_ATTR: MARKDOWN_ALLOWED_ATTR,
+        }) as string;
     } finally {
         DOMPurify.removeHook('afterSanitizeAttributes');
     }
+    return result;
+});
+
+const contentHtml = computed(() => rendered.value.html);
+/** 目录（共享工具单次渲染时顺带抽取，与标题 id 同源，不会对不上） */
+const toc = computed(() => rendered.value.toc);
+/** 短文不出目录：两行字的文章配个目录框很滑稽 */
+const showToc = computed(() => toc.value.length >= TOC_MIN_ITEMS);
+/** 当前阅读章节（IntersectionObserver 驱动，见 observeTocHighlight） */
+const activeHeading = ref('');
+
+/** 文章重渲染（重试加载、切页）时先摘旧监听再绑新的，不叠加 */
+let unbindCopy: (() => void) | null = null;
+let unobserve: (() => void) | null = null;
+
+async function bindMarkdownEnhancements() {
+    // v-html 的内容要等 DOM 真正更新后才拿得到
+    await nextTick();
+    unbindCopy?.();
+    unobserve?.();
+    const el = bodyRef.value;
+    if (!el) {
+        return;
+    }
+    unbindCopy = bindCodeCopy(el);
+    unobserve = observeTocHighlight(el, (id) => {
+        activeHeading.value = id;
+    });
+}
+
+// 正文 HTML 变化（detail 加载完成 / 重试成功）即重新接线
+watch(contentHtml, bindMarkdownEnhancements);
+
+onBeforeUnmount(() => {
+    unbindCopy?.();
+    unobserve?.();
 });
 
 async function load() {
@@ -183,6 +232,18 @@ async function like() {
 }
 
 onMounted(load);
+
+/**
+ * 标签页标题用真实帖子名（数据异步回来，与路由 meta 的「帖子详情」占位衔接）
+ *
+ * <p>为什么值得做：详情页是搜索引擎唯一可能收录的内容页，
+ * 标题停在「帖子详情 - 润石工作室」等于没录。分享链接时对方看到的也是真名。
+ * description 取摘要兜底（没有就保持 index.html 的静态描述，不写空值）。
+ */
+usePageMeta({
+    title: computed(() => detail.value?.title ?? '帖子详情'),
+    description: computed(() => detail.value?.summary ?? ''),
+});
 </script>
 
 <template>
@@ -222,8 +283,24 @@ onMounted(load);
                     </el-button>
                 </div>
 
+                <!-- 目录：长文（标题 ≥3）才出现。href 保留原生锚点语义
+                     （链接可复制、可中键新窗口），click 接平滑滚动 -->
+                <nav v-if="showToc" class="toc">
+                    <div class="toc-title">目录</div>
+                    <a
+                        v-for="item in toc"
+                        :key="item.id"
+                        class="toc-item"
+                        :class="{ h3: item.level === 3, active: activeHeading === item.id }"
+                        :href="`#${item.id}`"
+                        @click.prevent="scrollToHeading(item.id)"
+                    >
+                        {{ item.text }}
+                    </a>
+                </nav>
+
                 <!-- 正文已过 DOMPurify 白名单清洗 -->
-                <div class="markdown-body" v-html="contentHtml" />
+                <div ref="bodyRef" class="markdown-body" v-html="contentHtml" />
             </article>
 
             <section class="card comments">

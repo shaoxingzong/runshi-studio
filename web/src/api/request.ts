@@ -39,6 +39,29 @@ instance.interceptors.request.use((config) => {
     return config;
 });
 
+/**
+ * 网络层兜底：没到达服务器（断网 / 超时 / 服务未启动）时的统一处理
+ *
+ * <p>为什么需要它：axios 在这种场景下抛的原始 message 是 {@code "Network Error"}、
+ * {@code "ECONNABORTED"} 这类英文技术词，直接透给页面意味着用户在错误条里看到英文，
+ * 且每个页面都要各自判断「这是网络错还是业务错」。这里统一改写成中文，
+ * 页面错误条（ErrorRetry）与全局提示才都能用上人话。
+ *
+ * <p><b>与 {@link unwrap} 的分工</b>：unwrap 管「服务端正常响应但业务码非 0」，
+ * 本拦截器管「根本没连上服务端」——{@code error.response} 为空正是后者的判据。
+ * 有 response 的错误（4xx/5xx）不在这里处理，交给 unwrap，避免同一错误弹两次提示。
+ */
+instance.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        if (error && !error.response) {
+            error.message = '网络异常，请检查网络连接后重试';
+            ElMessage.error(error.message);
+        }
+        return Promise.reject(error);
+    },
+);
+
 /** 把 {code,data,message} 解成 data，非 0 抛错 */
 async function unwrap<T>(promise: Promise<AxiosResponse<ApiResponse<T>>>): Promise<T> {
     const response = await promise;

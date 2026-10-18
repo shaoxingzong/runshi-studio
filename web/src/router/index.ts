@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 import { deviceType, referrerHost, trafficApi, visitorId } from '@/api/traffic';
+import { usePageMeta } from '@/composables/usePageMeta';
 
 /**
  * 路由表
@@ -14,30 +15,79 @@ const routes: RouteRecordRaw[] = [
         path: '/',
         component: () => import('@/layouts/PortalLayout.vue'),
         children: [
+            // 首页不配 meta.title：标题退回纯站点名（「首页 - 润石工作室」是冗余信息）
             { path: '', name: 'home', component: () => import('@/views/portal/Home.vue') },
             // ⚠️ 官网**没有**成员页：业务规则「团队成员不对外展示」，
             // 后端的 /member/list 与 /member/detail 已删除（访问会 404）。
             // 成员信息对外唯一的出口是项目详情里的「参与成员」。
-            { path: 'projects', name: 'projects', component: () => import('@/views/portal/Projects.vue') },
+            {
+                path: 'projects',
+                name: 'projects',
+                component: () => import('@/views/portal/Projects.vue'),
+                meta: { title: '项目案例' },
+            },
             {
                 path: 'projects/:id',
                 name: 'project-detail',
                 component: () => import('@/views/portal/ProjectDetail.vue'),
+                // 详情页标题由页面内用真实项目名二次覆盖（数据异步回来，见 usePageMeta）
+                meta: { title: '项目详情' },
             },
-            { path: 'certificates', name: 'certificates', component: () => import('@/views/portal/Certificates.vue') },
-            { path: 'ai', name: 'ai', component: () => import('@/views/portal/AiChat.vue') },
+            {
+                path: 'certificates',
+                name: 'certificates',
+                component: () => import('@/views/portal/Certificates.vue'),
+                meta: { title: '荣誉墙' },
+            },
+            { path: 'ai', name: 'ai', component: () => import('@/views/portal/AiChat.vue'), meta: { title: 'AI 助手' } },
             // 社区帖子：列表与详情对游客开放（后端白名单精确放行了 /post/list/page、/post/detail）
-            { path: 'posts', name: 'posts', component: () => import('@/views/portal/Posts.vue') },
+            {
+                path: 'posts',
+                name: 'posts',
+                component: () => import('@/views/portal/Posts.vue'),
+                meta: { title: '社区' },
+            },
             // ⚠️ 顺序有讲究：new 与 my 必须排在 ':id' 之前。
             // 路由按定义顺序匹配，写反了的话 /posts/new 会被当成 id=new 的详情页
-            { path: 'posts/new', name: 'post-new', component: () => import('@/views/portal/PostEdit.vue') },
-            { path: 'posts/my', name: 'my-posts', component: () => import('@/views/portal/MyPosts.vue') },
-            { path: 'posts/:id', name: 'post-detail', component: () => import('@/views/portal/PostDetail.vue') },
+            {
+                path: 'posts/new',
+                name: 'post-new',
+                component: () => import('@/views/portal/PostEdit.vue'),
+                meta: { title: '发表帖子' },
+            },
+            {
+                path: 'posts/my',
+                name: 'my-posts',
+                component: () => import('@/views/portal/MyPosts.vue'),
+                meta: { title: '我的发帖' },
+            },
+            {
+                path: 'posts/:id',
+                name: 'post-detail',
+                component: () => import('@/views/portal/PostDetail.vue'),
+                // 同项目详情：真实标题由页面内覆盖
+                meta: { title: '帖子详情' },
+            },
             // 成员工作台（考勤）：后端判成员身份，页面内部对非成员也会再拦一次
-            { path: 'workspace', name: 'workspace', component: () => import('@/views/portal/Workspace.vue') },
+            {
+                path: 'workspace',
+                name: 'workspace',
+                component: () => import('@/views/portal/Workspace.vue'),
+                meta: { title: '成员工作台' },
+            },
             // C 端注册 / 登录：注册出来是普通用户（user），「成员」身份由管理员在后台授予
-            { path: 'login', name: 'login', component: () => import('@/views/portal/Login.vue') },
-            { path: 'register', name: 'register', component: () => import('@/views/portal/Register.vue') },
+            {
+                path: 'login',
+                name: 'login',
+                component: () => import('@/views/portal/Login.vue'),
+                meta: { title: '登录' },
+            },
+            {
+                path: 'register',
+                name: 'register',
+                component: () => import('@/views/portal/Register.vue'),
+                meta: { title: '注册' },
+            },
         ],
     },
     {
@@ -45,40 +95,75 @@ const routes: RouteRecordRaw[] = [
         path: '/admin/login',
         name: 'admin-login',
         component: () => import('@/views/admin/Login.vue'),
+        meta: { title: '后台登录' },
     },
     {
         path: '/admin',
         component: () => import('@/layouts/AdminLayout.vue'),
-        meta: { requiresAuth: true },
+        meta: { requiresAuth: true, title: '管理后台' },
         children: [
             // 落地页：先看概览（待审积压、各项计数），再进具体管理页
             { path: '', redirect: '/admin/dashboard' },
-            { path: 'dashboard', name: 'admin-dashboard', component: () => import('@/views/admin/Dashboard.vue') },
-            { path: 'members', name: 'admin-members', component: () => import('@/views/admin/Members.vue') },
-            { path: 'users', name: 'admin-users', component: () => import('@/views/admin/Users.vue') },
-            { path: 'projects', name: 'admin-projects', component: () => import('@/views/admin/Projects.vue') },
+            {
+                path: 'dashboard',
+                name: 'admin-dashboard',
+                component: () => import('@/views/admin/Dashboard.vue'),
+                meta: { title: '首页概览' },
+            },
+            {
+                path: 'members',
+                name: 'admin-members',
+                component: () => import('@/views/admin/Members.vue'),
+                meta: { title: '成员管理' },
+            },
+            {
+                path: 'users',
+                name: 'admin-users',
+                component: () => import('@/views/admin/Users.vue'),
+                meta: { title: '用户管理' },
+            },
+            {
+                path: 'projects',
+                name: 'admin-projects',
+                component: () => import('@/views/admin/Projects.vue'),
+                meta: { title: '项目管理' },
+            },
             {
                 path: 'certificates',
                 name: 'admin-certificates',
                 component: () => import('@/views/admin/Certificates.vue'),
+                meta: { title: '证书管理' },
             },
-            { path: 'knowledge', name: 'admin-knowledge', component: () => import('@/views/admin/Knowledge.vue') },
-            { path: 'posts', name: 'admin-posts', component: () => import('@/views/admin/PostAudit.vue') },
+            {
+                path: 'knowledge',
+                name: 'admin-knowledge',
+                component: () => import('@/views/admin/Knowledge.vue'),
+                meta: { title: '知识库' },
+            },
+            {
+                path: 'posts',
+                name: 'admin-posts',
+                component: () => import('@/views/admin/PostAudit.vue'),
+                meta: { title: '帖子审核' },
+            },
             // 帖子管理（全部帖子的查阅 / 删除 / 置顶 / 代改），与上面的待审队列互补
             {
                 path: 'post-manage',
                 name: 'admin-post-manage',
                 component: () => import('@/views/admin/PostManage.vue'),
+                meta: { title: '帖子管理' },
             },
             {
                 path: 'post-comments',
                 name: 'admin-post-comments',
                 component: () => import('@/views/admin/PostCommentAudit.vue'),
+                meta: { title: '评论审核' },
             },
             {
                 path: 'traffic',
                 name: 'admin-traffic',
                 component: () => import('@/views/admin/Traffic.vue'),
+                meta: { title: '流量分析' },
             },
         ],
     },
@@ -88,11 +173,17 @@ const routes: RouteRecordRaw[] = [
         path: '/403',
         name: 'forbidden',
         component: () => import('@/views/Forbidden.vue'),
+        meta: { title: '无权访问' },
     },
     // 404：未匹配路径。此前是静默 redirect '/'——用户输错网址被悄悄送回首页，
     // 既不知道发生了什么，也无法判断「页面没了」还是「自己打错了」。
     // 注意：真正的权限判定在后端 @SaCheckRole，本页与路由守卫都只是体验层
-    { path: '/:pathMatch(.*)*', name: 'not-found', component: () => import('@/views/NotFound.vue') },
+    {
+        path: '/:pathMatch(.*)*',
+        name: 'not-found',
+        component: () => import('@/views/NotFound.vue'),
+        meta: { title: '页面不存在' },
+    },
 ];
 
 const router = createRouter({
@@ -134,8 +225,13 @@ router.beforeEach((to) => {
  *
  * <p><b>失败静默</b>：埋点是旁路，不 await、不抛错、不弹窗——
  * 它不该让任何一次导航变慢或变红。
+ *
+ * <p><b>标签页标题也在这里更新</b>（{@link usePageMeta}）：一处接线、全部路由生效，
+ * 比每个页面各自记得调可靠得多。详情页（项目 / 帖子）会在页面内用真实数据二次覆盖。
  */
 router.afterEach((to) => {
+    usePageMeta({ title: (to.meta.title as string) ?? '' });
+
     void trafficApi.report({
         pagePath: to.path,
         visitorId: visitorId(),

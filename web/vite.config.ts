@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
@@ -13,8 +14,30 @@ import { ElementPlusResolver } from 'unplugin-vue-components/resolvers';
  *    业务代码更新时用户不用重新下载它们（缓存命中率）；
  * 3. chunk 体积告警阈值调高到 1.5MB：element-plus 全量引入后必然超过默认的 500KB，
  *    否则构建会一直刷警告（那是"警告等价于失效"的典型场景）。
+ *
+ * <p>test 段给 vitest 用：jsdom 提供 localStorage / window / document
+ * （请求层与登录态 store 的测试都依赖它们）。用三斜杠引用扩展 vite 配置类型，
+ * 而不是把 import 换成 {@code vitest/config}——那样 {@code vite build}
+ * 就会在没装 devDeps 的机器上直接失败，类型引用只在类型层面生效、构建零依赖。
  */
 export default defineConfig({
+    test: {
+        environment: 'jsdom',
+        globals: true,
+        /**
+         * 把 element-plus 纳入 Vite 处理链（内联），而不是外部化给 Node 原生 ESM。
+         *
+         * 不配的后果：组件测试挂上 el-alert / el-button 时，Node 直接加载
+         * element-plus 的模块，遇到其内部的 `.css` 导入就抛
+         * `Unknown file extension ".css"`——组件测试整个文件收集失败。
+         * 内联后 CSS 由 Vite 接管（test.css=false 时替换为空模块），组件可正常挂载。
+         */
+        server: {
+            deps: {
+                inline: ['element-plus'],
+            },
+        },
+    },
     plugins: [
         vue(),
         /**

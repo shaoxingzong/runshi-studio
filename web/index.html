@@ -5,6 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/png" href="/logo.png" />
     <meta name="description" content="润石工作室 · 项目案例、荣誉墙与智能问答助手" />
+    <!--
+      OG 分享标签：微信 / Twitter / Discord 等抓的就是这些。
+     没有它们，分享链接只剩一个干巴巴的域名，点开率明显更低。
+     注意这是**静态**标签——SPA 路由切换不会改它（运行时只更新 title/description，
+     见 composables/usePageMeta）。要每页不同的 OG，得上 SSR/预渲染，超出本期范围。
+     刻意不放 canonical：填错域名比不填更糟（会让搜索引擎忽略正确地址），
+     真要用时在部署侧按真实域名补。
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="润石工作室" />
+    <meta property="og:description" content="项目案例、荣誉墙与智能问答助手" />
+    <meta property="og:image" content="/logo.png" />
+    <meta name="twitter:card" content="summary" />
     <title>润石工作室</title>
 </head>
 <body>

@@ -145,6 +145,109 @@ a:hover {
     margin: 18px 0 10px;
 }
 
+/* 锚点跳转的吸顶偏移：门户头部是 sticky 的（约 62px + 一点呼吸感），
+   不给偏移时点目录跳过去，标题会躲在导航下面 */
+.markdown-body h2,
+.markdown-body h3 {
+    scroll-margin-top: 84px;
+}
+
+/* ===== Markdown 增强：代码块复制（帖子/项目详情共用，故放全局）===== */
+
+/* 相对定位容器：复制按钮以它为定位基准 */
+.markdown-body .code-block {
+    position: relative;
+}
+
+/* 复制按钮：默认半隐（不打扰阅读），hover 代码块时全现；
+   触屏没有 hover，小屏下常显（见下方 640px 断点） */
+.markdown-body .copy-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    padding: 2px 10px;
+    border: none;
+    border-radius: 6px;
+    background: rgb(31 41 55 / 75%);
+    color: #fff;
+    font-size: 12px;
+    line-height: 20px;
+    cursor: pointer;
+    opacity: 0.55;
+    transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.markdown-body .code-block:hover .copy-btn,
+.markdown-body .copy-btn:focus-visible {
+    opacity: 1;
+    transform: translateY(-1px);
+}
+
+.markdown-body .copy-btn.is-error {
+    background: var(--danger);
+    opacity: 1;
+}
+
+/* ===== Markdown 增强：长文目录 ===== */
+/* 出现在正文卡片的卡片内：用底色区分而不是再套一层边框（双层边框很丑） */
+.toc {
+    margin: 18px 0 22px;
+    padding: 14px 18px;
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+}
+
+.toc-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 8px;
+}
+
+.toc-item {
+    display: block;
+    padding: 3px 0 3px 14px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--muted);
+    /* 当前章节的左侧竖线：高亮随阅读位置滑动 */
+    border-left: 2px solid transparent;
+    transition: color 150ms ease, border-color 200ms ease;
+}
+
+.toc-item:hover {
+    color: var(--brand);
+    text-decoration: none;
+}
+
+/* h3 缩进 + 空心点，与 h2 的实心点区分层级 */
+.toc-item.h3 {
+    padding-left: 30px;
+}
+
+.toc-item.active {
+    color: var(--brand);
+    border-left-color: var(--brand);
+}
+
+@media (max-width: 640px) {
+    /* 触屏无 hover：复制按钮常显，否则用户根本不知道它能点 */
+    .markdown-body .copy-btn {
+        opacity: 1;
+    }
+
+    /* 目录条目多时两列排，避免把首屏撑得更长 */
+    .toc {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        column-gap: 16px;
+    }
+
+    .toc-title {
+        grid-column: 1 / -1;
+    }
+}
+
 .markdown-body p {
     margin: 0 0 12px;
 }
