@@ -51,6 +51,11 @@ SET NAMES utf8mb4;
 -- 一、先删后建：子表在前、父表在后
 --     （本项目没有外键约束，顺序其实不影响执行；按依赖倒序写只是为了语义清晰、便于阅读）
 -- ============================================================================================================
+-- ⚠️ 新增表时这里必须同步加一条 DROP（按「先子后父」倒序）。
+--    历史教训：studio_page_visit 作为第 16 张表后加进来时只加了 CREATE 没加 DROP，
+--    导致重复执行本脚本时它报「already exists」并中断整个脚本——
+--    「可重复执行」的承诺对漏掉的那张表是假的。
+DROP TABLE IF EXISTS `studio_page_visit`;
 DROP TABLE IF EXISTS `studio_post_like`;
 DROP TABLE IF EXISTS `studio_post_report`;
 DROP TABLE IF EXISTS `studio_post_comment`;

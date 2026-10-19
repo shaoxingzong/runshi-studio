@@ -39,22 +39,41 @@ npm run build        # 产物在 web/dist/，交由 Nginx 托管
 
 > `npm run build` 自带 `vue-tsc --noEmit` 类型检查，类型不过会直接构建失败——这是前端的质量门禁，别跳过。
 
-### 2.3 建库
+### 2.3 建库（两步：环境准备 → 结构导入）
 
-在**全新的空库**上执行一次：
+**第一步，环境准备**（建库、建应用用户 `runshi`、最小权限授权，幂等可重复执行）：
+
+```bash
+# ⚠️ 先编辑 db/init-prod.sql，把 CREATE USER 里的占位口令改成真实口令
+mysql -uroot -p < db/init-prod.sql
+```
+
+**第二步，结构导入**（16 张表；**DROP+CREATE，只适合空库**，已在使用中的库不要整跑）：
 
 ```bash
 mysql -uroot -p < db/user.sql
 ```
 
-> ⚠️ 脚本是「先 DROP 再 CREATE」，会清空数据；已在使用中的库不要整跑，
-> 按脚本注释的约定「改结构只改本文件，再手工执行对应 ALTER」。
+> ⚠️ 两步刻意分开，不合并成一个脚本：`user.sql` 自带 `USE studio_db`，
+> 嵌套执行时会覆盖调用方的库切换——实测事故：DROP+CREATE 全部落回原库把数据清空。
+> 两步各自单纯，胜过一步聪明。
+>
+> `runshi` 只授了 CRUD（无 DDL）：应用账号被拖库时损失可控在数据层，结构不会被改。
 
 ---
 
 ## 3. 环境变量清单
 
-按 `application-prod.yml` 的约定分两组：**密钥类不给默认值**（缺了启动就失败，比运行时才报错好排查），路径类有默认值。
+按 `application-prod.yml` 的约定分两组：密钥类不给默认值，路径类有默认值。
+
+> ⚠️ **「缺失则启动失败」由 `StartupSelfCheck` 保证，不是配置语法保证**（2026-10-18 上线前实测发现）：
+> 原以为「`${VAR}` 不带默认值 = 缺失即启动失败」，实测 Boot 4 有两条漏网路径——
+> ① Hikari/Lettuce 懒建连，口令错误的连接失败**不冒泡到启动流程**，应用照常起、第一个请求才 `B0001`；
+> ② `@ConfigurationProperties` 绑定路径把无法解析的占位符**原样传字面量**（`"${AI_API_KEY}"`），
+> AiManager 的 isBlank 检查被绕过。两类问题的共同形态：**看「启动成功」以为配置齐全，实际带着坏配置上线**。
+> 因此启动末尾有一道自检：`SELECT 1` + `PING` + AI 配置形态（字面量检测），任一不过即退出，
+> 错误信息直接指出缺哪个变量。自检通过时日志有明确一行：
+> `启动自检通过：数据库 / Redis 连通正常，AI 配置形态合法`——**上线时看到这行才算真的配好了**。
 
 ### 3.1 必填（缺失则启动失败）
 
@@ -166,25 +185,63 @@ IPv4 地址. . . . . . . . . . . . . : 192.168.1.23
 
 ---
 
-## 7. 上线检查清单（上线前逐条过）
+## 7. 数据备份（git 只备份代码，不备份数据）
+
+帖子、成员、证书、流量、上传的图片**全是人工积累、丢了不可再生**的数据。用仓库里的脚本每天备份：
+
+```bash
+# db/backup.sh：MySQL 全量快照（单事务不锁表）+ 上传目录打包 + 保留 14 天
+# 首次先手动跑一遍验证（把 DB_PASS 换成真实口令）：
+DB_PASS='真实口令' bash db/backup.sh
+
+# 验证产物（默认 /data/backup/runshi-studio/）：
+ls -lh /data/backup/runshi-studio/
+#   db_20261018_020000.sql.gz       数据库
+#   uploads_20261018_020000.tar.gz  上传目录
+```
+
+**挂到 crontab**（每天凌晨 2 点，失败时发邮件——没有告警的备份等于没备份）：
+
+```cron
+0 2 * * * DB_PASS='真实口令' /usr/bin/bash /opt/runshi/db/backup.sh >> /data/logs/backup.log 2>&1
+```
+
+> 口令也可以放进 root 的 `~/.my.cnf`（权限 600）让脚本从 `DB_PASS` 环境变量退化为可选——
+> 但**别把 .cnf 提交进仓库**。
+
+**恢复步骤**（数据损坏 / 误删时）：
+
+```bash
+# ① 数据库（dump 内含 DROP TABLE IF EXISTS + CREATE，恢复到备份时完整状态）
+gunzip < /data/backup/runshi-studio/db_YYYYmmdd_HHMMSS.sql.gz | mysql -uroot -p studio_db
+
+# ② 上传目录（解到 /data 下，路径与 FILE_ROOT_DIR 对应）
+tar -xzf /data/backup/runshi-studio/uploads_YYYYmmdd_HHMMSS.tar.gz -C /data
+```
+
+**为什么脚本里是这些参数**：`--single-transaction` 拿 InnoDB 一致性快照、不锁表不影响在线服务；`--no-tablespaces` 绕开应用用户没有的 PROCESS 权限（不加每次备份都报 Access denied，实测过）；保留 14 天与日志保留策略一致，运维只记一个数字。
+
+---
+
+## 8. 上线检查清单（上线前逐条过）
 
 这是上线前安全评审沉淀出来的阻塞项，按「不解决会出事故」的程度排序：
 
 - [ ] **HTTPS 已启用**（证书 + 跳转 + HSTS），数据库连接若跨机走内网或 TLS——明文传输下登录口令与 token 可被中间人截获
 - [ ] **建库脚本未在生产库上整跑**（DROP+CREATE 会清空数据）；管理员已按第 4 节流程创建并改密
-- [ ] **环境变量 6 个必填项全部注入**（缺一个启动就失败，这恰好是最好的验证）
+- [ ] **环境变量 6 个必填项全部注入**；启动日志确认出现 `启动自检通过：数据库 / Redis 连通正常，AI 配置形态合法`（见 3.1 节——缺变量时自检会让启动失败，而不是带着坏配置上线）
 - [ ] `ATTENDANCE_LAN_CIDRS` 已配真实网段，且**启动日志确认** `考勤内外网判定已启用`（不是 warn）
 - [ ] Nginx 与应用同机（或 `ATTENDANCE_TRUSTED_PROXIES` 已含 Nginx 地址）；签到一次验证「本次网络」显示内网
 - [ ] `WEB_ALLOWED_ORIGINS` 已填真实域名（跨域部署时）；同域部署则确认前端 `.env.production` 的 `VITE_API_BASE_URL=/api`
-- [ ] 上传目录 `FILE_ROOT_DIR` 已建且**应用用户可写**；传一张图验证 `/uploads/` 可达
+- [ ] 上传目录 `FILE_ROOT_DIR` 已建且**应用用户可写**（目录本身首次上传时会自动创建，但父目录需要对应用用户可写，否则上传才暴露权限问题）；传一张图验证 `/uploads/` 可达
 - [ ] 日志目录 `/data/logs/runshi-studio/` 已建；确认 `app.log` 按天滚动、`app.log.error` 单独归档（14 天 / 1GB 上限）
 - [ ] 登录 / 注册限流生效：同一 IP 连续错误登录 11 次后返回「太频繁」（A0501）
 - [ ] AI 功能冒烟：问一个问题，确认有回答、配额计数正常（普通用户第 6 次起被限）
-- [ ] 备份策略：MySQL 定时备份 + 上传目录备份（git bundle 只备份代码，不备份数据）
+- [ ] 备份策略：按第 7 节挂上 crontab，并**实际验证过一次恢复**（备份没验证过 = 没有备份）
 
 ---
 
-## 8. 常见问题
+## 9. 常见问题
 
 | 现象 | 原因与处理 |
 |---|---|
