@@ -1,7 +1,7 @@
 # 润石工作室 · 数据库 ER 图（重点模块）
 
-> 覆盖 `studio_db` 全部 15 张表，重点展开 4 个核心业务域。
-> DDL 源头：`db/user.sql`（唯一权威，从零初始化的全量脚本，含全部 15 张表）。
+> 覆盖 `studio_db` 全部 19 张表，重点展开 5 个核心业务域。
+> DDL 源头：`db/user.sql`（唯一权威，从零初始化的全量脚本，含全部 19 张表）。
 > 原先 `db/migration/` 下的增量迁移脚本已合并进该文件并删除。
 
 ## 阅读约定（先看这里，否则图会看反）
@@ -50,6 +50,8 @@ erDiagram
 
 **四个域的划分**：用户与成员域（用户/成员/项目/证书及其关联）、社区内容域（帖子/评论/举报）、
 AI 与 RAG 域（会话/消息/知识库）、考勤域。
+
+第五个域是**刷题域**（题目 / 作答 / 错题本），见 2.5 节——它只有 3 张表，但设计取舍最多。
 
 ---
 
@@ -445,3 +447,115 @@ erDiagram
     应用层先查重，该唯一键兜住并发下的重复插入（两个请求同时通过查重时，第二个撞键）。
     计数走冗余列 `like_count`，用 `SET like_count = like_count + 1` 原子自增——与 `comment_count`
     同类，但只增不减，维护成本更低。`liked` 字段带「当前用户」语义，因此详情/列表响应不可被整体缓存。
+
+---
+
+### 2.5 刷题域（题目 / 作答 / 错题本）
+
+```mermaid
+erDiagram
+    sys_user ||--o{ studio_quiz_answer : "作答"
+    sys_user ||--o{ studio_quiz_wrong : "错题"
+    studio_quiz_question ||--o{ studio_quiz_answer : "被作答"
+    studio_quiz_question ||--o{ studio_quiz_wrong : "被记错"
+
+    studio_quiz_question {
+        bigint id PK
+        varchar textbook_name "教材名（章节不建表）"
+        int textbook_seq "教材顺序：越小越靠前"
+        varchar chapter_name "章节名"
+        int chapter_seq "章节顺序：越小越靠前"
+        tinyint type "0-单选, 1-多选"
+        varchar stem "题干（纯文本）"
+        text options "选项 JSON，只含展示数据"
+        varchar correct_labels "正确答案：升序无分隔"
+        varchar analysis "解析，作答后才下发"
+        tinyint difficulty
+        varchar source
+        int question_seq
+        tinyint status "0-启用, 1-停用"
+        datetime created_at
+        datetime updated_at
+        bigint created_by
+        bigint updated_by
+        bigint deleted_at
+    }
+
+    studio_quiz_answer {
+        bigint id PK
+        bigint user_id FK
+        bigint batch_id "批次 ID，只作幂等键"
+        bigint question_id FK
+        varchar chosen_labels "跳过时为 NULL"
+        varchar correct_labels "提交时刻的快照"
+        tinyint result "1-正确, 2-错误, 3-跳过"
+        datetime created_at
+        datetime updated_at
+        bigint created_by
+        bigint updated_by
+        bigint deleted_at
+    }
+
+    studio_quiz_wrong {
+        bigint id PK
+        bigint user_id FK
+        bigint question_id FK
+        tinyint status "0-待复习, 1-已消解"
+        int wrong_count "Integer，不走 Long 序列化"
+        int correct_streak "连对进度"
+        datetime last_wrong_at "错题列表排序键"
+        datetime resolved_at
+        tinyint resolve_type "1-自动, 2-手动"
+        datetime created_at
+        datetime updated_at
+        bigint created_by
+        bigint updated_by
+        bigint deleted_at
+    }
+```
+
+**索引要点**
+
+| 表 | 唯一键 | 关键索引 |
+|---|---|---|
+| `studio_quiz_question` | — | `idx_scope(textbook_name, chapter_name, status, question_seq, id)`：抽题、章节树、章节题数都走它；最后一列放 `id` 让「同题序」的行次序稳定 |
+| `studio_quiz_answer` | `uk_user_batch_question(user_id, batch_id, question_id, deleted_at)` | `idx_user_result(user_id, result, id)` 概览统计、`idx_question_result(question_id, result)` 错误率榜 |
+| `studio_quiz_wrong` | `uk_user_question(user_id, question_id, deleted_at)` | `idx_user_status_time(user_id, status, last_wrong_at)` 错题列表（最久没复习的先来） |
+
+**四组设计取舍**（这是本域最值得读的部分）：
+
+1. **选项存 JSON，不建选项表**：选项没有独立生命周期，改题就是整批重写；从属数据单独建表
+   只会多一个 Mapper、一套级联删除、一次 N+1。代价是「改选项」必须整批写——但那本来就是正确做法。
+
+2. **`options` 只存展示数据，正确性单独放 `correct_labels`**：这是本域最重要的一个决定。
+   如果把「哪个是对的」放进选项 JSON，那么每次下发选项都得记得过滤，漏一次就是答案泄露。
+   拆成两列之后，C 端 VO 可以把 `options` **原样下发**——脱敏靠数据结构，不靠记忆。
+   同一思路的落地检查写在 `QuizDdlVerifyTest` 里（断言两列都存在）。
+
+3. **章节不建表**：教材名 / 章节名就是题目上的四个列（两个名字 + 两个顺序）。
+   章节只因题目存在而存在，空章节没有业务意义；「新增章节」就是往该章新增一道题。
+   代价是改名 / 移章是批量 `UPDATE`——但那本来就该是原子的批量操作。
+   ⚠️ 三个 `*_seq` 的语义与全站 `sort_order` **相反**（越小越靠前），同名会踩雷，故另起名。
+
+4. **错题本是唯一有状态的表，且必须存在**：`correct_streak`（连对进度）、手动消解、
+   「消解后再错要重开」都是**状态**，从作答记录派生不出来；用窗口函数现算会让每次查错题本都重算一遍。
+   与它相对的是**会话表被刻意省掉**：题目不含答案，整批交给前端持有即可，
+   服务端只需要 `batch_id` 做幂等。代价是换设备不能续答——刷题不是考试，重开成本为 0。
+
+**停用 vs 删除的分工**（管理端最需要理解的一对概念）：
+
+| | 停用（`status=1`） | 删除（逻辑删除） |
+|---|---|---|
+| 还能被抽到 | 否 | 否 |
+| 错题本里还能看到 | **不能**（查询侧 `inSql` 过滤，条目保留） | 不能 |
+| 可以恢复 | **是**（重新启用，条目自动回来） | 否 |
+| 错题条目 | **不动** | **同事务清理** |
+| 历史作答 | 不动 | 不动（统计只读 `result`） |
+
+停用时不动条目、靠查询过滤，是为了让「下线」可逆——否则管理员误停一次，
+用户的错题记录就永久消失了。而删除是不可逆的，所以条目要一并清理（题目没了，条目无处可去）。
+
+**判定相关变更的副作用**：改正确答案、改题型、增删选项（label 集合变化）会让该题
+**所有用户**的 `correct_streak` 归零，但 **`status` 保持不变**——已消解的题不退回待复习
+（用户曾经掌握过这件事仍然成立）。只改选项**文字**不算判定相关变更：
+「你当时选了 C」仍然指向同一个选项，历史记录的可解释性没被破坏。

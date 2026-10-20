@@ -460,3 +460,171 @@ export interface AiSession {
     /** 会话内的消息条数 */
     messageCount?: number | null;
 }
+
+// ==================== 刷题模块 ====================
+
+/**
+ * 刷题模式：0-顺序，1-错题重刷，2-随机
+ *
+ * 三种模式的职责不重叠：顺序负责「覆盖」（排除已作答的题），
+ * 错题负责「消灭」（只出待复习），随机负责「抽查」。
+ */
+export type QuizMode = 0 | 1 | 2;
+
+/**
+ * 题型：**只有选择题**
+ *
+ * 0-单选（恰好 1 个正确项，UI 用 radio，点击即提交）
+ * 1-多选（≥2 个正确项，UI 用 checkbox，需点提交按钮；**全对才得分**）
+ *
+ * 没有「判断」：判断题就是选项为「正确 / 错误」的单选。
+ */
+export type QuizQuestionType = 0 | 1;
+
+/** 选项（**不含正确性**：正确答案由 QuizVerdict 单独给出） */
+export interface QuizOption {
+    label: string;
+    content: string;
+}
+
+/**
+ * 题目（答题前）
+ *
+ * ⚠️ 结构上**没有** correctLabels / analysis：
+ * 正确答案与解析只出现在提交后的 {@link QuizVerdict} 里。
+ * 不要为了「前端先判一下」往这里加字段——那等于把答案发给了客户端。
+ */
+export interface QuizQuestion {
+    id: string;
+    type: QuizQuestionType;
+    stem: string;
+    options: QuizOption[];
+    /** 该题当前是否在错题本里（只给标记，不泄露答案） */
+    inWrongBook?: boolean | null;
+}
+
+/** 章节 */
+export interface QuizChapter {
+    name: string;
+    seq: number;
+    /** 该章**启用**的题目数 */
+    questionCount: number;
+}
+
+/** 教材（名字即标识：教材没有独立表） */
+export interface QuizTextbook {
+    name: string;
+    seq: number;
+    questionCount: number;
+    chapters: QuizChapter[];
+}
+
+/** 开批结果 */
+export interface QuizBatch {
+    batchId: string;
+    mode: QuizMode;
+    total: number;
+    questions: QuizQuestion[];
+}
+
+/** 提交后的判定：答案与解析**只在这里**出现 */
+export interface QuizVerdict {
+    questionId: string;
+    type: QuizQuestionType;
+    /** 1-正确，2-错误（跳过走另一个接口，不返回答案） */
+    result: 1 | 2;
+    chosenLabels: string;
+    correctLabels: string;
+    analysis?: string | null;
+    /**
+     * 本题对错题本的影响：
+     * added-首次入本 / reopened-消解后再错 / progress-连对进度 / resolved-已消解 / none-无副作用
+     */
+    wrongBookAction: 'added' | 'reopened' | 'progress' | 'resolved' | 'none';
+    /** 还差几次消解（仅 progress 时有值） */
+    remainingStreak?: number | null;
+    answeredTotal: number;
+    correctTotal: number;
+}
+
+/** 学习概览 */
+export interface QuizOverview {
+    /** 累计作答（不含跳过，含重做） */
+    answeredTotal: number;
+    correctTotal: number;
+    /** 正确率 0~1；累计作答为 0 时为 null（前端显示 "--"，不是 "0%"） */
+    accuracy: number | null;
+    wrongPending: number;
+    wrongResolved: number;
+}
+
+/** 错题本条目（列表用，**不含答案**） */
+export interface QuizWrongItem {
+    id: string;
+    questionId: string;
+    type: QuizQuestionType;
+    stem: string;
+    textbookName: string;
+    chapterName: string;
+    status: 0 | 1;
+    wrongCount: number;
+    correctStreak: number;
+    lastWrongAt?: string | null;
+    resolvedAt?: string | null;
+    resolveType?: number | null;
+}
+
+/** 错题详情（含答案与解析，以及「你上次选了什么」） */
+export interface QuizWrongDetail extends QuizWrongItem {
+    options: QuizOption[];
+    correctLabels: string;
+    analysis?: string | null;
+    lastChosenLabels?: string | null;
+}
+
+/** 管理端题目（含选项与答案） */
+export interface AdminQuizQuestion {
+    id: string;
+    textbookName: string;
+    textbookSeq: number;
+    chapterName: string;
+    chapterSeq: number;
+    type: QuizQuestionType;
+    stem: string;
+    options: QuizOption[];
+    correctLabels: string;
+    analysis?: string | null;
+    difficulty: number;
+    source?: string | null;
+    questionSeq: number;
+    status: 0 | 1;
+    answerCount: number;
+    /** 正确率 0~1；作答数为 0 时为 null */
+    accuracy: number | null;
+    createdAt?: string;
+    updatedAt?: string;
+}
+
+/** 管理端章节（含停用题，与 C 端口径不同） */
+export interface AdminQuizChapter {
+    textbookName: string;
+    textbookSeq: number;
+    name: string;
+    seq: number;
+    questionCount: number;
+    enabledCount: number;
+}
+
+/** 导入错误（带行号） */
+export interface QuizImportError {
+    line: number;
+    message: string;
+}
+
+/** 导入结果（dryRun 时 imported 恒为 0） */
+export interface QuizImportResult {
+    parsed: number;
+    imported: number;
+    dryRun: boolean;
+    errors: QuizImportError[];
+}

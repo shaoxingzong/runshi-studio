@@ -19,6 +19,7 @@ const menus = [
     { path: '/admin/posts', label: '帖子审核' },
     { path: '/admin/post-manage', label: '帖子管理' },
     { path: '/admin/post-comments', label: '评论审核' },
+    { path: '/admin/quiz', label: '题库管理' },
     { path: '/admin/traffic', label: '流量分析' },
 ];
 

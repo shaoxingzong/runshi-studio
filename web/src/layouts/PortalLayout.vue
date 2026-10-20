@@ -26,6 +26,8 @@ const navItems = [
     // 工作台（考勤）只对在队成员显示：后端同样只准成员签到。
     // 判定用 isMember（查 /member/mine 的档案）而不是 userRole——角色是权限标签，与档案可能不同步
     { path: '/workspace', label: '工作台', memberOnly: true },
+    // 刷题同样只对在队成员显示：后端对 /quiz/** 的全部接口都做成员校验（认 studio_member 表）
+    { path: '/quiz', label: '刷题', memberOnly: true },
     { path: '/ai', label: 'AI 助手' },
 ];
 

@@ -75,6 +75,21 @@ const routes: RouteRecordRaw[] = [
                 component: () => import('@/views/portal/Workspace.vue'),
                 meta: { title: '成员工作台' },
             },
+            // 刷题：同样只对在队成员开放（后端查 studio_member 表判定）。
+            // 两条都挂在 /quiz 下，`quiz/play` 会被导航的 isActive（startsWith）算作同一入口的高亮，
+            // 因此不需要像 /posts/:id 那样特意调整顺序（这里没有动态段）
+            {
+                path: 'quiz',
+                name: 'quiz',
+                component: () => import('@/views/quiz/QuizHome.vue'),
+                meta: { title: '刷题' },
+            },
+            {
+                path: 'quiz/play',
+                name: 'quiz-play',
+                component: () => import('@/views/quiz/QuizPlay.vue'),
+                meta: { title: '答题' },
+            },
             // C 端注册 / 登录：注册出来是普通用户（user），「成员」身份由管理员在后台授予
             {
                 path: 'login',
@@ -164,6 +179,12 @@ const routes: RouteRecordRaw[] = [
                 name: 'admin-traffic',
                 component: () => import('@/views/admin/Traffic.vue'),
                 meta: { title: '流量分析' },
+            },
+            {
+                path: 'quiz',
+                name: 'admin-quiz',
+                component: () => import('@/views/admin/QuizQuestions.vue'),
+                meta: { title: '题库管理' },
             },
         ],
     },

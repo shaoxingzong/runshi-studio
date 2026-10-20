@@ -2,7 +2,7 @@
 -- 润石工作室官网 · 全量建库脚本（从零初始化，唯一权威 DDL 源头）
 -- ============================================================================================================
 --
--- 适用场景：在**全新的空库**上一次性建好全部 15 张表。
+-- 适用场景：在**全新的空库**上一次性建好全部 19 张表。
 -- 执行方式（任选其一）：
 --   ① mysql 客户端：mysql -uroot -p123456 < db/user.sql
 --   ② 已建好库：  mysql -uroot -p123456 studio_db < db/user.sql
@@ -39,6 +39,10 @@
 --  13  studio_post_comment       帖子评论（楼中楼）
 --  14  studio_post_report        内容举报
 --  15  studio_post_like          帖子点赞
+--  16  studio_page_visit         门户页面访问（流量统计）
+--  17  studio_quiz_question      刷题题目（题目/选项/答案/章节归属合一）
+--  18  studio_quiz_answer        刷题作答记录（错题本的真相源）
+--  19  studio_quiz_wrong         刷题错题本（唯一有状态的表）
 -- ============================================================================================================
 
 CREATE DATABASE IF NOT EXISTS `studio_db` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -55,6 +59,9 @@ SET NAMES utf8mb4;
 --    历史教训：studio_page_visit 作为第 16 张表后加进来时只加了 CREATE 没加 DROP，
 --    导致重复执行本脚本时它报「already exists」并中断整个脚本——
 --    「可重复执行」的承诺对漏掉的那张表是假的。
+DROP TABLE IF EXISTS `studio_quiz_wrong`;
+DROP TABLE IF EXISTS `studio_quiz_answer`;
+DROP TABLE IF EXISTS `studio_quiz_question`;
 DROP TABLE IF EXISTS `studio_page_visit`;
 DROP TABLE IF EXISTS `studio_post_like`;
 DROP TABLE IF EXISTS `studio_post_report`;
@@ -477,6 +484,108 @@ CREATE TABLE `studio_page_visit` (
     -- UV 去重（COUNT(DISTINCT visitor_id)）与「回头访客」分析
     KEY `idx_visitor_time` (`visitor_id`, `created_at`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '门户页面访问记录表（流量统计）';
+
+-- ============================================================================================================
+-- 17. 刷题题目表（题目 / 选项 / 答案 / 章节归属合一）
+-- ============================================================================================================
+-- 三个决定（改表前先读）：
+--   1) **选项存 JSON，不建选项表**：选项没有独立生命周期，改题就是整批重写；
+--      从属数据单独建表只会多一个 Mapper、一套级联删除、一次 N+1。
+--   2) **options 列只存展示数据**（label + content），正确性单独放 correct_labels ——
+--      于是 C 端 VO 可以把 options 原样下发，不存在「忘了过滤 isCorrect」的泄露面。
+--      脱敏靠**数据结构**，不靠「记得删字段」（HELP.md 第 10 条同一思路）。
+--   3) **章节不建表**：教材名 / 章节名就是四个列，章节列表用 GROUP BY 出。
+--      章节只因题目存在而存在，空章节没有业务意义。
+--
+-- ⚠️ 三个 *_seq 的语义与全站 sort_order **相反**：这里是「数值越小越靠前」（教材顺序），
+--    而 sort_order 是「数值越大越靠前」（置顶权重）。同名会踩雷，故另起名。
+CREATE TABLE `studio_quiz_question` (
+    `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
+    `textbook_name` varchar(128) NOT NULL COMMENT '教材名称（章节不建表，归属用名字列表达）',
+    `textbook_seq` int NOT NULL DEFAULT '0' COMMENT '教材顺序：数值越小越靠前',
+    `chapter_name` varchar(128) NOT NULL COMMENT '章节名称（如：第一章 世界的物质性及发展规律）',
+    `chapter_seq` int NOT NULL DEFAULT '0' COMMENT '章节在教材内的顺序：数值越小越靠前',
+    `type` tinyint NOT NULL DEFAULT '0' COMMENT '题型：0-单选（恰好 1 个正确项）, 1-多选（至少 2 个，全对才得分）；取值须与 QuizQuestionTypeEnum 一致',
+    `stem` varchar(2000) NOT NULL COMMENT '题干（纯文本，不做 Markdown 渲染）',
+    `options` text NOT NULL COMMENT '选项 JSON 数组：[{"label":"A","content":"运动性"}]；只含展示数据，不含正确性',
+    `correct_labels` varchar(8) NOT NULL COMMENT '正确选项标签（升序、无分隔）：单选 "B"，多选 "ABD"',
+    `analysis` varchar(2000) DEFAULT NULL COMMENT '解析（只在作答之后下发）',
+    `difficulty` tinyint NOT NULL DEFAULT '1' COMMENT '难度：1-易, 2-中, 3-难',
+    `source` varchar(128) DEFAULT NULL COMMENT '题源（如：2023年真题 / 自编）',
+    `question_seq` int NOT NULL DEFAULT '0' COMMENT '题序：数值越小越靠前（即教材顺序）',
+    `status` tinyint NOT NULL DEFAULT '0' COMMENT '状态：0-启用, 1-停用（停用即下线；历史作答保留）',
+    `created_at` datetime NOT NULL COMMENT '创建时间',
+    `updated_at` datetime NOT NULL COMMENT '更新时间',
+    `created_by` bigint NOT NULL DEFAULT '0' COMMENT '创建人 ID',
+    `updated_by` bigint NOT NULL DEFAULT '0' COMMENT '修改人 ID',
+    `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT '逻辑删除毫秒时间戳（0-未删除）',
+    PRIMARY KEY (`id`),
+    -- 抽题 / 章节列表 / 章节题数：教材 → 章节 → 状态 → 题序
+    KEY `idx_scope` (`textbook_name`, `chapter_name`, `status`, `question_seq`, `id`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '刷题题目表（题目/选项/答案/章节归属合一）';
+
+-- ============================================================================================================
+-- 18. 作答记录表（审计凭证，append-only）
+-- ============================================================================================================
+-- 跳过也落一条（result=3）：否则断点续答无法区分「处理过」与「还没轮到」，幂等也没法做；
+-- 但跳过**不碰错题本**、响应里**不含答案**（否则跳过按钮就成了看答案按钮，顺序模式会被刷穿）。
+--
+-- batch_id 只是幂等键与「本轮」分组，**没有对应的会话表**：
+-- 题目本身不含答案，整批由接口一次性返回、前端持有（sessionStorage），泄露不了。
+-- 本表无更新路径：updated_at 恒等于 created_at，字段保留只为十张表结构统一。
+CREATE TABLE `studio_quiz_answer` (
+    `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
+    `user_id` bigint NOT NULL COMMENT '作答人 ID（关联 sys_user.id）',
+    `batch_id` bigint NOT NULL COMMENT '批次 ID（开批时服务端用 IdWorker 生成，只用于幂等与分组）',
+    `question_id` bigint NOT NULL COMMENT '题目 ID（关联 studio_quiz_question.id）',
+    `chosen_labels` varchar(8) DEFAULT NULL COMMENT '所选标签（升序无分隔）："AC"；跳过时为 NULL（空值存 NULL，禁止存空串）',
+    `correct_labels` varchar(8) NOT NULL COMMENT '提交时刻的正确标签**快照**（改题不影响历史判定的可解释性）',
+    `result` tinyint NOT NULL COMMENT '结果：1-正确, 2-错误, 3-跳过（只有 2 会写错题本）；取值须与 QuizAnswerResultEnum 一致',
+    `created_at` datetime NOT NULL COMMENT '发生时间',
+    `updated_at` datetime NOT NULL COMMENT '更新时间（本表无更新路径，恒等于 created_at）',
+    `created_by` bigint NOT NULL DEFAULT '0' COMMENT '创建人 ID',
+    `updated_by` bigint NOT NULL DEFAULT '0' COMMENT '修改人 ID',
+    `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT '逻辑删除毫秒时间戳',
+    PRIMARY KEY (`id`),
+    -- 幂等的根基：同一批里同一题只能落一条（双击 / 断网重试撞这个键）
+    UNIQUE KEY `uk_user_batch_question` (`user_id`, `batch_id`, `question_id`, `deleted_at`),
+    -- 概览统计（按用户 + 结果）
+    KEY `idx_user_result` (`user_id`, `result`, `id`),
+    -- 顺序模式「已作答」判定 / 错题回顾取最近一条
+    KEY `idx_user_question` (`user_id`, `question_id`),
+    -- 管理端错误率榜（按题目聚合）
+    KEY `idx_question_result` (`question_id`, `result`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '刷题作答记录表（错题本的真相源）';
+
+-- ============================================================================================================
+-- 19. 错题本表（唯一有状态的表）
+-- ============================================================================================================
+-- 为什么它必须是一张表，而不是从作答记录派生：
+--   correct_streak（连对进度）、手动消解、「消解后再错要重开」都是**状态**，派生不出来；
+--   用窗口函数现算会让每次查错题本都重算一遍，且「连对 2 次」这类规则没法用一条 SQL 表达清楚。
+--
+-- 唯一键带 deleted_at 是全项目铁律：否则「移出错题本后再答错」无法重新入本。
+-- 「题目被停用/删除」时**不动本表**，由查询侧过滤（inSql 子查询），
+-- 这样停用是可逆的——重新启用后错题条目自动回来。
+CREATE TABLE `studio_quiz_wrong` (
+    `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
+    `user_id` bigint NOT NULL COMMENT '用户 ID（关联 sys_user.id）',
+    `question_id` bigint NOT NULL COMMENT '题目 ID（关联 studio_quiz_question.id）',
+    `status` tinyint NOT NULL DEFAULT '0' COMMENT '状态：0-待复习, 1-已消解；取值须与 QuizWrongStatusEnum 一致',
+    `wrong_count` int NOT NULL DEFAULT '1' COMMENT '累计答错次数（Integer 不用 Long：计数要走数字序列化）',
+    `correct_streak` int NOT NULL DEFAULT '0' COMMENT '消解进度：连续答对次数（达到阈值即自动消解）',
+    `last_wrong_at` datetime NOT NULL COMMENT '最近答错时间（错题列表排序键）',
+    `resolved_at` datetime DEFAULT NULL COMMENT '消解时间（重新入本时清空）',
+    `resolve_type` tinyint DEFAULT NULL COMMENT '消解方式：1-连对达标（自动）, 2-手动标记',
+    `created_at` datetime NOT NULL COMMENT '创建时间',
+    `updated_at` datetime NOT NULL COMMENT '更新时间',
+    `created_by` bigint NOT NULL DEFAULT '0' COMMENT '创建人 ID',
+    `updated_by` bigint NOT NULL DEFAULT '0' COMMENT '修改人 ID',
+    `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT '逻辑删除毫秒时间戳',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_user_question` (`user_id`, `question_id`, `deleted_at`),
+    KEY `idx_user_status_time` (`user_id`, `status`, `last_wrong_at`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '刷题错题本表';
 
 -- ============================================================================================================
 -- 附：初始管理员（刻意不内置，防弱口令上线）
