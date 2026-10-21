@@ -59,6 +59,7 @@ SET NAMES utf8mb4;
 --    历史教训：studio_page_visit 作为第 16 张表后加进来时只加了 CREATE 没加 DROP，
 --    导致重复执行本脚本时它报「already exists」并中断整个脚本——
 --    「可重复执行」的承诺对漏掉的那张表是假的。
+DROP TABLE IF EXISTS `studio_notification`;
 DROP TABLE IF EXISTS `studio_quiz_wrong`;
 DROP TABLE IF EXISTS `studio_quiz_answer`;
 DROP TABLE IF EXISTS `studio_quiz_question`;
@@ -586,6 +587,43 @@ CREATE TABLE `studio_quiz_wrong` (
     UNIQUE KEY `uk_user_question` (`user_id`, `question_id`, `deleted_at`),
     KEY `idx_user_status_time` (`user_id`, `status`, `last_wrong_at`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '刷题错题本表';
+
+-- ============================================================================================================
+-- 20. 站内通知表
+-- ============================================================================================================
+-- 为什么需要它：系统里有大量「人对人的动作」（审核结论、评论回复、身份授予），
+-- 但此前用户没有任何感知渠道——被驳回的作者只能自己去「我的发帖」翻。
+-- 这张表补上反馈回路，是产品闭环的一部分，不是锦上添花。
+--
+-- 设计要点：
+--   1) title/content **冗余**在表里，不存模板 ID 去拼：通知是「快照」——
+--      业务数据后来变了（帖子改名、评论删除），已发出的通知文字不该跟着变；
+--   2) uk_receiver_biz 带 deleted_at 是项目唯一键铁律，同时承担**幂等**职责：
+--      同一事件重复投递撞键即视为已投递（与帖子点赞 uk_post_user 同一套路）；
+--   3) biz_type/biz_id 是「跳转指针」，前端按 type 决定跳到哪——
+--      来源被删后指针悬空，前端按不存在处理即可，不影响通知本身的可读性。
+CREATE TABLE `studio_notification` (
+    `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
+    `receiver_id` bigint NOT NULL COMMENT '接收者用户 ID（关联 sys_user.id）',
+    `type` varchar(32) NOT NULL COMMENT '通知类型：POST_APPROVED/POST_REJECTED/COMMENT_REPLIED/MEMBER_GRANTED，须与 NotificationTypeEnum 一致',
+    `biz_type` varchar(32) DEFAULT NULL COMMENT '来源业务类型：POST/COMMENT/USER',
+    `biz_id` bigint DEFAULT NULL COMMENT '来源业务 ID（点击跳转用）',
+    `title` varchar(128) NOT NULL COMMENT '通知标题（一句话摘要，快照不随业务变化）',
+    `content` varchar(512) NOT NULL COMMENT '通知正文（快照；驳回类带理由）',
+    `is_read` tinyint NOT NULL DEFAULT '0' COMMENT '是否已读：0-未读, 1-已读',
+    `read_at` datetime DEFAULT NULL COMMENT '已读时间',
+    `created_at` datetime NOT NULL COMMENT '创建时间',
+    `updated_at` datetime NOT NULL COMMENT '更新时间',
+    `created_by` bigint NOT NULL DEFAULT '0' COMMENT '创建人 ID',
+    `updated_by` bigint NOT NULL DEFAULT '0' COMMENT '修改人 ID',
+    `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT '逻辑删除毫秒时间戳',
+    PRIMARY KEY (`id`),
+    -- 幂等：同一事件重复投递撞键即已知存在。必须带 deleted_at（唯一键铁律）
+    UNIQUE KEY `uk_receiver_biz` (`receiver_id`, `type`, `biz_type`, `biz_id`, `deleted_at`),
+    -- 列表（receiver + is_read 等值过滤 + 创建时间倒序）与未读计数一条索引全覆盖；
+    -- created_at 进索引是为了让 ORDER BY 不走 filesort
+    KEY `idx_receiver_read` (`receiver_id`, `is_read`, `deleted_at`, `created_at`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '站内通知表';
 
 -- ============================================================================================================
 -- 附：初始管理员（刻意不内置，防弱口令上线）

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { userApi } from '@/api/user';
+import { notificationApi } from '@/api/notification';
 import { useUserStore } from '@/stores/user';
 
 /** 门户布局：顶部导航 + 内容区 + 页脚（匿名可访问） */
@@ -40,6 +41,24 @@ const navItems = [
  */
 onMounted(() => {
     void user.loadMemberProfile();
+    void refreshUnread();
+    // 未读轮询：60s 一次。工作室量级下这是最简单可靠的方案——
+    // 上 WebSocket 长连接（心跳/断线重连/多实例）的成本远超收益
+    unreadTimer = window.setInterval(() => {
+        if (user.isLogin) {
+            void refreshUnread();
+        }
+    }, 60_000);
+    // 通知页标记已读后广播本事件：铃铛立刻刷新，不等下一次轮询
+    window.addEventListener('notification:read', onNotificationRead);
+});
+
+onBeforeUnmount(() => {
+    if (unreadTimer !== null) {
+        window.clearInterval(unreadTimer);
+        unreadTimer = null;
+    }
+    window.removeEventListener('notification:read', onNotificationRead);
 });
 
 /** 退出登录：先让服务端清会话，再清本地状态 */
@@ -70,6 +89,35 @@ async function logout() {
  */
 const visibleNavItems = computed(() => navItems.filter((item) => !item.memberOnly || user.isMember));
 
+// ===== 通知铃铛 =====
+/** 未读通知数（0 时 badge 隐藏）；未登录恒 0，不发请求 */
+const unreadCount = ref(0);
+/** 轮询定时器句柄（卸载时必须清，否则内存泄漏 + 接口打到已销毁的组件） */
+let unreadTimer: number | null = null;
+
+/**
+ * 拉一次未读数
+ *
+ * <p>失败静默（不弹提示）：铃铛是附属信息，请求失败时保持上次的数字即可，
+ * 下次轮询自然会纠正。为它弹全局提示只会打扰阅读。
+ */
+async function refreshUnread() {
+    if (!user.isLogin) {
+        unreadCount.value = 0;
+        return;
+    }
+    try {
+        unreadCount.value = await notificationApi.unreadCount();
+    } catch {
+        // 静默：见上方注释
+    }
+}
+
+/** 通知页「已读」广播的处理器：立刻刷新铃铛（与轮询同一方法，无第二套逻辑） */
+function onNotificationRead() {
+    void refreshUnread();
+}
+
 function isActive(path: string): boolean {
     const current = route.path;
     return path === '/' ? current === '/' : current === path || current.startsWith(`${path}/`);
@@ -97,6 +145,12 @@ function isActive(path: string): boolean {
                 </nav>
                 <span class="spacer" />
                 <template v-if="user.isLogin">
+                    <!-- 通知铃铛：登录态才出现。未读为 0 时 badge 整体隐藏（不是显示 0） -->
+                    <router-link to="/notifications" class="nav-item bell" aria-label="通知">
+                        <el-badge :value="unreadCount" :hidden="unreadCount <= 0" :max="99" type="danger">
+                            <span class="bell-icon">🔔</span>
+                        </el-badge>
+                    </router-link>
                     <span class="who">{{ user.account }}</span>
                     <el-button link @click="logout">退出</el-button>
                 </template>
@@ -203,6 +257,25 @@ function isActive(path: string): boolean {
     font-size: 14px;
     color: var(--muted);
     margin-right: 4px;
+}
+
+/* 铃铛：图标用文字 emoji 而非图标库——门户没有引图标库，
+   一个铃铛不值得为它增加依赖。尺寸与相邻的账号名协调 */
+.bell {
+    display: inline-flex;
+    align-items: center;
+    margin-right: 4px;
+}
+
+.bell-icon {
+    font-size: 15px;
+    line-height: 1;
+}
+
+/* el-badge 的圆点垂直居中于铃铛 */
+.bell :deep(.el-badge__content) {
+    top: 6px;
+    right: 6px;
 }
 
 main {

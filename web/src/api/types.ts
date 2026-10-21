@@ -203,6 +203,31 @@ export interface LoginResult {
 }
 
 /**
+ * 站内通知（后端 NotificationVO）
+ *
+ * `type` 的四种取值（与后端 NotificationTypeEnum 一致）：
+ * `POST_APPROVED` 帖子通过 / `POST_REJECTED` 帖子被驳回 /
+ * `COMMENT_REPLIED` 评论被回复 / `MEMBER_GRANTED` 获得成员身份。
+ *
+ * `bizType` + `bizId` 是跳转指针，**允许悬空**（来源被删后不可点，通知本身仍可读）。
+ * 注意 COMMENT_REPLIED 的 biz 是**帖子**而非评论——同一帖子下的多次回复
+ * 按话题聚合成一条（后端幂等键的语义），跳转目标自然是帖子详情。
+ */
+export interface Notification {
+    id: string;
+    type: string;
+    /** 类型中文描述（后端按枚举填，前端不维护映射） */
+    typeDesc: string;
+    bizType?: string | null;
+    bizId?: string | null;
+    title: string;
+    content: string;
+    /** 0-未读，1-已读 */
+    isRead: number;
+    createdAt?: string;
+}
+
+/**
  * 后台用户（后端 UserVO，脱敏、无 token）
  *
  * 「成员」身份就是在这里给的：管理员把注册用户的 userRole 从 `user` 改成 `member`。

@@ -19,10 +19,12 @@ import com.bhu.runshistudioweb.model.dto.user.UserAddRequest;
 import com.bhu.runshistudioweb.model.dto.user.UserQueryRequest;
 import com.bhu.runshistudioweb.model.dto.user.UserUpdateRequest;
 import com.bhu.runshistudioweb.model.entity.SysUser;
+import com.bhu.runshistudioweb.model.enums.NotificationTypeEnum;
 import com.bhu.runshistudioweb.model.enums.UserRoleEnum;
 import com.bhu.runshistudioweb.model.vo.user.LoginUserVO;
 import com.bhu.runshistudioweb.model.vo.user.UserAddResultVO;
 import com.bhu.runshistudioweb.model.vo.user.UserVO;
+import com.bhu.runshistudioweb.service.NotificationService;
 import com.bhu.runshistudioweb.service.UserService;
 import com.bhu.runshistudioweb.utils.PasswordUtils;
 import org.springframework.beans.BeanUtils;
@@ -121,6 +123,14 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
      * 「海量 IP 各试几次」——单靠任何一道都拦不全，且两道都不依赖对方可用。
      */
     private final AuthLockManager authLockManager;
+
+    /**
+     * 站内通知（成员身份授予时告知本人）
+     *
+     * <p>依赖方向单向（本类 → 通知服务），通知服务不反向依赖任何业务服务——
+     * 否则形成循环依赖，Spring 启动即失败。
+     */
+    private final NotificationService notificationService;
 
     // ==================== C 端：用户自己 ====================
 
@@ -444,6 +454,21 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         // 只在这一种场景踢：改昵称/头像/角色都不影响既有会话的有效性
         if (updated && Integer.valueOf(USER_STATUS_BANNED).equals(userUpdateRequest.getUserStatus())) {
             StpUtil.logout(id);
+        }
+
+        // 成员身份授予通知：角色从非成员变为 member 时告知本人。
+        // 此前用户被授予成员身份后毫无感知，只能等管理员口头通知——
+        // 而「身份变了」这种事件本来就该有系统反馈（工作台/刷题入口也是这时出现的）。
+        // 只认 member 不认 admin：管理员极少且互相认识，授予时本人就在场；
+        // 给 admin 也发通知只会增加噪音。existing 上的旧角色是判「变化」的依据——
+        // 否则每次改资料（昵称/头像）都会重复发一条
+        if (updated && userRole != null
+                && UserRoleEnum.MEMBER.getValue().equals(userRole)
+                && !UserRoleEnum.MEMBER.getValue().equals(existing.getUserRole())) {
+            notificationService.notify(id, StpUtil.getLoginIdAsLong(),
+                    NotificationTypeEnum.MEMBER_GRANTED.getValue(), "USER", id,
+                    "你已获得工作室成员身份",
+                    "管理员已授予你工作室成员身份：工作台（考勤）与刷题功能已为你开放");
         }
         return updated;
     }

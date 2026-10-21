@@ -103,6 +103,15 @@ const routes: RouteRecordRaw[] = [
                 component: () => import('@/views/portal/Register.vue'),
                 meta: { title: '注册' },
             },
+            // 通知中心：要求登录（后端 /notification/** 全部校验登录态，
+            // 未登录访问得到 A0201，由请求层统一处理——本路由不再加一层守卫，
+            // 与「权限判定在后端」的全局约定一致）
+            {
+                path: 'notifications',
+                name: 'notifications',
+                component: () => import('@/views/Notifications.vue'),
+                meta: { title: '通知' },
+            },
         ],
     },
     {

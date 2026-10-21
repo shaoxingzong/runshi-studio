@@ -22,8 +22,10 @@ import com.bhu.runshistudioweb.model.entity.StudioPostComment;
 import com.bhu.runshistudioweb.model.enums.AiAuditStatusEnum;
 import com.bhu.runshistudioweb.model.enums.AuditStatusEnum;
 import com.bhu.runshistudioweb.model.enums.MemberStatusEnum;
+import com.bhu.runshistudioweb.model.enums.NotificationTypeEnum;
 import com.bhu.runshistudioweb.model.vo.post.PostCommentAuditVO;
 import com.bhu.runshistudioweb.model.vo.post.PostCommentVO;
+import com.bhu.runshistudioweb.service.NotificationService;
 import com.bhu.runshistudioweb.service.PostCommentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -75,6 +77,13 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
      * 差别只在「结论落到哪张表、要不要顺带维护帖子的评论数」，那是本类的事。
      */
     private final ContentAuditManager contentAuditManager;
+
+    /**
+     * 站内通知（评论通过后告知被回复者）
+     *
+     * <p>依赖方向单向：通知服务不认识评论，「标题正文怎么写」由本类决定。
+     */
+    private final NotificationService notificationService;
 
     @Override
     public long addComment(PostCommentAddRequest request) {
@@ -179,8 +188,43 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
             studioPostMapper.update(null, new LambdaUpdateWrapper<StudioPost>()
                     .eq(StudioPost::getId, comment.getPostId())
                     .setSql("comment_count = comment_count + 1"));
+            // 回复通知：评论「真正可见」这一刻才告知被回复者。
+            // 提交时不通知——那时评论还是待审，被回复者点开看不到内容
+            notifyReplyIfParent(comment);
         }
         log.info("AI 审核完成 | commentId={} | 结论={}", commentId, aiStatus.getDesc());
+    }
+
+    /**
+     * 评论通过后，通知被回复者（父评论作者）
+     *
+     * <p><b>为什么挂在「通过」而不是「提交」</b>：评论先审后发，提交那一刻
+     * 内容对世界还不可见——提前通知，被回复者点开帖子却找不到那条回复，
+     * 是一次断裂的体验。人工通过与 AI 判安全<b>共用本方法</b>，保证两条路径行为一致。
+     *
+     * <p><b>biz 用 postId 而非 commentId</b>：同一帖子下的多次回复按话题
+     * 聚合成一条通知——既避免「一屏十条回复通知」的轰炸，
+     * 也让 {@code uk_receiver_biz} 的幂等语义与产品语义天然一致。
+     *
+     * <p>批量审核时逐条调用会有少量额外查询（父评论 + 帖子标题各一次）：
+     * 批量审核频率低、量级小，而「单一实现防止两条路径逻辑漂移」比省几次查询重要——
+     * 这是本项目一贯的取舍（策略集中一处）。
+     */
+    private void notifyReplyIfParent(StudioPostComment comment) {
+        if (comment.getParentId() == null) {
+            return;
+        }
+        // 父评论可能已被删：悬空场景跳过通知，不影响评论本身
+        StudioPostComment parent = this.getById(comment.getParentId());
+        if (parent == null) {
+            return;
+        }
+        StudioPost post = studioPostMapper.selectById(comment.getPostId());
+        String postTitle = post == null ? "原帖子" : post.getTitle();
+        notificationService.notify(parent.getAuthorId(), comment.getAuthorId(),
+                NotificationTypeEnum.COMMENT_REPLIED.getValue(), "POST", comment.getPostId(),
+                "有人回复了你的评论",
+                "你的评论在《" + postTitle + "》下收到了新回复");
     }
 
     @Override
@@ -295,6 +339,10 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
                 studioPostMapper.update(null, new LambdaUpdateWrapper<StudioPost>()
                         .eq(StudioPost::getId, entry.getKey())
                         .setSql("comment_count = comment_count + " + entry.getValue()));
+            }
+            // 回复通知：与 AI 判安全同一时机（评论真正可见），共用同一私有方法
+            for (StudioPostComment target : targets) {
+                notifyReplyIfParent(target);
             }
         }
         return rows;

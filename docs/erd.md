@@ -559,3 +559,51 @@ erDiagram
 **所有用户**的 `correct_streak` 归零，但 **`status` 保持不变**——已消解的题不退回待复习
 （用户曾经掌握过这件事仍然成立）。只改选项**文字**不算判定相关变更：
 「你当时选了 C」仍然指向同一个选项，历史记录的可解释性没被破坏。
+
+---
+
+### 2.6 通知域（站内通知）
+
+```mermaid
+erDiagram
+    sys_user ||--o{ studio_notification : "接收"
+
+    studio_notification {
+        bigint id PK
+        bigint receiver_id FK "接收者（sys_user.id）"
+        varchar type "POST_APPROVED 等四种，须与 NotificationTypeEnum 一致"
+        varchar biz_type "来源业务：POST/COMMENT/USER"
+        bigint biz_id "来源业务 ID（跳转指针）"
+        varchar title "标题快照"
+        varchar content "正文快照（驳回类带理由）"
+        tinyint is_read "0-未读, 1-已读"
+        datetime read_at
+        datetime created_at
+        datetime updated_at
+        bigint created_by
+        bigint updated_by
+        bigint deleted_at
+    }
+```
+
+1. **`title`/`content` 是快照，不是模板引用**：通知发出后，业务数据怎么变
+   （帖子改名、评论被删、成员身份被收回）都不影响已收到通知的文字。
+   存模板 ID 现拼意味着每次展示都要重新理解一遍当时的上下文——那是用复杂度换不存在的好处。
+
+2. **`uk_receiver_biz(receiver_id, type, biz_type, biz_id, deleted_at)` 一身二职**：
+   既是唯一键铁律的落地，又是**幂等**的数据库层保证——同一事件重复投递
+   （审核接口被重放、消息队列重试）撞键即视为已投递，与 `uk_post_user` 同一套路。
+   应用层的状态守卫（审核只处理待审帖）是第一道，唯一键是第二道。
+
+3. **同步投递，不用事件总线**：触发点（审核结论、评论回复、身份授予）都在
+   **同一业务事务**里调 `notify`——通知与主业务同生共死，不会出现
+   「帖子通过了、通知却没发」。反过来若用 `REQUIRES_NEW` 独立事务，
+   主业务回滚后通知已发出，用户会看到一条指向不存在结果的通知。
+   唯一键冲突时 MySQL 只让该语句失败、不损坏事务，catch 后事务照常可用。
+
+4. **`biz_type`/`biz_id` 允许悬空**：来源被删后指针指向不存在的数据，
+   前端按「内容已失效」降级展示即可——通知本身的价值（你被回复过）不因此消失。
+   为此**不加外键**（本项目全部表都没有外键，级联删除会带来更多意外）。
+
+5. **未读计数不缓存**：`idx_receiver_read` 覆盖 `COUNT(*)`，60s 一轮的铃铛轮询
+   在这个量级下让数据库毫无感知（与「不加二级缓存」是同一条判断线）。

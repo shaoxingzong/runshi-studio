@@ -27,11 +27,13 @@ import com.bhu.runshistudioweb.model.entity.SysUser;
 import com.bhu.runshistudioweb.model.enums.AiAuditStatusEnum;
 import com.bhu.runshistudioweb.model.enums.AuditStatusEnum;
 import com.bhu.runshistudioweb.model.enums.MemberStatusEnum;
+import com.bhu.runshistudioweb.model.enums.NotificationTypeEnum;
 import com.bhu.runshistudioweb.model.vo.post.PostFrontDetailVO;
 import com.bhu.runshistudioweb.model.vo.post.PostFrontVO;
 import com.bhu.runshistudioweb.model.vo.post.PostSelfDetailVO;
 import com.bhu.runshistudioweb.model.vo.post.PostVO;
 import com.bhu.runshistudioweb.model.vo.post.PostAdminDetailVO;
+import com.bhu.runshistudioweb.service.NotificationService;
 import com.bhu.runshistudioweb.service.PostService;
 import com.bhu.runshistudioweb.service.StudioMemberService;
 import com.bhu.runshistudioweb.utils.MarkdownSanitizer;
@@ -133,6 +135,15 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
      * 且 Service 之间互相依赖容易成环（本项目已全量改为构造器注入，成环会启动即失败）。
      */
     private final StudioPostCommentMapper studioPostCommentMapper;
+
+    /**
+     * 站内通知（审核结论送达作者）
+     *
+     * <p>依赖方向单向：通知服务只做投递，不认识帖子/评论——
+     * 「出什么事、标题正文怎么写」由本类（知道业务语义的一方）决定，
+     * 投递策略（幂等 / 不给自己发 / 失败不拖垮）集中在 NotificationService。
+     */
+    private final NotificationService notificationService;
 
     /**
      * 用户（sys_user）
@@ -408,10 +419,37 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         if (!approved) {
             wrapper.set(StudioPost::getRejectReason, StrUtil.trim(request.getRejectReason()));
         }
+
+        // 通知要发给每个被处理帖子的**作者**，而一条 UPDATE 拿不到作者——
+        // 先按同一条件查出实际会被处理的帖子（只要 id / authorId / title 三列）。
+        // 这与更新条件完全一致，查不到的（已处理/不存在）本来也不该收到通知
+        List<StudioPost> targets = this.list(new LambdaQueryWrapper<StudioPost>()
+                .select(StudioPost::getId, StudioPost::getAuthorId, StudioPost::getTitle)
+                .in(StudioPost::getId, request.getIds())
+                .eq(StudioPost::getStatus, AuditStatusEnum.PENDING.getValue()));
+
         // 一条 UPDATE 更新整批：批量审核的意义就在于此，不要退化成循环逐条 update。
         // 用 baseMapper.update 而不是 this.update——后者返回 boolean（是否成功），
         // 而这里要的是「实际影响的行数」，好让前端提示「已处理 N 条」
-        return baseMapper.update(null, wrapper);
+        int rows = baseMapper.update(null, wrapper);
+
+        // 审核结论逐个送达：批量审核省的是管理员的时间，不该连作者的知情权一起省。
+        // 放在更新成功之后——审核失败会抛异常，自然走不到这里（不成功不通知）。
+        // notify 内部幂等 + 不给自己发 + 失败只记日志，调用方不需要额外防护
+        for (StudioPost post : targets) {
+            if (approved) {
+                notificationService.notify(post.getAuthorId(), auditorId,
+                        NotificationTypeEnum.POST_APPROVED.getValue(), "POST", post.getId(),
+                        "你的帖子已通过审核",
+                        "《" + post.getTitle() + "》已通过审核，现在所有访客可见");
+            } else {
+                notificationService.notify(post.getAuthorId(), auditorId,
+                        NotificationTypeEnum.POST_REJECTED.getValue(), "POST", post.getId(),
+                        "你的帖子被驳回",
+                        "《" + post.getTitle() + "》未通过审核，理由：" + StrUtil.trim(request.getRejectReason()));
+            }
+        }
+        return rows;
     }
 
     // ==================== 管理端：全量列表 / 删除 / 置顶 / 编辑 ====================
