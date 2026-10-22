@@ -34,9 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
  * author: shaoshing
  *
  * <p><b>业务规则：团队成员不对外展示</b>。
- * 本类原先还有三个 C 端匿名接口（{@code /member/list}、{@code /member/certificate/list}、
- * {@code /member/detail}），已随「官网成员页下线」整体删除；白名单里对应的三条
- * 精确路径也一并移除（见 SaTokenMvcConfig）。成员档案自此只作为<b>后台内部数据</b>存在。
+ * 成员档案只作为<b>后台内部数据</b>存在，对外唯一的成员信息出口是项目详情里的「参与成员」。
  *
  * <p>Controller 的职责边界与 {@link UserController} 一致：只做三件事——接参、调 Service、
  * 包成 {@link BaseResponse}；业务规则全部在 Service 层，这里不写 if-else 业务分支。

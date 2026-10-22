@@ -23,8 +23,8 @@ import java.util.List;
  * author: shaoshing
  *
  * <p><b>为什么把计数从 DB 挪到 Redis</b>：提问成功后要写「assistant 消息 + 会话 updated_at + 计数」
- * 三处，其中前两处必须在数据库事务里，而计数原本也被塞进了同一个事务——
- * 于是每次提问都要多一次 {@code UPDATE sys_user}。计数是<b>高频、单点、可最终一致</b>的写入，
+ * 三处，前两处必须在数据库事务里，而计数放进同一事务会让每次提问多一次 {@code UPDATE sys_user}。
+ * 计数是<b>高频、单点、可最终一致</b>的写入，
  * 用 Redis 的 {@code INCR}（内存原子自增）承接最合适：DB 只保留基准值，由定时任务批量回刷。
  *
  * <p><b>一致性模型：DB 基准 + Redis 增量</b>

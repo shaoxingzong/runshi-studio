@@ -52,8 +52,8 @@ export const TOC_MIN_ITEMS = 3;
  * 帖子页忘了加」，那种不一致在测试里很难发现，在线上表现为奇偶不同的怪 bug。
  * 页面侧只保留自己的策略差异（如帖子页额外的 img 站内限制）。
  *
- * <p>相比早期版本多出的 {@code div/button/id/type/aria-label/loading/decoding}
- * 全部是本工具增强输出的载体，少任何一个，对应的增强会被静默洗掉。
+ * <p>{@code div/button/id/type/aria-label/loading/decoding} 是本工具增强输出的载体
+ * （代码块包装、复制按钮、标题锚点、图片懒加载），少任何一个，对应的增强会被静默洗掉。
  */
 export const MARKDOWN_ALLOWED_TAGS = [
     'p', 'br', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',

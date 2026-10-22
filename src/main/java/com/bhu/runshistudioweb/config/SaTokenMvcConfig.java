@@ -47,10 +47,9 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
             // ===== C 端公开接口（匿名可访问，产品要求游客也能用）=====
             "/user/register",   // 注册：还没有账号的人必须能访问
             "/user/login",      // 登录：未登录的人必须能访问
-            // ⚠️ 业务规则：**团队成员不对外展示**（成员档案只作为后台内部数据）。
-            // 原先匿名放行的三条 /member/* 接口（/member/list、/member/certificate/list、
-            // /member/detail）已随「官网成员页下线」一并删除，这里**不留任何 /member/* 路径**。
-            // 成员只通过管理端接口读取（/member/list/page、/member/get），均要求 admin。
+            // ⚠️ 业务规则：**团队成员不对外展示**（成员档案只作为后台内部数据），
+            // 这里不留任何 /member/* 路径。成员只通过管理端接口读取
+            // （/member/list/page、/member/get），均要求 admin。
             //
             // 一处**有意的例外**：项目详情 /project/detail 仍返回参与成员（用于项目介绍，
             // 已由产品确认保留），因此匿名访客能通过项目页看到成员姓名/头像。
@@ -100,20 +99,16 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
             // 注意这是「读」的路径；「写」的路径 /file/upload 不在这里，仍然要求登录
             "/uploads/**",
 
-            // ⚠️ 原「前端静态资源」四条（/index.html、/js/**、/css/**、/vendor/**）已删除。
-            // 原因：随 jar 发布的旧无构建前端（src/main/resources/static）已整体移除——
-            // 两套前端并存会让「改了 A 却看的是 B」，而且旧前端的 AI 助手走的是同步接口，
-            // 看起来就像流式没生效。前端现在是独立工程 web/，由 Nginx（生产）或
-            // Vite（开发 :5173）托管，**请求根本不经过后端**。
-            // 因此这里只保留真正需要匿名访问的静态资源：上传的图片 /uploads/**。
+            // ⚠️ 不要把前端静态资源路径加回来：前端是独立工程 web/，由 Nginx（生产）
+            // 或 Vite（开发 :5173）托管，**请求根本不经过后端**。
+            // 这里只保留真正需要匿名访问的静态资源：上传的图片 /uploads/**。
 
             // ===== 接口文档（Knife4j / OpenAPI）=====
-            // 这里**刻意一条都不登记**。曾经挂着 /doc.html、/webjars/**、/v3/api-docs/**、
-            // /swagger-ui/** 四条，等于把接口文档的匿名访问权做成了「常驻配置」——
-            // 而真正的开关明明是 knife4j.enable / springdoc.api-docs.enabled
-            // （默认 false，生产同样不打开）。两处控制同一件事，改一处漏一处就是事故：
+            // 这里**刻意一条都不登记**：文档的匿名访问权由 knife4j.enable /
+            // springdoc.api-docs.enabled 控制（默认 false，生产同样不打开）——
+            // 白名单再挂一份就是两处控制同一件事，改一处漏一处就是事故：
             // 哪天为了排查把 knife4j 打开，白名单还在，文档裸奔没有任何提示。
-            // 现在的分工：**配置关文档（安全边界），白名单不留文档路径（少一个失控面）**。
+            // 分工：**配置关文档（安全边界），白名单不留文档路径（少一个失控面）**。
             // 本地开发要看文档时，临时切 dev profile（knife4j.enable=true 只写在
             // application-dev.yml，生产 profile 结构上就开不了）——注意即便如此，
             // 文档页仍需登录（未登录访问 /doc.html 会得到 A0201，这是可接受的：
@@ -121,9 +116,9 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
             "/favicon.ico",
 
             // ===== 框架内部路径 =====
-            // 说明：曾经把 /error 加进这里，但实测**无效**——不存在的路径并不是"forward 到 /error"，
+            // 说明：这里**不需要** /error——不存在的路径并不是「forward 到 /error」，
             // 而是被静态资源处理器（ResourceHttpRequestHandler）接管，拦截器在那之前就抛了 NotLoginException。
-            // 真正的修法见 addInterceptors 里对 handler 类型的判断，这里不需要 /error。
+            // 真正的修法见 addInterceptors 里对 handler 类型的判断。
 
             // ===== 运维探活 =====
             // ⚠️ 重要（已实测）：actuator 端点由 WebMvcEndpointHandlerMapping 处理，

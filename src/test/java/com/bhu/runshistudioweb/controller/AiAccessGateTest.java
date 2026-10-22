@@ -39,7 +39,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *
  * author: shaoshing
  *
- * <p><b>验收的规则</b>（取代了原先的「游客按 IP 限流」）：
+ * <p><b>验收的规则</b>：
  * <ul>
  *     <li>游客（未登录）<b>不能</b>使用 AI 服务，提问返回 A0201；</li>
  *     <li>普通用户：可提问 {@code studio.ai.query-limit} 次（本类配为 5），超出返回 A0501；</li>

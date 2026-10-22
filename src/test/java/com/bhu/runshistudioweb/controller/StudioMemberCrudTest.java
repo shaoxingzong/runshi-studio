@@ -153,7 +153,7 @@ class StudioMemberCrudTest {
                 "{\"name\":\"" + uniqueName("front") + "\",\"gradeYear\":2022}", token);
         assertEquals("00000", code(addBody), "新增失败：" + addBody);
 
-        //「团队成员不对外展示」：原先匿名放行的三个成员接口已整体删除。
+        //「团队成员不对外展示」：对外的成员接口不存在（下面断言 404）。
         //
         // ⚠️ 断言方式很关键（这是本次改动最容易踩的坑）：
         // **Sa-Token 的 MVC 拦截器只在「匹配到 handler」时才执行**，

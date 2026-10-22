@@ -18,7 +18,7 @@ const routes: RouteRecordRaw[] = [
             // 首页不配 meta.title：标题退回纯站点名（「首页 - 润石工作室」是冗余信息）
             { path: '', name: 'home', component: () => import('@/views/portal/Home.vue') },
             // ⚠️ 官网**没有**成员页：业务规则「团队成员不对外展示」，
-            // 后端的 /member/list 与 /member/detail 已删除（访问会 404）。
+            // 这里不注册 /members 路由（后端也没有对外成员接口）。
             // 成员信息对外唯一的出口是项目详情里的「参与成员」。
             {
                 path: 'projects',

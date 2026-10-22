@@ -13,9 +13,8 @@ export const aiApi = {
     /**
      * 非流式提问（⚠️ **当前无调用方**）
      *
-     * <p>AI 页面统一走 {@link chatStream}（SSE，边收边渲染），这个同步版本是早期实现留下的。
-     * 后端 `POST /ai/chat` 仍在，保留以备脚本化 / 非流式场景复用；
-     * 新增调用前请先确认是否真的不需要流式。
+     * <p>AI 页面统一走 {@link chatStream}（SSE，边收边渲染）；
+     * 本方法保留给脚本化 / 非流式场景复用，新增调用前请先确认是否真的不需要流式。
      */
     chat(sessionId: string | null, message: string) {
         return http.post<ChatResponse>('/ai/chat', { sessionId, message });
@@ -26,9 +25,8 @@ export const aiApi = {
     /**
      * 删除会话及其全部消息
      *
-     * <p>⚠️ 后端 DTO 的字段叫 {@code sessionId}，不是 {@code id}。
-     * 早先这里发的是 `{ id }`，参数绑不上、后端拿到空值——请求不会报错，
-     * 但会话也删不掉，属于「点了没反应」那类最难发现的 bug。
+     * <p>⚠️ 后端 DTO 的字段叫 {@code sessionId}，不是 {@code id}——
+     * 字段名发错时参数绑不上，请求不报错但会话删不掉（「点了没反应」那类 bug）。
      */
     deleteSession(id: string) {
         return http.post<boolean>('/ai/session/delete', { sessionId: id });

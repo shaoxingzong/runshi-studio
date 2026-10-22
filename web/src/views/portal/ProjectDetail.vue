@@ -172,8 +172,8 @@ usePageMeta({
                 <h2>参与成员（{{ detail.members.length }}）</h2>
                 <el-empty v-if="detail.members.length === 0" description="暂无成员" />
                 <div v-else class="grid cards-3">
-                    <!-- ⚠️ 成员信息「不对外展示」（业务规则）：这里只作为项目参与者的信息卡，**不做跳转**。
-                         曾经的 :to="/members/:id" 指向已下线路由，点击会命中兜底路由静默跳回首页 -->
+                    <!-- ⚠️ 成员信息「不对外展示」（业务规则）：这里只作为项目参与者的信息卡，**不做跳转**——
+                         官网没有成员详情路由，跳转会命中兜底路由静默回到首页 -->
                     <div v-for="member in detail.members" :key="member.id" class="member">
                         <div class="member-head">
                             <img v-if="member.avatar" :src="member.avatar" :alt="member.name" class="avatar" />

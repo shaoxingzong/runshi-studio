@@ -65,12 +65,10 @@ import java.util.Objects;
 public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> implements UserService {
 
     /**
-    /**
      * 管理员新增用户且未填写密码时，随机初始密码的长度
      *
-     * <p><b>为什么是随机而不是固定默认值</b>：曾经用固定的 {@code Runshi@123}，
-     * 意味着任何知道本系统存在的人都能登录所有未及时改密的账号——
-     * 把安全性寄托在「每个人都会立即改密」上，而现实里总有人不会。
+     * <p><b>为什么是随机而不是固定默认值</b>：固定默认口令意味着任何知道本系统存在的人
+     * 都能登录所有未及时改密的账号——把安全性寄托在「每个人都会立即改密」上，而现实里总有人不会。
      * 随机口令只随 {@code addUser} 的返回值出现一次（后端不存明文、查不回来），
      * 管理员必须当场转交本人。10 位是「足够复杂度」与「转告不出错」的平衡点。
      */
@@ -349,7 +347,7 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
      * 其余规则（账号唯一、只存 BCrypt 哈希、昵称为空用账号兜底）完全共用同一套逻辑，
      * 因此新增账号的"最低权限"由 {@code UserRoleEnum.USER} 兜底，不会越权。
      *
-     * <p>初始密码：管理员指定则用他指定的，留空则<b>随机生成</b>（替代了曾经的固定默认口令），
+     * <p>初始密码：管理员指定则用他指定的，留空则<b>随机生成</b>，
      * 明文只随返回值出现一次——后端不存明文，也没有二次查询的接口。
      *
      * @param userAddRequest 新增请求（账号必填；密码留空则使用随机初始密码）

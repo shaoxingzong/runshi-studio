@@ -429,7 +429,7 @@ class AiKnowledgeManageTest {
     /**
      * 当前未删除的**源数据**总条数（project + member + certificate），即 sync-all 的 total 基准
      *
-     * <p>为什么需要它：早期这些用例直接断言 {@code total == 3}，隐含假设「库是空的」。
+     * <p>为什么需要它：直接断言 {@code total == 3} 会隐含假设「库是空的」。
      * 一旦库里有演示数据（db/demo-data.sql 的 15 条），total 就变成 18 而断言失败——
      * 那是**测试把环境当成了前提**，不是产品缺陷。断言「基线条数 + 本次新增」才能让
      * 验收测试与业务数据共存。

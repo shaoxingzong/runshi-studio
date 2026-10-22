@@ -34,8 +34,7 @@ export interface PageResult<T> {
  * 首页大盘
  *
  * **只剩证书维度**：业务规则「团队成员不对外展示」，
- * 后端已移除 memberTotal / memberInTeam / memberGraduated 三个字段。
- * 前端不要再试图渲染团队人数——接口里根本没有这些 key。
+ * 接口里没有 memberTotal / memberInTeam / memberGraduated 这些 key，不要渲染团队人数。
  */
 export interface Overview {
     certificateTotal: number;
@@ -46,9 +45,9 @@ export interface Overview {
 /**
  * 成员（脱敏）
  *
- * ⚠️ 它如今**只出现在项目详情的「参与成员」里**（产品确认保留的例外）。
- * 官网成员列表页 / 成员详情页已随「团队成员不对外展示」下线，
- * 因此不要再用它去调 `/member/list` 或 `/member/detail`（接口已删除，会 404）。
+ * ⚠️ 它**只出现在项目详情的「参与成员」里**（产品确认保留的例外）——
+ * 官网没有成员列表页 / 详情页，也不要用它去调 `/member/list` 或 `/member/detail`
+ * （后端没有这些接口，调用会 404）。
  */
 export interface Member {
     id: string;
