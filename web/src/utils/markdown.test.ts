@@ -49,7 +49,7 @@ describe('renderMarkdown：代码块', () => {
         expect(html).toContain('<div class="code-block">');
         expect(html).toContain('<button type="button" class="copy-btn" aria-label="复制代码">复制</button>');
         expect(html).toContain('<pre><code class="language-java">int a = 1;</code></pre>');
-        // 按钮必须是 pre 的兄弟而非后代
+        /** 按钮必须是 pre 的兄弟而非后代 */
         const preIndex = html.indexOf('<pre>');
         const buttonIndex = html.indexOf('copy-btn');
         expect(buttonIndex).toBeLessThan(preIndex);

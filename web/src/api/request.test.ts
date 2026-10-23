@@ -3,7 +3,7 @@ import { AUTH_EXPIRED_EVENT, http, tokenStore } from './request';
 
 // 请求层单测（纯逻辑，不起服务、不联网）
 //
-// 为什么值得单测： request.ts 是所有接口共用的一条命脉——
+// 为什么值得单测：request.ts 是所有接口共用的一条命脉——
 // 响应解包、A0201 登录态回收、错误提示映射、网络兜底，任何一处回归都是全站性的
 // （表现：所有页面同时不弹提示或同时乱跳登录）。而它此前的验证方式是「点一遍页面」，
 // 漏掉某个分支毫无察觉。
@@ -12,17 +12,19 @@ import { AUTH_EXPIRED_EVENT, http, tokenStore } from './request';
 // axios 的实例是模块内私有变量，因此 mock axios.create 的返回值来接管它。
 
 const { mockGet, mockPost, messageError, responseChain, runResponseChain } = vi.hoisted(() => {
-    // 收集 request.ts 注册的响应拦截器（与真 axios 的 interceptors.response 同构）
+    /** 收集 request.ts 注册的响应拦截器（与真 axios 的 interceptors.response 同构） */
     const responseChain = {
         fulfilled: [] as Array<(r: unknown) => unknown>,
         rejected: [] as Array<(e: unknown) => unknown>,
     };
 
-    // 让 mock 的 axios 实例像真的一样跑响应拦截器链
-    //
-    // 为什么必须模拟这一层：request.ts 的网络兜底逻辑就注册在响应拦截器里，
-    // 若 mock 的 use 只是个 vi.fn()（只记录不执行），拦截器等于不存在，
-    // 「网络异常兜底」那条用例测的就是个空壳。
+    /**
+     * 让 mock 的 axios 实例像真的一样跑响应拦截器链
+     *
+     * 为什么必须模拟这一层：request.ts 的网络兜底逻辑就注册在响应拦截器里，
+     * 若 mock 的 use 只是个 vi.fn()（只记录不执行），拦截器等于不存在，
+     * 「网络异常兜底」那条用例测的就是个空壳。
+     */
     const runResponseChain = <T>(promise: Promise<T>): Promise<T> =>
         promise.then(
             (res) =>
@@ -31,7 +33,7 @@ const { mockGet, mockPost, messageError, responseChain, runResponseChain } = vi.
                     Promise.resolve(res),
                 ) as Promise<T>,
             (err) => {
-                // 失败链按注册顺序逐级 catch：任一 handler 返回 rejected 就继续往下传
+                /** 失败链按注册顺序逐级 catch：任一 handler 返回 rejected 就继续往下传 */
                 let p: Promise<unknown> = Promise.reject(err);
                 for (const handler of responseChain.rejected) {
                     p = p.catch(handler);
@@ -75,7 +77,7 @@ vi.mock('element-plus', () => ({
     ElMessage: { error: messageError, success: vi.fn() },
 }));
 
-// 构造后端的标准响应壳 {code, data, message}
+/** 构造后端的标准响应壳 {code, data, message} */
 function ok<T>(data: T) {
     return { data: { code: '00000', data, message: 'ok' } };
 }

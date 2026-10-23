@@ -19,7 +19,7 @@ import { type Ref, watch } from 'vue';
 
 const SITE_NAME = '润石工作室';
 
-// 取不到就建一个：index.html 里有静态 description，这里保证运行时覆盖一定有着落
+/** 取不到就建一个：index.html 里有静态 description，这里保证运行时覆盖一定有着落 */
 function descriptionTag(): HTMLMetaElement {
     let tag = document.head.querySelector<HTMLMetaElement>('meta[name="description"]');
     if (!tag) {
@@ -30,7 +30,7 @@ function descriptionTag(): HTMLMetaElement {
     return tag;
 }
 
-// 统一拼装规则：空标题退回站点名（首页就该只有品牌名，不带「首页 - 」后缀）
+/** 统一拼装规则：空标题退回站点名（首页就该只有品牌名，不带「首页 - 」后缀） */
 function fullTitle(title: string): string {
     return title ? `${title} - ${SITE_NAME}` : SITE_NAME;
 }

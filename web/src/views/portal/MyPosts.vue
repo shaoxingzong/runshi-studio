@@ -5,20 +5,22 @@ import { postApi } from '@/api/post';
 import ErrorRetry from '@/components/ErrorRetry.vue';
 import type { PageResult, PostAudit } from '@/api/types';
 
-// 我的发帖：作者看自己的，含待审与已驳回
-//
-// 先审后发的体验关键就在这里：提交后内容不会出现在公开列表，
-// 用户需要一个地方看到「我发的还在审核中」——否则会以为发帖失败。
-// 驳回时还要能看到理由，才知道该怎么改。
+/**
+ * 我的发帖：作者看自己的，含待审与已驳回
+ *
+ * 先审后发的体验关键就在这里：提交后内容不会出现在公开列表，
+ * 用户需要一个地方看到「我发的还在审核中」——否则会以为发帖失败。
+ * 驳回时还要能看到理由，才知道该怎么改。
+ */
 const router = useRouter();
 
 const page = reactive({ current: 1, pageSize: 10 });
 const result = ref<PageResult<PostAudit> | null>(null);
 const loading = ref(false);
-// 加载失败：非空时展示错误条 + 重试
+/** 加载失败：非空时展示错误条 + 重试 */
 const error = ref('');
 
-// 审核状态：0-待审, 1-已通过, 2-已驳回
+/** 审核状态：0-待审, 1-已通过, 2-已驳回 */
 const STATUS_TEXT: Record<number, { text: string; type: 'warning' | 'success' | 'danger' }> = {
     0: { text: '审核中', type: 'warning' },
     1: { text: '已通过', type: 'success' },

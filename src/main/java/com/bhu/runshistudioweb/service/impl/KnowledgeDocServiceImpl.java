@@ -55,79 +55,87 @@ import java.util.stream.Collectors;
 // 接口的 static 方法不继承给实现类，因此简名调用要靠静态导入（否则每处都要写全限定名）
 import static com.bhu.runshistudioweb.service.KnowledgeDocService.RetrievalResult.empty;
 
-// 知识库文档服务实现（RAG 的编排中枢）
-//
-// 本类承载四期能力（接口上的分层说明见 KnowledgeDocService）：
-// 入库、 检索、 管理端操作、 向量重建。
-// 下面是入库的流程图（另外三条链路各有自己的注释小节）。
-//
-// 完整流程图（改代码前先读这一张）：
-// ① 读源 → 拼正文 → SHA-256 hash                  （无事务；源不存在 → A0402 + 已有文档标 status=2）
-// ② 幂等判定：查 (sourceType, sourceId)
-//      hash 相同 → 直接返回 skipped=true          （零 Embedding 调用、零写库）
-// ③ 切分：DocumentSplitters.recursive(500, 50)     （纯内存）
-// ④ 向量化：embedAll + store.addAll → embeddingIds （外部 HTTP！绝不在事务内）
-// ⑤ 事务（TransactionTemplate）：
-//        upsert doc 行(status=1, hash, chunkCount)
-//      + 逻辑删旧块 + 逐条插入新块
-// ⑥ 提交后：清理旧向量                             （best-effort，失败仅告警）
-//
-// 失败路径：④ 或 ⑤ 失败 → 清理本次新向量 + 已有文档标 status=2，
-//          旧块与旧向量原样保留
-//
-// 两个刻意的设计，理由必须记住：
-// - 旧块只在最后（事务内）才删——「先备好新材料，再原子替换」。
-// 向量化失败时旧内容依然可检索，不存在「删了旧的、新的没建好」的不可用窗口。
-// 如果反过来先删旧的，那么一次 Embedding 故障就会让这篇文档彻底查不到；
-// - 不用 EmbeddingStoreIngestor——它一条龙 ingest(document) 很省事，
-// 但不返回 embeddingId，而 chunk 表必须落 embedding_id
-// （场景 H 的回查全靠它把向量翻译成块的正文）。所以手写 split → embed → addAll 三步。
-//
-// 关于失败时"要不要新建一条 status=2 的 doc 行"：
-// 只在已有文档时标记 status=2；新建失败时不建行。
-// 原因是幂等判定依赖 content_hash——如果给失败的新文档也写上新 hash，
-// 下次重试时会因为「hash 相同」被判定为无需重建而直接跳过，
-// 失败就永远修复不了（除非内容再变）。这条坑写在这里，改动时不要"顺手补上"。
+/**
+ * 知识库文档服务实现（RAG 的编排中枢）
+ *
+ * 本类承载四期能力（接口上的分层说明见 KnowledgeDocService）：
+ * 入库、检索、管理端操作、向量重建。
+ * 下面是入库的流程图（另外三条链路各有自己的注释小节）。
+ *
+ * 完整流程图（改代码前先读这一张）：
+ * ① 读源 → 拼正文 → SHA-256 hash                  （无事务；源不存在 → A0402 + 已有文档标 status=2）
+ * ② 幂等判定：查 (sourceType, sourceId)
+ *      hash 相同 → 直接返回 skipped=true          （零 Embedding 调用、零写库）
+ * ③ 切分：DocumentSplitters.recursive(500, 50)     （纯内存）
+ * ④ 向量化：embedAll + store.addAll → embeddingIds （外部 HTTP！绝不在事务内）
+ * ⑤ 事务（TransactionTemplate）：
+ *        upsert doc 行(status=1, hash, chunkCount)
+ *      + 逻辑删旧块 + 逐条插入新块
+ * ⑥ 提交后：清理旧向量                             （best-effort，失败仅告警）
+ *
+ * 失败路径：④ 或 ⑤ 失败 → 清理本次新向量 + 已有文档标 status=2，
+ *          旧块与旧向量原样保留
+ *
+ * 两个刻意的设计，理由必须记住：
+ * - 旧块只在最后（事务内）才删——「先备好新材料，再原子替换」。
+ * 向量化失败时旧内容依然可检索，不存在「删了旧的、新的没建好」的不可用窗口。
+ * 如果反过来先删旧的，那么一次 Embedding 故障就会让这篇文档彻底查不到；
+ * - 不用 EmbeddingStoreIngestor——它一条龙 ingest(document) 很省事，
+ * 但不返回 embeddingId，而 chunk 表必须落 embedding_id
+ * （场景 H 的回查全靠它把向量翻译成块的正文）。所以手写 split → embed → addAll 三步。
+ *
+ * 关于失败时"要不要新建一条 status=2 的 doc 行"：
+ * 只在已有文档时标记 status=2；新建失败时不建行。
+ * 原因是幂等判定依赖 content_hash——如果给失败的新文档也写上新 hash，
+ * 下次重试时会因为「hash 相同」被判定为无需重建而直接跳过，
+ * 失败就永远修复不了（除非内容再变）。这条坑写在这里，改动时不要"顺手补上"。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class KnowledgeDocServiceImpl implements KnowledgeDocService {
 
-    // 索引状态：已索引
+    /** 索引状态：已索引 */
     private static final int STATUS_INDEXED = 1;
 
-    // 索引状态：失败（可重试）
+    /** 索引状态：失败（可重试） */
     private static final int STATUS_FAILED = 2;
 
-    // 手工录入的正文长度上限（与 DTO 上的 @Size(max = 20000) 保持一致）
-    //
-    // 两道校验都要有：注解管 Web 入口，常量管「Service 被定时任务/脚本直接调用」的情况
+    /**
+     * 手工录入的正文长度上限（与 DTO 上的 @Size(max = 20000) 保持一致）
+     *
+     * 两道校验都要有：注解管 Web 入口，常量管「Service 被定时任务/脚本直接调用」的情况
+     */
     private static final int MAX_CONTENT_LENGTH = 20000;
 
-    // 检索参数在配置为 null 时的兜底值（与 AiProperties 的字段默认值一致）
-    //
-    // 为什么两处都写：yml 里显式写 rag-top-k:（空值）会让绑定结果为 null，
-    // 而字段默认值只在「键不存在」时生效。检索是提问链路的一环，不该因为一个空配置 NPE。
+    /**
+     * 检索参数在配置为 null 时的兜底值（与 AiProperties 的字段默认值一致）
+     *
+     * 为什么两处都写：yml 里显式写 rag-top-k:（空值）会让绑定结果为 null，
+     * 而字段默认值只在「键不存在」时生效。检索是提问链路的一环，不该因为一个空配置 NPE。
+     */
     private static final int DEFAULT_RAG_TOP_K = 5;
 
-    // 相似度下限兜底值（与 AiProperties#getRagMinScore 的默认值保持一致）
-    //
-    // 注意它是 relevance = (1 + cosine) / 2 口径：0.75 才对应余弦 0.5，
-    // 不要照余弦直觉把 0.5 当成「有点相关」（那是正交，等于不过滤）。
+    /**
+     * 相似度下限兜底值（与 AiProperties#getRagMinScore 的默认值保持一致）
+     *
+     * 注意它是 relevance = (1 + cosine) / 2 口径：0.75 才对应余弦 0.5，
+     * 不要照余弦直觉把 0.5 当成「有点相关」（那是正交，等于不过滤）。
+     */
     private static final double DEFAULT_RAG_MIN_SCORE = 0.75;
 
-    // 文档列表分页的默认值与上限（与其它模块同一套口径：上限 50）
+    /** 文档列表分页的默认值与上限（与其它模块同一套口径：上限 50） */
     private static final long DEFAULT_PAGE_SIZE = 10L;
     private static final long MAX_PAGE_SIZE = 50L;
 
-    // 全量同步计数器各槽位的下标（用 int[] 而不是 5 个变量，便于在私有方法间传递）
+    /** 全量同步计数器各槽位的下标（用 int[] 而不是 5 个变量，便于在私有方法间传递） */
     private static final int IDX_TOTAL = 0;
     private static final int IDX_CREATED = 1;
     private static final int IDX_REBUILT = 2;
     private static final int IDX_SKIPPED = 3;
     private static final int IDX_FAILED = 4;
 
-    // 向量化失败的对外文案：与对话接口保持一致，不暴露服务商细节
+    /** 向量化失败的对外文案：与对话接口保持一致，不暴露服务商细节 */
     private static final String EMBEDDING_UNAVAILABLE_MESSAGE = "AI 服务暂时不可用，请稍后重试";
 
     private final StudioKnowledgeDocMapper docMapper;
@@ -136,25 +144,29 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
 
     private final KnowledgeBaseManager knowledgeBaseManager;
 
-    // 检索参数（topK / minScore）来自配置：阈值必须可调，
-    // 因为它依赖具体向量模型的分值分布，换模型就要重新校准
+    /**
+     * 检索参数（topK / minScore）来自配置：阈值必须可调，
+     * 因为它依赖具体向量模型的分值分布，换模型就要重新校准
+     */
     private final AiProperties aiProperties;
 
-    // 三个业务来源：只注入 Mapper，不注入各自的 Service——避免任何潜在的循环依赖
+    /** 三个业务来源：只注入 Mapper，不注入各自的 Service——避免任何潜在的循环依赖 */
     private final StudioProjectMapper studioProjectMapper;
 
     private final StudioMemberMapper studioMemberMapper;
 
     private final StudioCertificateMapper studioCertificateMapper;
 
-    // 事务管理器：容器里没有 TransactionTemplate bean，靠它自行构造（与 AiChatServiceImpl 同一套路）
+    /** 事务管理器：容器里没有 TransactionTemplate bean，靠它自行构造（与 AiChatServiceImpl 同一套路） */
     private final PlatformTransactionManager transactionManager;
 
-    // 事务模板：由 transactionManager 在依赖注入完成后构造
-    //
-    // 它不能声明成 final：Lombok 生成的构造器只做「参数 → 字段」的直接赋值，
-    // 表达不了「由另一个参数二次构造」；写成 final 会被当成构造器参数，
-    // 而容器里并不存在 TransactionTemplate 这个 bean，启动即失败。
+    /**
+     * 事务模板：由 transactionManager 在依赖注入完成后构造
+     *
+     * 它不能声明成 final：Lombok 生成的构造器只做「参数 → 字段」的直接赋值，
+     * 表达不了「由另一个参数二次构造」；写成 final 会被当成构造器参数，
+     * 而容器里并不存在 TransactionTemplate 这个 bean，启动即失败。
+     */
     private TransactionTemplate transactionTemplate;
 
     @PostConstruct
@@ -212,14 +224,16 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
 
     // ==================== 入库主流程 ====================
 
-    // 入库主流程（手工录入与业务同步共用，保证两条路径行为一致）
-    //
-    // @param title 文档标题
-    // @param content 正文
-    // @param sourceType 来源类型
-    // @param sourceId 来源业务数据 ID（手工录入为 null）
-    // @param existing 已有文档（null 表示新建）
-    // @return 入库结果
+    /**
+     * 入库主流程（手工录入与业务同步共用，保证两条路径行为一致）
+     *
+     * @param title 文档标题
+     * @param content 正文
+     * @param sourceType 来源类型
+     * @param sourceId 来源业务数据 ID（手工录入为 null）
+     * @param existing 已有文档（null 表示新建）
+     * @return 入库结果
+     */
     private KnowledgeIngestVO ingest(String title, String content, String sourceType, Long sourceId,
                                      StudioKnowledgeDoc existing) {
         String hash = sha256(content);
@@ -307,17 +321,19 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
 
     // ==================== 检索 ====================
 
-    // 检索与问题相关的资料（接口契约见 KnowledgeDocService#retrieve）
-    //
-    // 三步、恒定 2 条 SQL：向量检索（无 SQL）→ 按 embedding_id IN 回查块
-    // → 按 doc_id IN 回查文档。命中 N 条也只查这两次，绝不在循环里逐条回查。
-    //
-    // 排序保持向量检索给出的相似度降序：模型对「最相关的资料放最前」敏感，
-    // 顺序被打乱会明显降低回答质量。因此这里遍历的是 matches，
-    // 而不是回查出来的列表（回查结果是集合，顺序无意义）。
-    //
-    // 悬挂容忍：块或文档查不到时 continue 跳过——
-    // 向量清理是 best-effort，残留条目对应已删除数据是正常现象（R2 收口）。
+    /**
+     * 检索与问题相关的资料（接口契约见 KnowledgeDocService#retrieve）
+     *
+     * 三步、恒定 2 条 SQL：向量检索（无 SQL）→ 按 embedding_id IN 回查块
+     * → 按 doc_id IN 回查文档。命中 N 条也只查这两次，绝不在循环里逐条回查。
+     *
+     * 排序保持向量检索给出的相似度降序：模型对「最相关的资料放最前」敏感，
+     * 顺序被打乱会明显降低回答质量。因此这里遍历的是 matches，
+     * 而不是回查出来的列表（回查结果是集合，顺序无意义）。
+     *
+     * 悬挂容忍：块或文档查不到时 continue 跳过——
+     * 向量清理是 best-effort，残留条目对应已删除数据是正常现象（R2 收口）。
+     */
     @Override
     public RetrievalResult retrieve(String question) {
         String text = StrUtil.trim(question);
@@ -401,11 +417,13 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
 
     // ==================== 管理端操作 ====================
 
-    // 全量同步（接口契约见 KnowledgeDocService#syncAll）
-    //
-    // 固定 3 条列表查询（一类一条，只取主键列），之后逐条走 sync。
-    // 每条 sync 内部还会按主键读一次源正文——那是拿内容的必需步骤，
-    // 不存在「循环里逐条回查列表」的 N+1。
+    /**
+     * 全量同步（接口契约见 KnowledgeDocService#syncAll）
+     *
+     * 固定 3 条列表查询（一类一条，只取主键列），之后逐条走 sync。
+     * 每条 sync 内部还会按主键读一次源正文——那是拿内容的必需步骤，
+     * 不存在「循环里逐条回查列表」的 N+1。
+     */
     @Override
     public KnowledgeSyncAllVO syncAll() {
         // ① 三类源各查一次：只 select 主键，不把正文拉回内存（正文由 sync 自己按需读）
@@ -437,11 +455,13 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
         return summary;
     }
 
-    // 同步一批同源数据，把结果累加进计数器（单条失败只累计、不抛出）
-    //
-    // @param sourceType 来源类型
-    // @param sourceIds 该类型的全部业务 ID
-    // @param counters 计数器 [total, created, rebuilt, skipped, failed]
+    /**
+     * 同步一批同源数据，把结果累加进计数器（单条失败只累计、不抛出）
+     *
+     * @param sourceType 来源类型
+     * @param sourceIds 该类型的全部业务 ID
+     * @param counters 计数器 [total, created, rebuilt, skipped, failed]
+     */
     private void syncBatch(KnowledgeSourceTypeEnum sourceType, List<Long> sourceIds, int[] counters) {
         for (Long sourceId : sourceIds) {
             counters[IDX_TOTAL]++;
@@ -467,11 +487,13 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
         }
     }
 
-    // 强制重建全部文档的向量（接口契约见 KnowledgeDocService#reindexAll）
-    //
-    // 不读业务源、也不重新切分：向量化的输入就是 chunk 行里已有的文本，
-    // 直接「重新嵌入现有 chunk」即可。这带来两个好处——
-    // 快（省掉读源与切分），且对 manual 类文档同样有效（它没有业务源可读）。
+    /**
+     * 强制重建全部文档的向量（接口契约见 KnowledgeDocService#reindexAll）
+     *
+     * 不读业务源、也不重新切分：向量化的输入就是 chunk 行里已有的文本，
+     * 直接「重新嵌入现有 chunk」即可。这带来两个好处——
+     * 快（省掉读源与切分），且对 manual 类文档同样有效（它没有业务源可读）。
+     */
     @Override
     public KnowledgeSyncAllVO reindexAll() {
         // ① 一条 SQL 取全部未删除文档（只取主键：正文在 chunk 行里，这里不需要）
@@ -506,13 +528,15 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
         return summary;
     }
 
-    // 重建单篇文档的向量
-    //
-    // 顺序沿用入库管线（场景 I）：先向量化（HTTP，事务外）→ 事务内更新 embedding_id
-    // → 提交后清理旧向量。
-    //
-    // @param docId 文档 ID
-    // @return true 表示已重建；false 表示该文档没有可用块（跳过）
+    /**
+     * 重建单篇文档的向量
+     *
+     * 顺序沿用入库管线（场景 I）：先向量化（HTTP，事务外）→ 事务内更新 embedding_id
+     * → 提交后清理旧向量。
+     *
+     * @param docId 文档 ID
+     * @return true 表示已重建；false 表示该文档没有可用块（跳过）
+     */
     private boolean reindexDoc(long docId) {
         // ① 取该文档的存活块（一条 SQL，按块序号升序：与原文顺序一致）
         List<StudioKnowledgeChunk> chunks = chunkMapper.selectList(
@@ -552,7 +576,7 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
         return true;
     }
 
-    // 管理端分页查询文档（接口契约见 KnowledgeDocService#listDocByPage）
+    /** 管理端分页查询文档（接口契约见 KnowledgeDocService#listDocByPage） */
     @Override
     public Page<KnowledgeDocVO> listDocByPage(KnowledgeDocQueryRequest request) {
         KnowledgeDocQueryRequest query = request == null ? new KnowledgeDocQueryRequest() : request;
@@ -586,15 +610,17 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
         return voPage;
     }
 
-    // 删除文档（接口契约见 KnowledgeDocService#deleteDoc）
-    //
-    // 顺序与入库重建时一致：先在事务里改库（doc + chunk 一起逻辑删），
-    // 提交后再清向量。清向量必须放在事务后——它是内存操作、无法回滚，
-    // 放进事务里只是"假装"参与原子性。
-    //
-    // 为什么必须清向量：T26 的「反查为空即跳过」只是兜底。
-    // 不清理的话，这些悬挂命中会长期占用 topK 名额（topK=5 里混进 3 条已删文档的块），
-    // 表现为「检索结果变少、相关性下降」，而且没有任何报错。
+    /**
+     * 删除文档（接口契约见 KnowledgeDocService#deleteDoc）
+     *
+     * 顺序与入库重建时一致：先在事务里改库（doc + chunk 一起逻辑删），
+     * 提交后再清向量。清向量必须放在事务后——它是内存操作、无法回滚，
+     * 放进事务里只是"假装"参与原子性。
+     *
+     * 为什么必须清向量：T26 的「反查为空即跳过」只是兜底。
+     * 不清理的话，这些悬挂命中会长期占用 topK 名额（topK=5 里混进 3 条已删文档的块），
+     * 表现为「检索结果变少、相关性下降」，而且没有任何报错。
+     */
     @Override
     public boolean deleteDoc(long id) {
         ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "文档 id 不合法");
@@ -620,7 +646,7 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
         return true;
     }
 
-    // 重建文档（接口契约见 KnowledgeDocService#rebuildDoc）
+    /** 重建文档（接口契约见 KnowledgeDocService#rebuildDoc） */
     @Override
     public KnowledgeIngestVO rebuildDoc(long id) {
         ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "文档 id 不合法");
@@ -645,14 +671,16 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
 
     // ==================== 读源与拼装 ====================
 
-    // 读取业务数据并拼成正文（源不存在时抛 A0402，并把已有文档标记 status=2）
-    //
-    // 拼装规则：null / 空字段整行省略，不写「专业：」这种空行——
-    // 空行也会被切进块里，白白消耗 token，还可能让模型以为"这一项就是空的"。
-    //
-    // @param sourceType 来源类型（非 manual）
-    // @param sourceId 业务数据 ID
-    // @return 标题与正文
+    /**
+     * 读取业务数据并拼成正文（源不存在时抛 A0402，并把已有文档标记 status=2）
+     *
+     * 拼装规则：null / 空字段整行省略，不写「专业：」这种空行——
+     * 空行也会被切进块里，白白消耗 token，还可能让模型以为"这一项就是空的"。
+     *
+     * @param sourceType 来源类型（非 manual）
+     * @param sourceId 业务数据 ID
+     * @return 标题与正文
+     */
     private SourceContent readSource(KnowledgeSourceTypeEnum sourceType, long sourceId) {
         StringBuilder content = new StringBuilder();
 
@@ -709,10 +737,12 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
         return new SourceContent(title, content.toString());
     }
 
-    // 解析来源类型（闭集校验，并拒绝 manual）
-    //
-    // @param sourceType 请求里的来源类型
-    // @return 枚举
+    /**
+     * 解析来源类型（闭集校验，并拒绝 manual）
+     *
+     * @param sourceType 请求里的来源类型
+     * @return 枚举
+     */
     private KnowledgeSourceTypeEnum resolveSourceType(String sourceType) {
         KnowledgeSourceTypeEnum resolved = KnowledgeSourceTypeEnum.of(sourceType);
         ThrowUtils.throwIf(resolved == null, ErrorCode.PARAMS_ERROR,
@@ -725,11 +755,13 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
 
     // ==================== 私有工具 ====================
 
-    // 追加一行「标签：值」；值为空则整行省略
-    //
-    // @param content 正文构建器
-    // @param label 标签
-    // @param value 值（可为任意类型，null 或空串时跳过）
+    /**
+     * 追加一行「标签：值」；值为空则整行省略
+     *
+     * @param content 正文构建器
+     * @param label 标签
+     * @param value 值（可为任意类型，null 或空串时跳过）
+     */
     private void appendLine(StringBuilder content, String label, Object value) {
         if (value == null || StrUtil.isBlank(value.toString())) {
             return;
@@ -737,29 +769,35 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
         content.append(label).append("：").append(value).append('\n');
     }
 
-    // 级别取中文文案（枚举里没有的脏值则退回原值，不丢信息）
-    //
-    // @param awardLevel 库里的级别值
-    // @return 中文文案
+    /**
+     * 级别取中文文案（枚举里没有的脏值则退回原值，不丢信息）
+     *
+     * @param awardLevel 库里的级别值
+     * @return 中文文案
+     */
     private String levelText(String awardLevel) {
         CertificateLevelEnum level = CertificateLevelEnum.of(awardLevel);
         return level == null ? awardLevel : level.getDesc();
     }
 
-    // 类型取中文文案（同上）
-    //
-    // @param awardType 库里的类型值
-    // @return 中文文案
+    /**
+     * 类型取中文文案（同上）
+     *
+     * @param awardType 库里的类型值
+     * @return 中文文案
+     */
     private String typeText(String awardType) {
         CertificateTypeEnum type = CertificateTypeEnum.of(awardType);
         return type == null ? awardType : type.getDesc();
     }
 
-    // 按来源定位已有文档
-    //
-    // @param sourceType 来源类型
-    // @param sourceId 来源业务数据 ID
-    // @return 文档；不存在时返回 null
+    /**
+     * 按来源定位已有文档
+     *
+     * @param sourceType 来源类型
+     * @param sourceId 来源业务数据 ID
+     * @return 文档；不存在时返回 null
+     */
     private StudioKnowledgeDoc findBySource(KnowledgeSourceTypeEnum sourceType, long sourceId) {
         // 条件顺序与 idx_source (source_type, source_id) 一致，才能命中索引最左前缀
         return docMapper.selectOne(new LambdaQueryWrapper<StudioKnowledgeDoc>()
@@ -767,10 +805,12 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
                 .eq(StudioKnowledgeDoc::getSourceId, sourceId));
     }
 
-    // 取某文档当前的全部向量 ID（重建前调用，用于提交后清理）
-    //
-    // @param docId 文档 ID
-    // @return 向量 ID 列表（已过滤空值）
+    /**
+     * 取某文档当前的全部向量 ID（重建前调用，用于提交后清理）
+     *
+     * @param docId 文档 ID
+     * @return 向量 ID 列表（已过滤空值）
+     */
     private List<String> listEmbeddingIds(long docId) {
         List<String> ids = new ArrayList<>();
         for (StudioKnowledgeChunk chunk : chunkMapper.selectList(
@@ -783,12 +823,14 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
         return ids;
     }
 
-    // 把已有文档标记为「失败」（仅当文档已存在）
-    //
-    // 新建失败时不建行的原因写在类注释里：
-    // 写入新 hash 会让下次重试被幂等判定为"内容未变"而跳过，失败就永远修复不了。
-    //
-    // @param existing 已有文档（可为 null）
+    /**
+     * 把已有文档标记为「失败」（仅当文档已存在）
+     *
+     * 新建失败时不建行的原因写在类注释里：
+     * 写入新 hash 会让下次重试被幂等判定为"内容未变"而跳过，失败就永远修复不了。
+     *
+     * @param existing 已有文档（可为 null）
+     */
     private void markFailed(StudioKnowledgeDoc existing) {
         if (existing == null) {
             return;
@@ -798,13 +840,15 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
                 existing.getId(), existing.getSourceType(), existing.getSourceId());
     }
 
-    // 源数据已不存在：把已有文档标记为失败（R2「源已删除」的收口动作）
-    //
-    // 为什么必须标记而不是无视：文档留着 status=1 会让检索命中一篇"源已删除"的内容，
-    // 用户点进去溯源会查不到任何业务数据——那是比"查不到"更差的体验。
-    //
-    // @param sourceType 来源类型
-    // @param sourceId 来源业务数据 ID
+    /**
+     * 源数据已不存在：把已有文档标记为失败（R2「源已删除」的收口动作）
+     *
+     * 为什么必须标记而不是无视：文档留着 status=1 会让检索命中一篇"源已删除"的内容，
+     * 用户点进去溯源会查不到任何业务数据——那是比"查不到"更差的体验。
+     *
+     * @param sourceType 来源类型
+     * @param sourceId 来源业务数据 ID
+     */
     private void markSourceMissing(KnowledgeSourceTypeEnum sourceType, long sourceId) {
         StudioKnowledgeDoc existing = findBySource(sourceType, sourceId);
         if (existing == null) {
@@ -815,26 +859,30 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
                 existing.getId(), sourceType.getValue(), sourceId);
     }
 
-    // 只更新 status 字段
-    //
-    // 用 wrapper 更新而不是 updateById(实体)：这里只需要改一个字段，
-    // wrapper 形式不会触碰其它列，也不会触发审计字段填充。
-    //
-    // @param docId 文档 ID
-    // @param status 目标状态
+    /**
+     * 只更新 status 字段
+     *
+     * 用 wrapper 更新而不是 updateById(实体)：这里只需要改一个字段，
+     * wrapper 形式不会触碰其它列，也不会触发审计字段填充。
+     *
+     * @param docId 文档 ID
+     * @param status 目标状态
+     */
     private void updateStatus(long docId, int status) {
         docMapper.update(null, new LambdaUpdateWrapper<StudioKnowledgeDoc>()
                 .eq(StudioKnowledgeDoc::getId, docId)
                 .set(StudioKnowledgeDoc::getStatus, status));
     }
 
-    // 统一把异常收敛成 C0200（与对话接口同一文案）
-    //
-    // 已经是我们自己的 BusinessException（例如参数错误）时原样抛出，
-    // 不要把 A0401 误改成 C0200。
-    //
-    // @param e 原始异常
-    // @return 待抛出的业务异常
+    /**
+     * 统一把异常收敛成 C0200（与对话接口同一文案）
+     *
+     * 已经是我们自己的 BusinessException（例如参数错误）时原样抛出，
+     * 不要把 A0401 误改成 C0200。
+     *
+     * @param e 原始异常
+     * @return 待抛出的业务异常
+     */
     private BusinessException toEmbeddingFailure(Exception e) {
         if (e instanceof BusinessException businessException) {
             return businessException;
@@ -843,14 +891,16 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
         return new BusinessException(ErrorCode.AI_SERVICE_ERROR, EMBEDDING_UNAVAILABLE_MESSAGE);
     }
 
-    // SHA-256 摘要（用于增量去重）
-    //
-    // 用 SHA-256 而不是 String.hashCode()：后者只有 32 位且可能碰撞，
-    // 一旦碰撞就会「内容变了却判定为没变」，导致知识库永远不更新——
-    // 这种错误极其隐蔽（文档看起来一切正常，就是内容过时）。
-    //
-    // @param text 正文
-    // @return 64 位十六进制摘要
+    /**
+     * SHA-256 摘要（用于增量去重）
+     *
+     * 用 SHA-256 而不是 String.hashCode()：后者只有 32 位且可能碰撞，
+     * 一旦碰撞就会「内容变了却判定为没变」，导致知识库永远不更新——
+     * 这种错误极其隐蔽（文档看起来一切正常，就是内容过时）。
+     *
+     * @param text 正文
+     * @return 64 位十六进制摘要
+     */
     private String sha256(String text) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -867,12 +917,14 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
         }
     }
 
-    // 组装返回结果
-    //
-    // @param doc 文档（已落库）
-    // @param skipped 是否因内容未变而跳过
-    // @param rebuilt 是否为重建（替换了旧块）
-    // @return 入库结果
+    /**
+     * 组装返回结果
+     *
+     * @param doc 文档（已落库）
+     * @param skipped 是否因内容未变而跳过
+     * @param rebuilt 是否为重建（替换了旧块）
+     * @return 入库结果
+     */
     private KnowledgeIngestVO toVO(StudioKnowledgeDoc doc, boolean skipped, boolean rebuilt) {
         KnowledgeIngestVO vo = new KnowledgeIngestVO();
         vo.setDocId(doc.getId());
@@ -884,15 +936,17 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
         return vo;
     }
 
-    // 文档实体转列表 VO
-    //
-    // 字段名不一致的两处必须手动赋值：实体的 id 对应 VO 的 docId
-    // （VO 里写 docId 是为了让前端一眼看出它是文档 ID，而不是某个业务主键）。
-    // BeanUtils 对同名同类型的字段（title / sourceType / status / chunkCount / 时间）
-    // 会自动拷贝，不写反而更容易漏。
-    //
-    // @param doc 文档实体
-    // @return 列表 VO（不含正文）
+    /**
+     * 文档实体转列表 VO
+     *
+     * 字段名不一致的两处必须手动赋值：实体的 id 对应 VO 的 docId
+     * （VO 里写 docId 是为了让前端一眼看出它是文档 ID，而不是某个业务主键）。
+     * BeanUtils 对同名同类型的字段（title / sourceType / status / chunkCount / 时间）
+     * 会自动拷贝，不写反而更容易漏。
+     *
+     * @param doc 文档实体
+     * @return 列表 VO（不含正文）
+     */
     private KnowledgeDocVO toDocVO(StudioKnowledgeDoc doc) {
         KnowledgeDocVO vo = new KnowledgeDocVO();
         BeanUtils.copyProperties(doc, vo);
@@ -902,13 +956,15 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
 
     // ==================== 内部类型 ====================
 
-    // 从业务数据拼出的「标题 + 正文」
-    //
-    // 用 record 而不是普通类：它只是"一次返回两个值"的载体，
-    // 不可变、不需要 setter、也不需要进 Spring 容器。
-    //
-    // @param title 文档标题
-    // @param content 拼好的正文
+    /**
+     * 从业务数据拼出的「标题 + 正文」
+     *
+     * 用 record 而不是普通类：它只是"一次返回两个值"的载体，
+     * 不可变、不需要 setter、也不需要进 Spring 容器。
+     *
+     * @param title 文档标题
+     * @param content 拼好的正文
+     */
     private record SourceContent(String title, String content) {
     }
 }

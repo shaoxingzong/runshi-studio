@@ -54,39 +54,41 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-// 刷题题库服务实现
-//
-// 本类最重要的三条规则（改代码前先读）：
-// - 跨字段校验只有一处： #validateAndNormalize。
-// 新增 / 修改 / 导入三条入口都调它，绝不允许某一处「顺手写个 if」——
-// 三条入口的规则一旦分叉，「导入能进、编辑不让改」这类问题就会出现，
-// 而且不会报错，只会让管理员困惑；
-// - 修改是「用旧值补齐后整体校验」：否则「只改解析」会因为
-// 没传选项而报「选项不能为空」——这是最常见的误伤；
-// - 判定相关变更要重置错题连对进度：改答案 / 改题型 / 增删选项之后，
-// 用户之前「连对 1 次」的证据不再成立。但不动 status——
-// 已消解的题不该因为管理员改了个字就退回待复习。
-//
-// 为什么注入两个 Mapper 而不是 Service：
-// 删除题目要清理错题条目、列表要统计作答数，这些是「按条件批量写/聚合读」，
-// 走 Mapper 最直接。反向注入 QuizWrongService 会形成循环依赖
-// （错题服务要读题目表），项目已全量改为构造器注入，成环会启动即失败。
+/**
+ * 刷题题库服务实现
+ *
+ * 本类最重要的三条规则（改代码前先读）：
+ * - 跨字段校验只有一处：validateAndNormalize。
+ * 新增 / 修改 / 导入三条入口都调它，绝不允许某一处「顺手写个 if」——
+ * 三条入口的规则一旦分叉，「导入能进、编辑不让改」这类问题就会出现，
+ * 而且不会报错，只会让管理员困惑；
+ * - 修改是「用旧值补齐后整体校验」：否则「只改解析」会因为
+ * 没传选项而报「选项不能为空」——这是最常见的误伤；
+ * - 判定相关变更要重置错题连对进度：改答案 / 改题型 / 增删选项之后，
+ * 用户之前「连对 1 次」的证据不再成立。但不动 status——
+ * 已消解的题不该因为管理员改了个字就退回待复习。
+ *
+ * 为什么注入两个 Mapper 而不是 Service：
+ * 删除题目要清理错题条目、列表要统计作答数，这些是「按条件批量写/聚合读」，
+ * 走 Mapper 最直接。反向注入 QuizWrongService 会形成循环依赖
+ * （错题服务要读题目表），项目已全量改为构造器注入，成环会启动即失败。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMapper, StudioQuizQuestion>
         implements QuizQuestionService {
 
-    // 状态：启用
+    /** 状态：启用 */
     private static final int STATUS_ENABLED = 0;
 
-    // 状态：停用
+    /** 状态：停用 */
     private static final int STATUS_DISABLED = 1;
 
-    // 默认难度：易（与 DDL 默认值一致）
+    /** 默认难度：易（与 DDL 默认值一致） */
     private static final int DEFAULT_DIFFICULTY = 1;
 
-    // 默认顺序值
+    /** 默认顺序值 */
     private static final int DEFAULT_SEQ = 0;
 
     private final QuizOptionCodec quizOptionCodec;
@@ -97,12 +99,14 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
 
     // ==================== C 端：教材 / 章节树 ====================
 
-    // 教材 → 章节树（C 端下拉）
-    //
-    // 一次 GROUP BY 查完再内存挂树，不是「先查教材、再逐个查章节」——
-    // 后者在教材有十几本时就是十几次查询，而这里只需要一次。
-    //
-    // 只统计 status=0 的题：用户看到的数字是「这一章有多少题可刷」。
+    /**
+     * 教材 → 章节树（C 端下拉）
+     *
+     * 一次 GROUP BY 查完再内存挂树，不是「先查教材、再逐个查章节」——
+     * 后者在教材有十几本时就是十几次查询，而这里只需要一次。
+     *
+     * 只统计 status=0 的题：用户看到的数字是「这一章有多少题可刷」。
+     */
     @Override
     public List<QuizTextbookVO> listCatalog() {
         QueryWrapper<StudioQuizQuestion> wrapper = new QueryWrapper<>();
@@ -599,19 +603,21 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
 
     // ==================== 私有：校验与转换 ====================
 
-    // 跨字段校验 + 规范化（新增 / 修改 / 导入三条入口的唯一校验点）
-    //
-    // 校验顺序刻意如此：先题型 → 再选项结构 → 再正确项 → 最后题干/解析。
-    // 这样报错信息总是「最根本的那个问题」——例如题型非法时不会先报「选项不对」，
-    // 因为题型决定选项数下限，顺序反了会给出误导性的提示。
-    //
-    // @param type 题型原始值（可能是非法值）
-    // @param stem 题干原始值
-    // @param options 选项列表（已转 VO）
-    // @param correctLabels 正确标签原始值（未规范化）
-    // @param analysis 解析原文，可为 null / 空串（空串会转成 null）
-    // @return 规范化后的完整题目数据
-    // @throws BusinessException 任一规则不满足时抛出（A0401）
+    /**
+     * 跨字段校验 + 规范化（新增 / 修改 / 导入三条入口的唯一校验点）
+     *
+     * 校验顺序刻意如此：先题型 → 再选项结构 → 再正确项 → 最后题干/解析。
+     * 这样报错信息总是「最根本的那个问题」——例如题型非法时不会先报「选项不对」，
+     * 因为题型决定选项数下限，顺序反了会给出误导性的提示。
+     *
+     * @param type 题型原始值（可能是非法值）
+     * @param stem 题干原始值
+     * @param options 选项列表（已转 VO）
+     * @param correctLabels 正确标签原始值（未规范化）
+     * @param analysis 解析原文，可为 null / 空串（空串会转成 null）
+     * @return 规范化后的完整题目数据
+     * @throws BusinessException 任一规则不满足时抛出（A0401）
+     */
     private NormalizedQuestion validateAndNormalize(int type, String stem, List<QuizOptionVO> options,
                                                     String correctLabels, String analysis) {
         // ① 题型：闭集，非法值必须报错而不是默认成单选
@@ -683,14 +689,16 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
         return new NormalizedQuestion(questionType, trimmedStem, options, normalizedCorrect, trimmedAnalysis);
     }
 
-    // 判定相关变更检测
-    //
-    // 三件事算「判定相关」：正确答案变了、题型变了、选项标签集合变了。
-    // 只改选项文字（标签集合不变）不算——「你当时选了 C」仍然指向同一个选项。
-    //
-    // @param existing 数据库里的旧值
-    // @param normalized 校验后的新值
-    // @return true 表示需要重置错题连对进度
+    /**
+     * 判定相关变更检测
+     *
+     * 三件事算「判定相关」：正确答案变了、题型变了、选项标签集合变了。
+     * 只改选项文字（标签集合不变）不算——「你当时选了 C」仍然指向同一个选项。
+     *
+     * @param existing 数据库里的旧值
+     * @param normalized 校验后的新值
+     * @return true 表示需要重置错题连对进度
+     */
     private boolean isVerdictChanged(StudioQuizQuestion existing, NormalizedQuestion normalized) {
         if (!Objects.equals(existing.getCorrectLabels(), normalized.correctLabels())) {
             return true;
@@ -704,14 +712,16 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
         return !Objects.equals(oldLabels, newLabels);
     }
 
-    // 重置某题所有用户错题条目的连对进度
-    //
-    // 只重置 streak，不动 status：
-    // 已消解的题不该因为管理员改了个答案就退回待复习——用户曾经掌握过这件事仍然成立；
-    // 而「连对几次」的证据确实作废了，必须归零。
-    //
-    // 用一条 UPDATE 批量完成（不逐条查改）：错题条目可能有几百条，
-    // 逐条更新会是一次明显的慢操作。
+    /**
+     * 重置某题所有用户错题条目的连对进度
+     *
+     * 只重置 streak，不动 status：
+     * 已消解的题不该因为管理员改了个答案就退回待复习——用户曾经掌握过这件事仍然成立；
+     * 而「连对几次」的证据确实作废了，必须归零。
+     *
+     * 用一条 UPDATE 批量完成（不逐条查改）：错题条目可能有几百条，
+     * 逐条更新会是一次明显的慢操作。
+     */
     private void resetWrongStreak(long questionId) {
         LambdaUpdateWrapper<StudioQuizWrong> update = new LambdaUpdateWrapper<>();
         update.eq(StudioQuizWrong::getQuestionId, questionId)
@@ -720,12 +730,14 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
         log.info("题目判定相关变更，已重置错题连对进度 | questionId={} | 影响 {} 条", questionId, affected);
     }
 
-    // 清理指定题目的全部错题条目（逻辑删除）
-    //
-    // 删除题目 / 整章删除时调用：题目没了，条目无处可去，
-    // 留着只会在错题本里渲染出一条「题目已不存在」的空行。
-    //
-    // @param questionIds 题目 ID 列表
+    /**
+     * 清理指定题目的全部错题条目（逻辑删除）
+     *
+     * 删除题目 / 整章删除时调用：题目没了，条目无处可去，
+     * 留着只会在错题本里渲染出一条「题目已不存在」的空行。
+     *
+     * @param questionIds 题目 ID 列表
+     */
     private void removeWrongEntries(List<Long> questionIds) {
         if (questionIds == null || questionIds.isEmpty()) {
             return;
@@ -735,12 +747,14 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
         studioQuizWrongMapper.delete(wrapper);
     }
 
-    // 批量填充作答数与正确率
-    //
-    // 一次 GROUP BY 查完，不是逐行 count——那是标准 N+1。
-    // 只统计 result IN (1,2)：跳过不算作答。
-    //
-    // @param records 待填充的 VO 列表（就地修改）
+    /**
+     * 批量填充作答数与正确率
+     *
+     * 一次 GROUP BY 查完，不是逐行 count——那是标准 N+1。
+     * 只统计 result IN (1,2)：跳过不算作答。
+     *
+     * @param records 待填充的 VO 列表（就地修改）
+     */
     private void fillAnswerStats(List<QuizQuestionAdminVO> records) {
         if (records == null || records.isEmpty()) {
             return;
@@ -772,7 +786,7 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
         }
     }
 
-    // 实体 → 管理端 VO（含选项与答案）
+    /** 实体 → 管理端 VO（含选项与答案） */
     private QuizQuestionAdminVO toAdminVO(StudioQuizQuestion question) {
         if (question == null) {
             return null;
@@ -799,7 +813,7 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
         return vo;
     }
 
-    // DTO 的选项 → VO（字段一致，但两者刻意分开：入参未来可能加临时字段）
+    /** DTO 的选项 → VO（字段一致，但两者刻意分开：入参未来可能加临时字段） */
     private List<QuizOptionVO> toOptionVOs(List<QuizOptionItem> items) {
         List<QuizOptionVO> options = new ArrayList<>();
         if (items == null) {
@@ -817,40 +831,44 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
         return options;
     }
 
-    // 分页参数兜底纠正
-    //
-    // 不抛异常：传错页码没必要让整个查询失败（与项目其它模块一致）。
-    // 上限用来防「一次拉全表」。
+    /**
+     * 分页参数兜底纠正
+     *
+     * 不抛异常：传错页码没必要让整个查询失败（与项目其它模块一致）。
+     * 上限用来防「一次拉全表」。
+     */
     private Page<StudioQuizQuestion> newPageWithDefaults(Long current, Long pageSize) {
         long page = current == null || current < 1 ? 1L : current;
         long size = pageSize == null || pageSize < 1 ? QuizConstant.DEFAULT_PAGE_SIZE : pageSize;
         return new Page<>(page, Math.min(size, QuizConstant.MAX_PAGE_SIZE));
     }
 
-    // 取 int 值，null 用默认值
+    /** 取 int 值，null 用默认值 */
     private static int defaultIfNull(Integer value, int defaultValue) {
         return value == null ? defaultValue : value;
     }
 
-    // 聚合结果的数值转 int（走 Number：不同驱动下 COUNT 可能是 BigInteger）
+    /** 聚合结果的数值转 int（走 Number：不同驱动下 COUNT 可能是 BigInteger） */
     private static int asInt(Object value) {
         return value instanceof Number number ? number.intValue() : 0;
     }
 
-    // 聚合结果的数值转 Long
+    /** 聚合结果的数值转 Long */
     private static Long asLong(Object value) {
         return value instanceof Number number ? number.longValue() : null;
     }
 
-    // 聚合结果的字符串转 String（null 保持 null）
+    /** 聚合结果的字符串转 String（null 保持 null） */
     private static String asString(Object value) {
         return value == null ? null : String.valueOf(value);
     }
 
-    // 校验并规范化后的题目数据（内部传递用）
-    //
-    // 做成 record 而不是复用 DTO：它表达的是「已经过校验的、可以直接写库的状态」，
-    // 与「用户传来的原始请求」是两回事。混用会让「这字段到底校验过没有」变得模糊。
+    /**
+     * 校验并规范化后的题目数据（内部传递用）
+     *
+     * 做成 record 而不是复用 DTO：它表达的是「已经过校验的、可以直接写库的状态」，
+     * 与「用户传来的原始请求」是两回事。混用会让「这字段到底校验过没有」变得模糊。
+     */
     private record NormalizedQuestion(QuizQuestionTypeEnum type, String stem, List<QuizOptionVO> options,
                                       String correctLabels, String analysis) {
     }

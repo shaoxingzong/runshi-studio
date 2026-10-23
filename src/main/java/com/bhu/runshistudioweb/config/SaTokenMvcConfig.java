@@ -7,34 +7,38 @@ import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import org.springframework.web.servlet.resource.ResourceHttpRequestHandler;
 
-// Sa-Token 拦截器注册：全局登录校验 + 注解鉴权 + 白名单
-//
-// 为什么必须写这个类：Sa-Token 的 starter 只注册了三个过滤器
-// （上下文过滤器、跨域过滤器、防火墙过滤器），它不会自动注册 WebMVC 拦截器。
-// 而 @SaCheckRole / @SaCheckLogin / @SaCheckPermission 这些注解，
-// 是 SaInterceptor 在 preHandle 里解析的——不注册拦截器，注解会被静默忽略：
-// 不报错、不拦截，接口直接放行。这是接入 Sa-Token 最容易踩、也最危险的坑。
-//
-// 本类做两件事：
-// - 构造时传入 auth 函数 handle -> StpUtil.checkLogin()：
-// 让 / 下的所有接口默认要求登录**（白名单除外）；
-// - 用 #EXCLUDE_PATHS 明确列出允许匿名访问的路径。
-// 注解鉴权依然生效（SaInterceptor 的 isAnnotation 默认为 true），
-// 两者是「叠加」关系：先做登录校验，再做接口上的 @SaCheckRole 角色校验。
-//
-// 默认拒绝是刻意选择：新增接口如果忘了加鉴权注解，最多是「没登录时访问不了」，
-// 而不是「所有人可访问」。反之（默认放行 + 逐个加注解）一旦漏加就是越权漏洞。
-//
-// 代价与纪律：新写一个「本来就要给游客看」的接口时，
-// 必须把它加进 #EXCLUDE_PATHS，否则前端会拿到 A0201。
-// 因此新增公开接口时，请顺手更新这里的清单（并写清注释），别只加在 Controller 上。
+/**
+ * Sa-Token 拦截器注册：全局登录校验 + 注解鉴权 + 白名单
+ *
+ * 为什么必须写这个类：Sa-Token 的 starter 只注册了三个过滤器
+ * （上下文过滤器、跨域过滤器、防火墙过滤器），它不会自动注册 WebMVC 拦截器。
+ * 而 @SaCheckRole / @SaCheckLogin / @SaCheckPermission 这些注解，
+ * 是 SaInterceptor 在 preHandle 里解析的——不注册拦截器，注解会被静默忽略：
+ * 不报错、不拦截，接口直接放行。这是接入 Sa-Token 最容易踩、也最危险的坑。
+ *
+ * 本类做两件事：
+ * - 构造时传入 auth 函数 handle -> StpUtil.checkLogin()：
+ * 让 / 下的所有接口默认要求登录**（白名单除外）；
+ * - 用 EXCLUDE_PATHS 明确列出允许匿名访问的路径。
+ * 注解鉴权依然生效（SaInterceptor 的 isAnnotation 默认为 true），
+ * 两者是「叠加」关系：先做登录校验，再做接口上的 @SaCheckRole 角色校验。
+ *
+ * 默认拒绝是刻意选择：新增接口如果忘了加鉴权注解，最多是「没登录时访问不了」，
+ * 而不是「所有人可访问」。反之（默认放行 + 逐个加注解）一旦漏加就是越权漏洞。
+ *
+ * 代价与纪律：新写一个「本来就要给游客看」的接口时，
+ * 必须把它加进 EXCLUDE_PATHS，否则前端会拿到 A0201。
+ * 因此新增公开接口时，请顺手更新这里的清单（并写清注释），别只加在 Controller 上。
+ */
 @Configuration
 public class SaTokenMvcConfig implements WebMvcConfigurer {
 
-    // 白名单：无需登录即可访问的路径
-    //
-    // 写法提示：路径是相对 context-path 的（本项目的 context-path 是 /api，
-    // 但这里不能写 /api/xxx），支持 Ant 风格，如 /member/**。
+    /**
+     * 白名单：无需登录即可访问的路径
+     *
+     * 写法提示：路径是相对 context-path 的（本项目的 context-path 是 /api，
+     * 但这里不能写 /api/xxx），支持 Ant 风格，如 /member/**。
+     */
     private static final String[] EXCLUDE_PATHS = {
             // ===== C 端公开接口（匿名可访问，产品要求游客也能用）=====
             "/user/register",   // 注册：还没有账号的人必须能访问
@@ -126,9 +130,11 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
             "/actuator/health"
     };
 
-    // 注册 Sa-Token 拦截器
-    //
-    // @param registry Spring MVC 的拦截器注册表
+    /**
+     * 注册 Sa-Token 拦截器
+     *
+     * @param registry Spring MVC 的拦截器注册表
+     */
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(new SaInterceptor(handler -> {

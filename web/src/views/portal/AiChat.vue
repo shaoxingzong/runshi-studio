@@ -8,12 +8,14 @@ import type { AiSession, KnowledgeSource } from '@/api/types';
 
 const router = useRouter();
 
-// AI 助手（SSE 流式）
-//
-// 事件序列（后端契约）：meta → sources → delta* → done / error
-// - meta：首次提问带回 sessionId，记住它即可续聊
-// - sources：本次回答引用的知识库来源（恒发，无命中时是空数组）
-// - delta：回答增量，边收边渲染
+/**
+ * AI 助手（SSE 流式）
+ *
+ * 事件序列（后端契约）：meta → sources → delta* → done / error
+ * - meta：首次提问带回 sessionId，记住它即可续聊
+ * - sources：本次回答引用的知识库来源（恒发，无命中时是空数组）
+ * - delta：回答增量，边收边渲染
+ */
 interface Bubble {
     role: 'user' | 'assistant';
     content: string;
@@ -27,14 +29,16 @@ const input = ref('');
 const sessionId = ref(localStorage.getItem(SESSION_KEY) || '');
 const streaming = ref(false);
 
-// AI 服务是否不可用（用于输入区上方的持续提示条）
-//
-// 为什么不用全局红色弹窗：token 被冻结这类持续性故障下，用户每问一次
-// 就弹一次红窗，除了反复宣告同一件事没有任何帮助。改成一条可持续显示的提示，
-// 下次成功自动消失——既不打断输入，也不会被「关掉了就忘了」。
+/**
+ * AI 服务是否不可用（用于输入区上方的持续提示条）
+ *
+ * 为什么不用全局红色弹窗：token 被冻结这类持续性故障下，用户每问一次
+ * 就弹一次红窗，除了反复宣告同一件事没有任何帮助。改成一条可持续显示的提示，
+ * 下次成功自动消失——既不打断输入，也不会被「关掉了就忘了」。
+ */
 const aiDown = ref(false);
 
-// 历史会话（接口要求登录，游客侧这一栏不出现）
+/** 历史会话（接口要求登录，游客侧这一栏不出现） */
 const sessionList = ref<AiSession[]>([]);
 const user = useUserStore();
 const windowRef = ref<HTMLElement | null>(null);
@@ -113,10 +117,12 @@ function newChat() {
     messages.value = [];
 }
 
-// 拉取历史会话
-//
-// 未登录时直接返回而不是发请求：接口要求登录，游客调它会拿到 A0201，
-// 而请求层遇到 A0201 会顺手清掉本地令牌——为一个不该发的请求赔上登录态，不划算。
+/**
+ * 拉取历史会话
+ *
+ * 未登录时直接返回而不是发请求：接口要求登录，游客调它会拿到 A0201，
+ * 而请求层遇到 A0201 会顺手清掉本地令牌——为一个不该发的请求赔上登录态，不划算。
+ */
 async function loadSessionList() {
     if (!user.isLogin) {
         sessionList.value = [];
@@ -159,7 +165,7 @@ async function removeCurrent() {
     await loadSessionList();
 }
 
-// 拉取当前会话的历史（后端按时间正序返回最近 50 条）
+/** 拉取当前会话的历史（后端按时间正序返回最近 50 条） */
 async function loadHistory() {
     if (!sessionId.value) {
         return;

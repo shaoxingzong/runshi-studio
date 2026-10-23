@@ -12,13 +12,15 @@ import { usePageMeta } from '@/composables/usePageMeta';
 import { useUserStore } from '@/stores/user';
 import type { QuizMode, QuizOverview, QuizTextbook } from '@/api/types';
 
-// 刷题首页（对照设计稿：选择模式 / 教材章节 / 开始 / 学习概览 / 错题本）
-//
-// 准入：只有在队成员能用（与考勤同一套判定，认 studio_member 表）。
-// 非成员进来会被拦下并送回首页——不是报错，因为「不是成员」是正常的身份状态。
-//
-// 为什么三个请求并发拉：教材树、概览、继续上次的批次互不依赖，
-// 串行拉会让首屏多等两个往返。任一失败走 ErrorRetry，而不是留一个空白页面。
+/**
+ * 刷题首页（对照设计稿：选择模式 / 教材章节 / 开始 / 学习概览 / 错题本）
+ *
+ * 准入：只有在队成员能用（与考勤同一套判定，认 studio_member 表）。
+ * 非成员进来会被拦下并送回首页——不是报错，因为「不是成员」是正常的身份状态。
+ *
+ * 为什么三个请求并发拉：教材树、概览、继续上次的批次互不依赖，
+ * 串行拉会让首屏多等两个往返。任一失败走 ErrorRetry，而不是留一个空白页面。
+ */
 const router = useRouter();
 const user = useUserStore();
 
@@ -29,7 +31,7 @@ const error = ref('');
 const catalog = ref<QuizTextbook[]>([]);
 const overview = ref<QuizOverview | null>(null);
 
-// 表单：模式 + 教材 + 章节 + 是否重刷本章
+/** 表单：模式 + 教材 + 章节 + 是否重刷本章 */
 const form = reactive({
     mode: 0 as QuizMode,
     textbookName: '',
@@ -38,18 +40,18 @@ const form = reactive({
 });
 
 const wrongDrawer = ref(false);
-// 是否有可继续的批次（只判断 sessionStorage 里有没有，不解析内容）
+/** 是否有可继续的批次（只判断 sessionStorage 里有没有，不解析内容） */
 const hasOngoing = ref(false);
 
-// 当前教材的章节列表
+/** 当前教材的章节列表 */
 const chapters = computed(
     () => catalog.value.find((item) => item.name === form.textbookName)?.chapters ?? [],
 );
 
-// 顺序模式必须选教材与章节；其余模式可空（空 = 全库范围）
+/** 顺序模式必须选教材与章节；其余模式可空（空 = 全库范围） */
 const isSequential = computed(() => form.mode === 0);
 
-// 开始按钮文案：随模式变化，让用户知道点下去会发生什么
+/** 开始按钮文案：随模式变化，让用户知道点下去会发生什么 */
 const startText = computed(() => {
     if (form.mode === 1) {
         const pending = overview.value?.wrongPending ?? 0;
@@ -61,7 +63,7 @@ const startText = computed(() => {
     return '开始刷题';
 });
 
-// 开始按钮是否可用
+/** 开始按钮是否可用 */
 const canStart = computed(() => {
     if (form.mode === 1) {
         return (overview.value?.wrongPending ?? 0) > 0;
@@ -93,7 +95,7 @@ async function load() {
     }
 }
 
-// 切换教材时把章节重置为新教材的第一章（否则会带着上一本书的章节名）
+/** 切换教材时把章节重置为新教材的第一章（否则会带着上一本书的章节名） */
 function onTextbookChange() {
     form.chapterName = chapters.value[0]?.name ?? '';
 }
@@ -134,7 +136,7 @@ async function start() {
     }
 }
 
-// 继续上次：直接进答题页，由它从 sessionStorage 恢复
+/** 继续上次：直接进答题页，由它从 sessionStorage 恢复 */
 async function resume() {
     await router.push('/quiz/play');
 }

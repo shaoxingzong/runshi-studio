@@ -6,14 +6,14 @@ import ErrorRetry from '@/components/ErrorRetry.vue';
 import { useUserStore } from '@/stores/user';
 import type { PageResult, Post } from '@/api/types';
 
-// 社区帖子列表（游客可访问，只含已通过的内容）
+/** 社区帖子列表（游客可访问，只含已通过的内容） */
 const router = useRouter();
 const user = useUserStore();
 
 const page = reactive({ current: 1, pageSize: 9 });
 const result = ref<PageResult<Post> | null>(null);
 const loading = ref(false);
-// 加载失败：非空时展示错误条 + 重试
+/** 加载失败：非空时展示错误条 + 重试 */
 const error = ref('');
 
 async function load() {
@@ -29,7 +29,7 @@ async function load() {
 }
 
 function turn(delta: number) {
-    // pages / total 是字符串（Long 序列化），比较前必须转数字
+    /** pages / total 是字符串（Long 序列化），比较前必须转数字 */
     const pages = result.value ? Number(result.value.pages) : 1;
     const next = page.current + delta;
     if (next < 1 || next > pages) {

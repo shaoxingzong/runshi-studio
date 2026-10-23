@@ -12,12 +12,12 @@ import type {
     Project,
 } from './types';
 
-// 后台接口（除登录外全部要求 admin 角色）
+/** 后台接口（除登录外全部要求 admin 角色） */
 export const adminApi = {
     login: (userAccount: string, userPassword: string) =>
         http.post<LoginResult>('/user/login', { userAccount, userPassword }),
 
-    // ===== 用户（「成员」身份就是在这里授予的） =====
+    // ===== 用户（「成员」身份就是在这里授予的）=====
     // 注册只能产生普通用户（user）；管理员在这里把某个账号的角色改成 member / admin，
     // 或封禁（userStatus=1）。后端 /user/list/page、/user/update 均要求 admin。
     userPage: (params: Record<string, unknown>) => http.get<PageResult<AdminUser>>('/user/list/page', params),

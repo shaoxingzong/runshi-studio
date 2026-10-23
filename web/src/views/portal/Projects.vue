@@ -4,12 +4,12 @@ import { portalApi } from '@/api/portal';
 import ErrorRetry from '@/components/ErrorRetry.vue';
 import type { PageResult, Project } from '@/api/types';
 
-// 项目案例列表（C 端真分页，列表 VO 不含正文——正文只在详情页取）
+/** 项目案例列表（C 端真分页，列表 VO 不含正文——正文只在详情页取） */
 const filter = reactive({ title: '', status: '' as string });
 const page = reactive({ current: 1, pageSize: 6 });
 const result = ref<PageResult<Project> | null>(null);
 const loading = ref(false);
-// 加载失败信息：非空时展示错误条 + 重试，而不是留一个空白列表让人猜
+/** 加载失败信息：非空时展示错误条 + 重试，而不是留一个空白列表让人猜 */
 const error = ref('');
 
 const STATUS_TEXT: Record<string, string> = { 0: '研发中', 1: '已上线', 2: '已结题' };

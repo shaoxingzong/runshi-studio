@@ -1,32 +1,34 @@
 package com.bhu.runshistudioweb.model.enums;
 
-// 项目状态枚举（studio_project.status，tinyint）
-//
-// 为什么用 tinyint 而不是 varchar（DESIGN.md 4.2 的判定标准）：
-// 它是纯状态位——取值固定为三个、几乎不会扩展，且官网要按它做数值筛选
-// （「只看已上线的项目」 ?status=1）。数字存 + 枚举约束，既省空间也便于精确匹配。
-//
-// 取值必须与 db/user.sql 中 status 的列注释保持一致：
-// 0-研发中, 1-已上线, 2-已结题，且 DDL 的默认值是 1。
-// 因此「新增项目不传 status」时的兜底也必须取 #ONLINE，不能随便挑一个——
-// 否则同一份代码会出现「DB 默认 1、Service 默认 0」两套口径。
-//
-// 与 TeamPositionEnum 一样：没有框架注解引用它的字面量，故不配套常量类。
+/**
+ * 项目状态枚举（studio_project.status，tinyint）
+ *
+ * 为什么用 tinyint 而不是 varchar（DESIGN.md 4.2 的判定标准）：
+ * 它是纯状态位——取值固定为三个、几乎不会扩展，且官网要按它做数值筛选
+ * （「只看已上线的项目」 ?status=1）。数字存 + 枚举约束，既省空间也便于精确匹配。
+ *
+ * 取值必须与 db/user.sql 中 status 的列注释保持一致：
+ * 0-研发中, 1-已上线, 2-已结题，且 DDL 的默认值是 1。
+ * 因此「新增项目不传 status」时的兜底也必须取 ONLINE，不能随便挑一个——
+ * 否则同一份代码会出现「DB 默认 1、Service 默认 0」两套口径。
+ *
+ * 与 TeamPositionEnum 一样：没有框架注解引用它的字面量，故不配套常量类。
+ */
 public enum ProjectStatusEnum {
 
-    // 研发中：还没上线，官网一般只在后台可见
+    /** 研发中：还没上线，官网一般只在后台可见 */
     DEVELOPING(0, "研发中"),
 
-    // 已上线：官网默认展示的群体（DDL 默认值 1）
+    /** 已上线：官网默认展示的群体（DDL 默认值 1） */
     ONLINE(1, "已上线"),
 
-    // 已结题：历史项目，保留展示但不再维护
+    /** 已结题：历史项目，保留展示但不再维护 */
     ARCHIVED(2, "已结题");
 
-    // 入库的值（与 DDL 中 status 列取值一致）
+    /** 入库的值（与 DDL 中 status 列取值一致） */
     private final int value;
 
-    // 中文描述，用于日志与提示
+    /** 中文描述，用于日志与提示 */
     private final String desc;
 
     ProjectStatusEnum(int value, String desc) {
@@ -34,12 +36,12 @@ public enum ProjectStatusEnum {
         this.desc = desc;
     }
 
-    // 入库的值（与 DDL 中的 status 列取值一致）
+    /** 入库的值（与 DDL 中的 status 列取值一致） */
     public int getValue() {
         return value;
     }
 
-    // 中文描述，用于日志与提示
+    /** 中文描述，用于日志与提示 */
     public String getDesc() {
         return desc;
     }
@@ -56,9 +58,11 @@ public enum ProjectStatusEnum {
         return null;
     }
 
-    // 所有合法取值的可读文案，形如 0（研发中） / 1（已上线） / 2（已结题）
-    //
-    // @return 以「 / 」分隔的合法取值（含中文含义，因为数字单独看没有语义）
+    /**
+     * 所有合法取值的可读文案，形如 0（研发中）/ 1（已上线）/ 2（已结题）
+     *
+     * @return 以「 / 」分隔的合法取值（含中文含义，因为数字单独看没有语义）
+     */
     public static String valuesText() {
         StringBuilder text = new StringBuilder();
         for (ProjectStatusEnum status : values()) {

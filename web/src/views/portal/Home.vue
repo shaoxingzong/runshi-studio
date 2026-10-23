@@ -27,7 +27,7 @@ const TYPE_TEXT: Record<string, string> = {
     paper: '论文',
 };
 
-// 分布数据转成有序数组：图表数据与「是否有数据」的判断共用同一份
+/** 分布数据转成有序数组：图表数据与「是否有数据」的判断共用同一份 */
 const levelEntries = computed(() =>
     Object.entries(overview.value?.certificateByLevel ?? {}).filter(([, value]) => value > 0),
 );
@@ -35,7 +35,7 @@ const typeEntries = computed(() =>
     Object.entries(overview.value?.certificateByType ?? {}).filter(([, value]) => value > 0),
 );
 
-// 按级别的柱状图：级别是可枚举的少数几档，柱子比环形更好比较
+/** 按级别的柱状图：级别是可枚举的少数几档，柱子比环形更好比较 */
 const levelOption = computed<EChartsOption>(() => ({
     tooltip: { trigger: 'axis' },
     grid: { left: 8, right: 16, top: 24, bottom: 8, containLabel: true },
@@ -73,7 +73,7 @@ const levelOption = computed<EChartsOption>(() => ({
     ],
 }));
 
-// 按类型的环形图：类型之间无先后，占比用环形更直观
+/** 按类型的环形图：类型之间无先后，占比用环形更直观 */
 const typeOption = computed<EChartsOption>(() => ({
     tooltip: { trigger: 'item', formatter: '{b}：{c}（{d}%）' },
     legend: { bottom: 0, icon: 'circle', itemWidth: 8, itemHeight: 8 },

@@ -11,16 +11,18 @@ import type {
     PostSelfDetail,
 } from './types';
 
-// 帖子 / 评论接口
-//
-// 为什么单独建一个文件：帖子有自己的一整套资源（帖子、评论、审核、删除），
-// 与既有 portal（只读展示）/ admin（成员、证书等）都不重合，混进去会让那两个文件越滚越大。
-//
-// 先审后发对前端的直接影响：`add` 与 `commentAdd` 返回的只是新 ID，
-// 内容此时是「待审」状态，不会出现在公开列表里。
-// 调用方必须给出明确提示（「已提交，审核通过后可见」），否则用户会以为提交失败。
+/**
+ * 帖子 / 评论接口
+ *
+ * 为什么单独建一个文件：帖子有自己的一整套资源（帖子、评论、审核、删除），
+ * 与既有 portal（只读展示）/ admin（成员、证书等）都不重合，混进去会让那两个文件越滚越大。
+ *
+ * 先审后发对前端的直接影响：`add` 与 `commentAdd` 返回的只是新 ID，
+ * 内容此时是「待审」状态，不会出现在公开列表里。
+ * 调用方必须给出明确提示（「已提交，审核通过后可见」），否则用户会以为提交失败。
+ */
 export const postApi = {
-    // ==================== C 端（列表 / 详情游客可访问） ====================
+    // ==================== C 端（列表 / 详情游客可访问）====================
 
     // 公开帖子分页：仅已通过，置顶优先 + 时间倒序
     list: (params: Record<string, unknown>) => http.get<PageResult<Post>>('/post/list/page', params),
@@ -67,7 +69,7 @@ export const postApi = {
     commentAdd: (body: { postId: string; content: string; parentId?: string | null }) =>
         http.post<string>('/post/comment/add', body),
 
-    // ==================== 管理端（全部要求 admin） ====================
+    // ==================== 管理端（全部要求 admin）====================
 
     // 帖子待审队列：仅待审，按提交时间先进先出
     pending: (params: Record<string, unknown>) =>
@@ -94,7 +96,7 @@ export const postApi = {
     // @returns 实际删除的条数（含回复）
     commentDelete: (id: string) => http.post<number>('/admin/post/comment/delete', { id }),
 
-    // ==================== 管理端：帖子管理（全部要求 admin） ====================
+    // ==================== 管理端：帖子管理（全部要求 admin）====================
 
     // 帖子全量列表（三种状态均可查）
     //
@@ -141,17 +143,19 @@ export const postApi = {
     adminDetail: (id: string) => http.get<PostAdminDetail>('/admin/post/detail', { id }),
 };
 
-// 上传图片（发帖时往正文里插图用）
-//
-// 为什么必须传到站内：后端校验正文里的图片路径必须以 `/uploads/` 开头，
-// 外链图会被拒绝——所以绝不能图省事把图片转成 base64 内嵌（正文会膨胀），
-// 也不能上传到第三方图床。
-//
-// 实现统一收在 fileApi.upload（后台表单上传共用同一份 multipart 逻辑），
-// 这里只做转发，避免两处各写一遍。
-//
-// @param file 图片文件（后端只接受 PNG / JPEG，真实类型由魔数判定）
-// @returns 相对访问路径，如 `/uploads/2026/10/xxxx.png`
+/**
+ * 上传图片（发帖时往正文里插图用）
+ *
+ * 为什么必须传到站内：后端校验正文里的图片路径必须以 `/uploads/` 开头，
+ * 外链图会被拒绝——所以绝不能图省事把图片转成 base64 内嵌（正文会膨胀），
+ * 也不能上传到第三方图床。
+ *
+ * 实现统一收在 fileApi.upload（后台表单上传共用同一份 multipart 逻辑），
+ * 这里只做转发，避免两处各写一遍。
+ *
+ * @param file 图片文件（后端只接受 PNG / JPEG，真实类型由魔数判定）
+ * @returns 相对访问路径，如 `/uploads/2026/10/xxxx.png`
+ */
 export function uploadPostImage(file: File): Promise<string> {
     return fileApi.upload(file);
 }

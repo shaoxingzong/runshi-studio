@@ -9,12 +9,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-// 选项标签工具验收测试（纯单测：不启 Spring、不连数据库）
-//
-// 本类最关键的一条是「大小写与顺序不影响判分」：
-// 用户点的是选项、传上来的却是字符串， "AC" / "ca" / "C,A"
-// 都是同一个选择。如果规范化没做对，选对了也会被判错，
-// 而且这种错误极难复现——用户说他选的是 A 和 C，日志里存的是 "C,A"。
+/**
+ * 选项标签工具验收测试（纯单测：不启 Spring、不连数据库）
+ *
+ * 本类最关键的一条是「大小写与顺序不影响判分」：
+ * 用户点的是选项、传上来的却是字符串，"AC" / "ca" / "C,A"
+ * 都是同一个选择。如果规范化没做对，选对了也会被判错，
+ * 而且这种错误极难复现——用户说他选的是 A 和 C，日志里存的是 "C,A"。
+ */
 class QuizLabelUtilsTest {
 
     // ==================== normalize ====================

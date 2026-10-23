@@ -58,7 +58,7 @@ instance.interceptors.response.use(
     },
 );
 
-// 把 {code,data,message} 解成 data，非 0 抛错
+/** 把 {code,data,message} 解成 data，非 0 抛错 */
 async function unwrap<T>(promise: Promise<AxiosResponse<ApiResponse<T>>>): Promise<T> {
     const response = await promise;
     const body = response.data;
@@ -77,23 +77,27 @@ async function unwrap<T>(promise: Promise<AxiosResponse<ApiResponse<T>>>): Promi
     throw new Error(body.message || String(body.code));
 }
 
-// 单次请求的可选项：目前只需要能单独指定超时
+/** 单次请求的可选项：目前只需要能单独指定超时 */
 export interface RequestOptions {
     timeout?: number;
 }
 
-// 令牌失效事件名
-//
-// 用事件而不是直接 import store： stores/user.ts 反过来依赖本文件的
-// tokenStore，直接互引会形成循环依赖。事件让两边解耦。
+/**
+ * 令牌失效事件名
+ *
+ * 用事件而不是直接 import store：stores/user.ts 反过来依赖本文件的
+ * tokenStore，直接互引会形成循环依赖。事件让两边解耦。
+ */
 export const AUTH_EXPIRED_EVENT = 'auth:expired';
 
-// 带超时的请求方法（默认 30 秒）
-//
-// 第三个参数专为耗时操作准备：全局 30 秒对「调用 Embedding」这类接口远远不够
-// （知识库的全量同步 / 重建向量 / 手工录入，后端要逐条调用模型）。
-// 这类接口必须显式传更长的超时——否则前端先超时报错，后端其实还在跑，
-// 用户既看不到结果，也不知道该等。
+/**
+ * 带超时的请求方法（默认 30 秒）
+ *
+ * 第三个参数专为耗时操作准备：全局 30 秒对「调用 Embedding」这类接口远远不够
+ * （知识库的全量同步 / 重建向量 / 手工录入，后端要逐条调用模型）。
+ * 这类接口必须显式传更长的超时——否则前端先超时报错，后端其实还在跑，
+ * 用户既看不到结果，也不知道该等。
+ */
 export const http = {
     get<T>(url: string, params?: Record<string, unknown>, options?: RequestOptions): Promise<T> {
         return unwrap<T>(instance.get<ApiResponse<T>>(url, { params, ...options }));
@@ -111,5 +115,5 @@ export const http = {
     },
 };
 
-// 流式提问专用：不走 axios（需要读取原始流），基础地址与上面保持一致
+/** 流式提问专用：不走 axios（需要读取原始流），基础地址与上面保持一致 */
 export const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';

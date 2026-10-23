@@ -27,18 +27,20 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-// 账号级登录失败锁定单测（纯 Mockito，不启 Spring、不连 Redis）
-//
-// 与 IpRateLimitManagerTest 同一套理由：本类只依赖
-// StringRedisTemplate 与配置对象，mock 掉即可覆盖全部分支；
-// 能不起容器就不起（多个测试类对上下文停止顺序敏感，见 pom 里 surefire 的记载）。
-//
-// 覆盖重点：
-// - 阈值边界：达到阈值即锁（判定是 >=，与 IP 限流的 > 相反——
-// 限流是「超过上限才拒」，锁定是「失败够次数就锁」，语义不同，边界也不同）；
-// - 键与 TTL：recordFailure 必须带账号名键与锁定时长换算出的秒数；
-// - 降级：Redis 故障时全部放行——锁定是防护手段，不能变成故障源；
-// - 开关：关闭时不碰 Redis。
+/**
+ * 账号级登录失败锁定单测（纯 Mockito，不启 Spring、不连 Redis）
+ *
+ * 与 IpRateLimitManagerTest 同一套理由：本类只依赖
+ * StringRedisTemplate 与配置对象，mock 掉即可覆盖全部分支；
+ * 能不起容器就不起（多个测试类对上下文停止顺序敏感，见 pom 里 surefire 的记载）。
+ *
+ * 覆盖重点：
+ * - 阈值边界：达到阈值即锁（判定是 >=，与 IP 限流的 > 相反——
+ * 限流是「超过上限才拒」，锁定是「失败够次数就锁」，语义不同，边界也不同）；
+ * - 键与 TTL：recordFailure 必须带账号名键与锁定时长换算出的秒数；
+ * - 降级：Redis 故障时全部放行——锁定是防护手段，不能变成故障源；
+ * - 开关：关闭时不碰 Redis。
+ */
 @ExtendWith(MockitoExtension.class)
 class AuthLockManagerTest {
 
@@ -50,7 +52,7 @@ class AuthLockManagerTest {
     @Mock
     private ValueOperations<String, String> valueOperations;
 
-    // 默认配置：开锁、5 次锁定、15 分钟
+    /** 默认配置：开锁、5 次锁定、15 分钟 */
     private AuthLockManager newManager() {
         return new AuthLockManager(stringRedisTemplate, new AuthLockoutProperties());
     }

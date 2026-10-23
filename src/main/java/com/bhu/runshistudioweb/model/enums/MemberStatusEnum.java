@@ -1,28 +1,30 @@
 package com.bhu.runshistudioweb.model.enums;
 
-// 成员状态枚举（studio_member.member_status）
-//
-// 为什么用 tinyint 而不是 varchar（DESIGN.md 4.2 的判定标准）：
-// 它是纯状态位，取值只有「在读/在队」与「毕业/离队」两种、极少扩展，
-// 且官网需要按它做数值筛选（免费查询新增接口 ?memberStatus=0）。
-//
-// 取值必须与 db/user.sql 中 member_status 的列注释保持一致：
-// 0-在读/在队, 1-毕业/离队。
-//
-// 与 UserRoleEnum 的差别同 TeamPositionEnum：
-// 没有框架注解引用它的字面量，故不配套常量类。
+/**
+ * 成员状态枚举（studio_member.member_status）
+ *
+ * 为什么用 tinyint 而不是 varchar（DESIGN.md 4.2 的判定标准）：
+ * 它是纯状态位，取值只有「在读/在队」与「毕业/离队」两种、极少扩展，
+ * 且官网需要按它做数值筛选（免费查询新增接口 ?memberStatus=0）。
+ *
+ * 取值必须与 db/user.sql 中 member_status 的列注释保持一致：
+ * 0-在读/在队, 1-毕业/离队。
+ *
+ * 与 UserRoleEnum 的差别同 TeamPositionEnum：
+ * 没有框架注解引用它的字面量，故不配套常量类。
+ */
 public enum MemberStatusEnum {
 
-    // 在读/在队：官网成员页默认展示的群体
+    /** 在读/在队：官网成员页默认展示的群体 */
     IN_TEAM(0, "在读/在队"),
 
-    // 毕业/离队：官网「已毕业成员」板块使用
+    /** 毕业/离队：官网「已毕业成员」板块使用 */
     GRADUATED(1, "毕业/离队");
 
-    // 入库的值（与 DDL 中 member_status 列取值一致）
+    /** 入库的值（与 DDL 中 member_status 列取值一致） */
     private final int value;
 
-    // 中文描述，用于日志与提示
+    /** 中文描述，用于日志与提示 */
     private final String desc;
 
     MemberStatusEnum(int value, String desc) {
@@ -30,12 +32,12 @@ public enum MemberStatusEnum {
         this.desc = desc;
     }
 
-    // 入库的值（与 DDL 中的 member_status 列取值一致）
+    /** 入库的值（与 DDL 中的 member_status 列取值一致） */
     public int getValue() {
         return value;
     }
 
-    // 中文描述，用于日志与提示
+    /** 中文描述，用于日志与提示 */
     public String getDesc() {
         return desc;
     }
@@ -52,9 +54,11 @@ public enum MemberStatusEnum {
         return null;
     }
 
-    // 所有合法取值的可读文案，形如 0（在读/在队） / 1（毕业/离队）
-    //
-    // @return 以「 / 」分隔的合法取值（含中文含义，因为数字单独看没有语义）
+    /**
+     * 所有合法取值的可读文案，形如 0（在读/在队）/ 1（毕业/离队）
+     *
+     * @return 以「 / 」分隔的合法取值（含中文含义，因为数字单独看没有语义）
+     */
     public static String valuesText() {
         StringBuilder text = new StringBuilder();
         for (MemberStatusEnum status : values()) {

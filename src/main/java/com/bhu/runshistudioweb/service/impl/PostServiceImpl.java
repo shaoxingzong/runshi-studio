@@ -57,82 +57,98 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-// 帖子服务实现
-//
-// 依赖都走构造器注入（项目统一约定）： final 字段 + @RequiredArgsConstructor。
-//
-// 为什么注入 StudioMemberMapper 而不是只靠 StudioMemberService：
-// 列表页要显示作者名，需要「按一批 user_id 反查成员姓名」这种批量查询能力，
-// 而 Service 对外只提供「按单个 userId 查在队成员」。批量查由 Mapper 直接做最直接，
-// 且能保证是一次查询而不是 N+1（见 #authorNames）。
+/**
+ * 帖子服务实现
+ *
+ * 依赖都走构造器注入（项目统一约定）：final 字段 + @RequiredArgsConstructor。
+ *
+ * 为什么注入 StudioMemberMapper 而不是只靠 StudioMemberService：
+ * 列表页要显示作者名，需要「按一批 user_id 反查成员姓名」这种批量查询能力，
+ * 而 Service 对外只提供「按单个 userId 查在队成员」。批量查由 Mapper 直接做最直接，
+ * 且能保证是一次查询而不是 N+1（见 authorNames）。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> implements PostService {
 
-    // 正文长度上限
-    //
-    // text 列能存得下更多，但正文会在「入库」和「返回详情」时被各传输一次，
-    // 几十 MB 的输入足以拖垮两端。取一个对正常文章绰绰有余、又能挡住恶意输入的值。
+    /**
+     * 正文长度上限
+     *
+     * text 列能存得下更多，但正文会在「入库」和「返回详情」时被各传输一次，
+     * 几十 MB 的输入足以拖垮两端。取一个对正常文章绰绰有余、又能挡住恶意输入的值。
+     */
     private static final int CONTENT_MAX_LENGTH = 50000;
 
-    // 摘要兜底长度：正文剥掉 Markdown 标记后取前这么多字
+    /** 摘要兜底长度：正文剥掉 Markdown 标记后取前这么多字 */
     private static final int SUMMARY_FALLBACK_LENGTH = 120;
 
-    // 分页每页条数的默认值与上限（上限用来防「一次拉全表」）
+    /** 分页每页条数的默认值与上限（上限用来防「一次拉全表」） */
     private static final long DEFAULT_PAGE_SIZE = 10L;
     private static final long MAX_PAGE_SIZE = 50L;
 
-    // 审核动作：通过
+    /** 审核动作：通过 */
     private static final String ACTION_APPROVE = "approve";
 
-    // 审核动作：驳回
+    /** 审核动作：驳回 */
     private static final String ACTION_REJECT = "reject";
 
-    // Markdown 图片语法： ![任意描述](地址)
-    //
-    // 只捕获地址部分。地址里不含空格与右括号——Markdown 的图片地址本来就不允许裸空格，
-    // 所以这个简化正则够用，不必引入完整的 Markdown 解析器。
+    /**
+     * Markdown 图片语法：![任意描述](地址)
+     *
+     * 只捕获地址部分。地址里不含空格与右括号——Markdown 的图片地址本来就不允许裸空格，
+     * 所以这个简化正则够用，不必引入完整的 Markdown 解析器。
+     */
     private static final Pattern MARKDOWN_IMAGE = Pattern.compile("!\\[[^\\]]*\\]\\(([^)\\s]+)\\)");
 
-    // 站内图片路径前缀：只允许引用我们自己上传目录里的图片
+    /** 站内图片路径前缀：只允许引用我们自己上传目录里的图片 */
     private static final String INTERNAL_IMAGE_PREFIX = "/uploads/";
 
     private final StudioMemberService studioMemberService;
 
     private final StudioMemberMapper studioMemberMapper;
 
-    // 内容审核（AI 三分法）
-    //
-    // 只让它负责「判定」，落库由本类自己完成——依赖方向必须保持单向，
-    // 反过来让 Manager 写库就会形成循环依赖（本项目已全量改为构造器注入，成环会启动即失败）。
+    /**
+     * 内容审核（AI 三分法）
+     *
+     * 只让它负责「判定」，落库由本类自己完成——依赖方向必须保持单向，
+     * 反过来让 Manager 写库就会形成循环依赖（本项目已全量改为构造器注入，成环会启动即失败）。
+     */
     private final ContentAuditManager contentAuditManager;
 
-    // 点赞关系（studio_post_like）
-    //
-    // 注入 Mapper 而不是再包一层 Service：只需要「查重」与「按 post_id 批量查已赞集合」
-    // 两种单表查询，与 #studioMemberMapper 的引入理由一致——
-    // 批量能力走 Mapper 最直接，且能保证是一次查询而不是 N+1。
+    /**
+     * 点赞关系（studio_post_like）
+     *
+     * 注入 Mapper 而不是再包一层 Service：只需要「查重」与「按 post_id 批量查已赞集合」
+     * 两种单表查询，与 studioMemberMapper 的引入理由一致——
+     * 批量能力走 Mapper 最直接，且能保证是一次查询而不是 N+1。
+     */
     private final StudioPostLikeMapper studioPostLikeMapper;
 
-    // 评论（studio_post_comment）
-    //
-    // 注入 Mapper 而非 PostCommentService：删帖子时要按 post_id
-    // 批量逻辑删除该帖的全部评论，这是单表批量能力，走 Mapper 最直接；
-    // 且 Service 之间互相依赖容易成环（本项目已全量改为构造器注入，成环会启动即失败）。
+    /**
+     * 评论（studio_post_comment）
+     *
+     * 注入 Mapper 而非 PostCommentService：删帖子时要按 post_id
+     * 批量逻辑删除该帖的全部评论，这是单表批量能力，走 Mapper 最直接；
+     * 且 Service 之间互相依赖容易成环（本项目已全量改为构造器注入，成环会启动即失败）。
+     */
     private final StudioPostCommentMapper studioPostCommentMapper;
 
-    // 站内通知（审核结论送达作者）
-    //
-    // 依赖方向单向：通知服务只做投递，不认识帖子/评论——
-    // 「出什么事、标题正文怎么写」由本类（知道业务语义的一方）决定，
-    // 投递策略（幂等 / 不给自己发 / 失败不拖垮）集中在 NotificationService。
+    /**
+     * 站内通知（审核结论送达作者）
+     *
+     * 依赖方向单向：通知服务只做投递，不认识帖子/评论——
+     * 「出什么事、标题正文怎么写」由本类（知道业务语义的一方）决定，
+     * 投递策略（幂等 / 不给自己发 / 失败不拖垮）集中在 NotificationService。
+     */
     private final NotificationService notificationService;
 
-    // 用户（sys_user）
-    //
-    // 管理端列表要按作者关键词筛选、要展示作者昵称，都需要直接查账号表——
-    // 这两种都是「按一批 id / 一个模糊词」的批量查询，与上述两个 Mapper 同一理由。
+    /**
+     * 用户（sys_user）
+     *
+     * 管理端列表要按作者关键词筛选、要展示作者昵称，都需要直接查账号表——
+     * 这两种都是「按一批 id / 一个模糊词」的批量查询，与上述两个 Mapper 同一理由。
+     */
     private final SysUserMapper sysUserMapper;
 
     @Override
@@ -185,19 +201,21 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         return post.getId();
     }
 
-    // 把 AI 的结论写回帖子（三分法处置）
-    //
-    // 更新条件有两个，缺一不可：
-    // - 未判（ AiAuditStatusEnum#NOT_JUDGED）：保证幂等，
-    // 重复送审不会覆盖已有结论；
-    // - 待审：管理员已经手动处置过的内容，后到的 AI 结论不能改写——
-    // 人的决定优先于机器。
-    //
-    // audit_by 一律留空：AI 不是人，不该伪造一个管理员 ID。
-    // 「这是机器处置的」这件事由 ai_audit_status 记录。
-    //
-    // @param postId 帖子 ID
-    // @param result AI 结论（一定非空，见 AuditResult 的紧凑构造器）
+    /**
+     * 把 AI 的结论写回帖子（三分法处置）
+     *
+     * 更新条件有两个，缺一不可：
+     * - 未判（ AiAuditStatusEnum#NOT_JUDGED）：保证幂等，
+     * 重复送审不会覆盖已有结论；
+     * - 待审：管理员已经手动处置过的内容，后到的 AI 结论不能改写——
+     * 人的决定优先于机器。
+     *
+     * audit_by 一律留空：AI 不是人，不该伪造一个管理员 ID。
+     * 「这是机器处置的」这件事由 ai_audit_status 记录。
+     *
+     * @param postId 帖子 ID
+     * @param result AI 结论（一定非空，见 AuditResult 的紧凑构造器）
+     */
     private void applyAiVerdict(long postId, AuditResult result) {
         AiAuditStatusEnum aiStatus = result.status();
         LocalDateTime now = LocalDateTime.now();
@@ -232,16 +250,18 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         log.info("AI 审核完成 | postId={} | 结论={}", postId, aiStatus.getDesc());
     }
 
-    // 点赞帖子（幂等，只能赞、不能取消）
-    //
-    // 三步顺序不能乱：先确认帖子可赞 → 再查重 → 最后才写。
-    // 顺序反了会出现「给不存在的帖子点了赞」这种脏数据。
-    //
-    // 为什么用声明式事务：这里两次写都是纯 DB 操作（insert 关系行 + update 计数），
-    // 没有外部 HTTP 调用，与 StudioProjectServiceImpl 的「主表 + 关联表」同一类场景，
-    // 用项目惯用的 @Transactional(rollbackFor = Exception.class) 即可。
-    // （ AiChatServiceImpl 要自建 TransactionTemplate，是因为它必须把
-    // 几十秒的模型调用排除在事务外，这里没有这个问题。）
+    /**
+     * 点赞帖子（幂等，只能赞、不能取消）
+     *
+     * 三步顺序不能乱：先确认帖子可赞 → 再查重 → 最后才写。
+     * 顺序反了会出现「给不存在的帖子点了赞」这种脏数据。
+     *
+     * 为什么用声明式事务：这里两次写都是纯 DB 操作（insert 关系行 + update 计数），
+     * 没有外部 HTTP 调用，与 StudioProjectServiceImpl 的「主表 + 关联表」同一类场景，
+     * 用项目惯用的 @Transactional(rollbackFor = Exception.class) 即可。
+     * （ AiChatServiceImpl 要自建 TransactionTemplate，是因为它必须把
+     * 几十秒的模型调用排除在事务外，这里没有这个问题。）
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public Long likePost(long userId, long postId) {
@@ -285,7 +305,7 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         return toLong(this.getById(postId).getLikeCount());
     }
 
-    // likeCount 为 null 时按 0 返回（老数据在加列之前可能没有值）
+    /** likeCount 为 null 时按 0 返回（老数据在加列之前可能没有值） */
     private static long toLong(Integer count) {
         return count == null ? 0L : count.longValue();
     }
@@ -473,14 +493,16 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         return toVOPage(entityPage);
     }
 
-    // 把作者关键词解析成用户 ID 集合
-    //
-    // 账号与成员姓名都要匹配：门户展示用的是成员姓名，管理员照着屏幕上
-    // 看到的名字去搜必须能搜到——否则「搜得到展示名却查不到帖子」会让人以为数据丢了。
-    //
-    // @param authorKeyword 作者关键词（可为空）
-    // @return 用户 ID 集合；关键词为空时返回 null（表示「不按作者筛选」），
-    // 与空集合（匹配不到任何人）是两种不同的语义
+    /**
+     * 把作者关键词解析成用户 ID 集合
+     *
+     * 账号与成员姓名都要匹配：门户展示用的是成员姓名，管理员照着屏幕上
+     * 看到的名字去搜必须能搜到——否则「搜得到展示名却查不到帖子」会让人以为数据丢了。
+     *
+     * @param authorKeyword 作者关键词（可为空）
+     * @return 用户 ID 集合；关键词为空时返回 null（表示「不按作者筛选」），
+     * 与空集合（匹配不到任何人）是两种不同的语义
+     */
     private Collection<Long> resolveAuthorIds(String authorKeyword) {
         if (StrUtil.isBlank(authorKeyword)) {
             return null;
@@ -509,20 +531,22 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         return ids;
     }
 
-    // 删除帖子：同事务级联逻辑删除帖子 + 全部评论 + 全部点赞关系
-    //
-    // 为什么用声明式事务：这里是多处纯 DB 写（审计痕迹、删评论、删点赞、删帖子），
-    // 没有外部 HTTP 调用，用项目惯用的 @Transactional(rollbackFor = Exception.class) 即可。
-    // 少了事务，「评论删了帖子没删掉」会留下父帖已不存在、评论还占着审核队列的中间态。
-    //
-    // 待审帖子不能删（与 PostCommentService#deleteComment 同一条规则）：
-    // 先审后发之下，作者只知道「我提交了」，直接删掉他什么都收不到；
-    // 该走驳回—— rejectReason 能把理由送到作者眼前。删帖只服务于
-    // 「已通过的内容要下线」与「已驳回的内容要清理」两种场景。
-    //
-    // 审计说明： studio_post 没有 deleted_by 列（评论表才有），
-    // 因此删除前把 updated_by 显式写成操作人作为痕迹（元数据填充器只会填 0L），
-    // 日志里再记一条； deleted_at 仍会记录删除时间。
+    /**
+     * 删除帖子：同事务级联逻辑删除帖子 + 全部评论 + 全部点赞关系
+     *
+     * 为什么用声明式事务：这里是多处纯 DB 写（审计痕迹、删评论、删点赞、删帖子），
+     * 没有外部 HTTP 调用，用项目惯用的 @Transactional(rollbackFor = Exception.class) 即可。
+     * 少了事务，「评论删了帖子没删掉」会留下父帖已不存在、评论还占着审核队列的中间态。
+     *
+     * 待审帖子不能删（与 PostCommentService#deleteComment 同一条规则）：
+     * 先审后发之下，作者只知道「我提交了」，直接删掉他什么都收不到；
+     * 该走驳回—— rejectReason 能把理由送到作者眼前。删帖只服务于
+     * 「已通过的内容要下线」与「已驳回的内容要清理」两种场景。
+     *
+     * 审计说明：studio_post 没有 deleted_by 列（评论表才有），
+     * 因此删除前把 updated_by 显式写成操作人作为痕迹（元数据填充器只会填 0L），
+     * 日志里再记一条；deleted_at 仍会记录删除时间。
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public int deletePost(long id) {
@@ -566,10 +590,12 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         return commentRows + 1;
     }
 
-    // 置顶 / 取消置顶
-    //
-    // 置顶只允许「已通过」的帖子（理由见 PostService#updatePinned）；
-    // 取消置顶不设状态限制——恢复操作永远不该被拦住。
+    /**
+     * 置顶 / 取消置顶
+     *
+     * 置顶只允许「已通过」的帖子（理由见 PostService#updatePinned）；
+     * 取消置顶不设状态限制——恢复操作永远不该被拦住。
+     */
     @Override
     public void updatePinned(long id, int pinned) {
         ThrowUtils.throwIf(!StpUtil.isLogin(), ErrorCode.NOT_LOGIN_ERROR, "未登录");
@@ -593,11 +619,13 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         log.info("帖子置顶状态已变更 | postId={} | pinned={} | operatorId={}", id, pinned, operatorId);
     }
 
-    // 编辑帖子（仅管理员），非待审状态一律重置为待审重新送审
-    //
-    // 重置时把上一轮内容的审核痕迹（AI 结论、审核人、审核时间、驳回理由）一并清掉：
-    // 它们描述的是旧版本的结论，留着会让管理员误以为新内容已经判过。
-    // 清空后由本方法重新送 AI 初判，走的是与发帖完全相同的链路。
+    /**
+     * 编辑帖子（仅管理员），非待审状态一律重置为待审重新送审
+     *
+     * 重置时把上一轮内容的审核痕迹（AI 结论、审核人、审核时间、驳回理由）一并清掉：
+     * 它们描述的是旧版本的结论，留着会让管理员误以为新内容已经判过。
+     * 清空后由本方法重新送 AI 初判，走的是与发帖完全相同的链路。
+     */
     @Override
     public void updatePost(PostUpdateRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR, "编辑内容不能为空");
@@ -611,13 +639,15 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         log.info("管理员编辑帖子 | postId={} | operatorId={}", post.getId(), operatorId);
     }
 
-    // 作者修改自己被驳回的帖子（改完重新送审）
-    //
-    // 为什么作者只能改「已驳回」的：待审帖正在队列里，让作者反复改会让
-    // 审核对象不断变化（管理员可能正看着旧版本）；已通过的帖子更不允许改——
-    // 那是公开内容，作者随手改等于给审核开后门（要改只能让管理员代改）。
-    //
-    // 改完与管理员代改走同一条链路：重置为待审、清掉上一轮审核痕迹、重新送 AI 初判。
+    /**
+     * 作者修改自己被驳回的帖子（改完重新送审）
+     *
+     * 为什么作者只能改「已驳回」的：待审帖正在队列里，让作者反复改会让
+     * 审核对象不断变化（管理员可能正看着旧版本）；已通过的帖子更不允许改——
+     * 那是公开内容，作者随手改等于给审核开后门（要改只能让管理员代改）。
+     *
+     * 改完与管理员代改走同一条链路：重置为待审、清掉上一轮审核痕迹、重新送 AI 初判。
+     */
     @Override
     public void updateMyRejectedPost(PostUpdateRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR, "修改内容不能为空");
@@ -639,16 +669,18 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         log.info("作者修改被驳回帖子 | postId={} | authorId={}", post.getId(), userId);
     }
 
-    // 改稿的公共实现（管理员代改与作者自助改共用）
-    //
-    // 为什么抽出来：两条入口的规则完全一致——校验正文、重置待审、
-    // 清审核痕迹、重新送审。复制一份意味着将来改规则要改两处，
-    // 而漏改任何一处都会造成「管理员改的会重新送审、作者改的不会」这类难查差异。
-    //
-    // 调用方负责自己的准入校验（管理员权限 / 作者本人 + 已驳回），本方法只管改稿本身。
-    //
-    // @param post 已取出的帖子实体（调用方保证非空且有权限）
-    // @param request 改稿请求（标题、正文必填；摘要与封面选填）
+    /**
+     * 改稿的公共实现（管理员代改与作者自助改共用）
+     *
+     * 为什么抽出来：两条入口的规则完全一致——校验正文、重置待审、
+     * 清审核痕迹、重新送审。复制一份意味着将来改规则要改两处，
+     * 而漏改任何一处都会造成「管理员改的会重新送审、作者改的不会」这类难查差异。
+     *
+     * 调用方负责自己的准入校验（管理员权限 / 作者本人 + 已驳回），本方法只管改稿本身。
+     *
+     * @param post 已取出的帖子实体（调用方保证非空且有权限）
+     * @param request 改稿请求（标题、正文必填；摘要与封面选填）
+     */
     private void applyPostEdit(StudioPost post, PostUpdateRequest request) {
         // 校验与 addPost 完全同源：正文长度 + XSS 兜底清洗 + 图片必须是站内路径
         String content = StrUtil.trim(request.getContent());
@@ -696,10 +728,12 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         contentAuditManager.submitAsync(content, result -> applyAiVerdict(postId, result));
     }
 
-    // 管理端详情：按 id 取单篇（含正文），不累加浏览量
-    //
-    // 理由见 PostService#getPostForAdmin：公开详情接口既不覆盖
-    // 待审 / 已驳回的帖子，又会污染浏览量，管理动作必须绕开它。
+    /**
+     * 管理端详情：按 id 取单篇（含正文），不累加浏览量
+     *
+     * 理由见 PostService#getPostForAdmin：公开详情接口既不覆盖
+     * 待审 / 已驳回的帖子，又会污染浏览量，管理动作必须绕开它。
+     */
     @Override
     public PostAdminDetailVO getPostForAdmin(long id) {
         // 与其它管理端方法一致：Service 内也校验登录态，不把「调用方一定鉴权过」当作前提
@@ -716,10 +750,12 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         return vo;
     }
 
-    // 作者读自己未公开帖子的详情：仅本人 + 仅待审/已驳回，不累加浏览量
-    //
-    // 已通过的帖子走公开详情接口即可，这里刻意不覆盖——少一条能读到
-    // 公开内容的私有路径，就少一处需要维护的边界。
+    /**
+     * 作者读自己未公开帖子的详情：仅本人 + 仅待审/已驳回，不累加浏览量
+     *
+     * 已通过的帖子走公开详情接口即可，这里刻意不覆盖——少一条能读到
+     * 公开内容的私有路径，就少一处需要维护的边界。
+     */
     @Override
     public PostSelfDetailVO getMyPostDetail(long id) {
         ThrowUtils.throwIf(!StpUtil.isLogin(), ErrorCode.NOT_LOGIN_ERROR, "请先登录");
@@ -745,11 +781,13 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
 
     // ==================== 私有工具 ====================
 
-    // 校验正文里的图片全部是站内路径
-    //
-    // 为什么必须在服务端校验：编辑器只提供上传入口，但用户完全可以手改 Markdown
-    // 塞一个 ![](http://别的站点/xx.png) 进来。前端拦不住，服务端这行能拦住，
-    // 而且不需要维护任何域名白名单。
+    /**
+     * 校验正文里的图片全部是站内路径
+     *
+     * 为什么必须在服务端校验：编辑器只提供上传入口，但用户完全可以手改 Markdown
+     * 塞一个 ![](http://别的站点/xx.png) 进来。前端拦不住，服务端这行能拦住，
+     * 而且不需要维护任何域名白名单。
+     */
     private void assertImagesAreInternal(String content) {
         Matcher matcher = MARKDOWN_IMAGE.matcher(content);
         while (matcher.find()) {
@@ -759,11 +797,13 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         }
     }
 
-    // 兜底摘要：剥掉常见 Markdown 标记后取前若干字
-    //
-    // 只处理最常见的几种标记（标题井号、图片、链接、代码块、强调符号），
-    // 目的是「摘要里不要出现裸的 Markdown 语法」，不是完整解析 Markdown——
-    // 那需要引入解析器，为一个兜底字段不值得。
+    /**
+     * 兜底摘要：剥掉常见 Markdown 标记后取前若干字
+     *
+     * 只处理最常见的几种标记（标题井号、图片、链接、代码块、强调符号），
+     * 目的是「摘要里不要出现裸的 Markdown 语法」，不是完整解析 Markdown——
+     * 那需要引入解析器，为一个兜底字段不值得。
+     */
     private String buildSummary(String content) {
         String plain = content
                 .replaceAll("!\\[[^\\]]*\\]\\([^)\\s]+\\)", "")   // 整张图片
@@ -779,18 +819,22 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
                 : plain.substring(0, SUMMARY_FALLBACK_LENGTH) + "…";
     }
 
-    // 取正文里第一张图片的地址作为封面
-    //
-    // @return 图片地址；正文无图时返回 null（列表页按"无封面"渲染）
+    /**
+     * 取正文里第一张图片的地址作为封面
+     *
+     * @return 图片地址；正文无图时返回 null（列表页按"无封面"渲染）
+     */
     private String extractFirstImage(String content) {
         Matcher matcher = MARKDOWN_IMAGE.matcher(content);
         return matcher.find() ? matcher.group(1) : null;
     }
 
-    // 批量查作者名（一次查询，避免 N+1）
-    //
-    // @param userIds 作者 ID 集合
-    // @return userId → 成员姓名
+    /**
+     * 批量查作者名（一次查询，避免 N+1）
+     *
+     * @param userIds 作者 ID 集合
+     * @return userId → 成员姓名
+     */
     private Map<Long, String> authorNames(Collection<Long> userIds) {
         if (userIds == null || userIds.isEmpty()) {
             return Map.of();
@@ -809,9 +853,11 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         return names;
     }
 
-    // 当前登录用户 ID（未登录返回 null）
-    //
-    // 游客的 liked 恒为 false，因此这里不查库。
+    /**
+     * 当前登录用户 ID（未登录返回 null）
+     *
+     * 游客的 liked 恒为 false，因此这里不查库。
+     */
     private Long currentUserIdOrNull() {
         if (!StpUtil.isLogin()) {
             return null;
@@ -820,13 +866,15 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         return StpUtil.getLoginIdAsLong();
     }
 
-    // 批量查「当前用户赞了这批里的哪几篇」（一次查询，避免 N+1）
-    //
-    // 照抄 #authorNames 的套路：一次查完，再在内存里用 Set 判断。
-    // 游客不查库，直接返回空集合（ liked 恒 false）。
-    //
-    // @param postIds 本页帖子 ID 集合
-    // @return 已赞的帖子 ID 集合
+    /**
+     * 批量查「当前用户赞了这批里的哪几篇」（一次查询，避免 N+1）
+     *
+     * 照抄 authorNames 的套路：一次查完，再在内存里用 Set 判断。
+     * 游客不查库，直接返回空集合（ liked 恒 false）。
+     *
+     * @param postIds 本页帖子 ID 集合
+     * @return 已赞的帖子 ID 集合
+     */
     private Set<Long> likedPostIds(Collection<Long> postIds) {
         Long userId = currentUserIdOrNull();
         if (userId == null || postIds == null || postIds.isEmpty()) {
@@ -838,10 +886,12 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         return likes.stream().map(StudioPostLike::getPostId).collect(Collectors.toSet());
     }
 
-    // 当前用户是否已赞某篇（详情页与点赞查重共用）
-    //
-    // @param postId 帖子 ID
-    // @param userId 用户 ID；为 null（游客）时直接返回 false，不查库
+    /**
+     * 当前用户是否已赞某篇（详情页与点赞查重共用）
+     *
+     * @param postId 帖子 ID
+     * @param userId 用户 ID；为 null（游客）时直接返回 false，不查库
+     */
     private boolean isLiked(long postId, Long userId) {
         if (userId == null) {
             return false;
@@ -852,7 +902,7 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         return count != null && count > 0;
     }
 
-    // 分页参数的兜底纠正：页码传错不必让整个查询失败，收敛到合理区间继续查
+    /** 分页参数的兜底纠正：页码传错不必让整个查询失败，收敛到合理区间继续查 */
     private Page<StudioPost> newPageWithDefaults(long current, long pageSize) {
         long safeCurrent = current < 1 ? 1 : current;
         long safeSize = pageSize < 1 ? DEFAULT_PAGE_SIZE : pageSize;
@@ -861,15 +911,17 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         return new Page<>(safeCurrent, safeSize);
     }
 
-    // 构造一个保留 total/current/size 的空 VO 分页（前端分页组件依赖这三个值）
+    /** 构造一个保留 total/current/size 的空 VO 分页（前端分页组件依赖这三个值） */
     private <T> Page<T> emptyVOPage(Page<StudioPost> entityPage) {
         return new Page<>(entityPage.getCurrent(), entityPage.getSize(), entityPage.getTotal());
     }
 
-    // 实体页 → VO 页（批量填作者昵称，一次查询，不 N+1）
-    //
-    // 「我的发帖」「待审队列」「管理端列表」三条路径共用——
-    // PostVO 契约上 authorName 恒有值，而不是「有的接口填、有的不填」。
+    /**
+     * 实体页 → VO 页（批量填作者昵称，一次查询，不 N+1）
+     *
+     * 「我的发帖」「待审队列」「管理端列表」三条路径共用——
+     * PostVO 契约上 authorName 恒有值，而不是「有的接口填、有的不填」。
+     */
     private Page<PostVO> toVOPage(Page<StudioPost> entityPage) {
         List<StudioPost> posts = entityPage.getRecords();
         Map<Long, String> names = adminAuthorNames(posts.stream().map(StudioPost::getAuthorId).toList());
@@ -885,18 +937,20 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         return voPage;
     }
 
-    // 批量查作者展示名（管理端与作者本人视角共用）
-    //
-    // 为什么与 #authorNames 分开：那个只认「在队成员」的姓名
-    // （门户的对外口径）；而帖子不会因为成员毕业离队而消失，管理端要看到所有
-    // 发过帖的账号——只查在队成员会让老帖子的作者变成空白。
-    //
-    // 口径与门户保持一致：在队成员优先用成员姓名（否则同一篇帖子在门户显示
-    // 「陈星野」、在后台显示账号名，管理员会以为数据出了问题）；查不到成员档案时
-    // 兜底账号昵称，再兜底账号名——显示总比留空好。
-    //
-    // @param userIds 作者 ID 集合
-    // @return userId → 展示名（可能没有值，调用方按 null 处理）
+    /**
+     * 批量查作者展示名（管理端与作者本人视角共用）
+     *
+     * 为什么与 authorNames 分开：那个只认「在队成员」的姓名
+     * （门户的对外口径）；而帖子不会因为成员毕业离队而消失，管理端要看到所有
+     * 发过帖的账号——只查在队成员会让老帖子的作者变成空白。
+     *
+     * 口径与门户保持一致：在队成员优先用成员姓名（否则同一篇帖子在门户显示
+     * 「陈星野」、在后台显示账号名，管理员会以为数据出了问题）；查不到成员档案时
+     * 兜底账号昵称，再兜底账号名——显示总比留空好。
+     *
+     * @param userIds 作者 ID 集合
+     * @return userId → 展示名（可能没有值，调用方按 null 处理）
+     */
     private Map<Long, String> adminAuthorNames(Collection<Long> userIds) {
         if (userIds == null || userIds.isEmpty()) {
             return Map.of();

@@ -5,74 +5,86 @@ import lombok.Data;
 
 import java.io.Serializable;
 
-// 统一响应格式（所有接口的返回值都必须是它）
-//
-// 为什么需要它：前端需要固定结构才能做统一的响应拦截与全局错误提示。
-// 如果有的接口直接返回对象、有的返回字符串、有的返回列表，前端就得给每个接口单独写一套判断逻辑。
-//
-// 三个字段的约定：
-// - code：业务状态码，0 表示成功，非 0 表示失败（取值见 ErrorCode）。
-// 它与 HTTP 状态码是解耦的——HTTP 一律返回 200，业务成败只由 code 表达，
-// 这样前端拦截器只需判断一处，不必区分 4xx / 5xx；
-// - data：业务数据，泛型承载，失败时必须为 null；
-// - message：给用户看的提示，失败时绝不能包含异常堆栈、SQL 等内部细节。
-//
-// 注意：前端只允许依赖 code 做逻辑判断， message 仅用于展示，
-// 不要在前端对 message 做字符串匹配。
-//
-// @param <T> 业务数据的类型
+/**
+ * 统一响应格式（所有接口的返回值都必须是它）
+ *
+ * 为什么需要它：前端需要固定结构才能做统一的响应拦截与全局错误提示。
+ * 如果有的接口直接返回对象、有的返回字符串、有的返回列表，前端就得给每个接口单独写一套判断逻辑。
+ *
+ * 三个字段的约定：
+ * - code：业务状态码，0 表示成功，非 0 表示失败（取值见 ErrorCode）。
+ * 它与 HTTP 状态码是解耦的——HTTP 一律返回 200，业务成败只由 code 表达，
+ * 这样前端拦截器只需判断一处，不必区分 4xx / 5xx；
+ * - data：业务数据，泛型承载，失败时必须为 null；
+ * - message：给用户看的提示，失败时绝不能包含异常堆栈、SQL 等内部细节。
+ *
+ * 注意：前端只允许依赖 code 做逻辑判断，message 仅用于展示，
+ * 不要在前端对 message 做字符串匹配。
+ *
+ * @param <T> 业务数据的类型
+ */
 @Data
 public class BaseResponse<T> implements Serializable {
 
-    // 序列化版本号：实现了 Serializable 就必须固定写死一个值
-    //
-    // 不写会怎样：JVM 会按类的结构（字段名、方法签名……）自动算一个 UID。
-    // 一旦以后给本类加一个字段，算出来的 UID 就变了——此时再去反序列化"旧版本"的数据，
-    // 会直接抛 InvalidClassException，而且这种错误只在「读旧数据」时才暴露，
-    // 平时测试根本发现不了。
-    //
-    // 什么时候会真的踩到：响应对象被缓存在 Redis、或被另一个服务接收时，
-    // 走的都是 Java 序列化。本项目目前直接返回 JSON，看似用不到，
-    // 但只要哪天有人把 BaseResponse 塞进 Redis，这就是一颗定时炸弹。
-    //
-    // 写死 1L 的含义是「告诉 JVM：这些版本结构兼容，可以互相读」。
+    /**
+     * 序列化版本号：实现了 Serializable 就必须固定写死一个值
+     *
+     * 不写会怎样：JVM 会按类的结构（字段名、方法签名……）自动算一个 UID。
+     * 一旦以后给本类加一个字段，算出来的 UID 就变了——此时再去反序列化"旧版本"的数据，
+     * 会直接抛 InvalidClassException，而且这种错误只在「读旧数据」时才暴露，
+     * 平时测试根本发现不了。
+     *
+     * 什么时候会真的踩到：响应对象被缓存在 Redis、或被另一个服务接收时，
+     * 走的都是 Java 序列化。本项目目前直接返回 JSON，看似用不到，
+     * 但只要哪天有人把 BaseResponse 塞进 Redis，这就是一颗定时炸弹。
+     *
+     * 写死 1L 的含义是「告诉 JVM：这些版本结构兼容，可以互相读」。
+     */
     private static final long serialVersionUID = 1L;
 
-    // 业务状态码： 00000 表示成功，其余为失败（取值见 ErrorCode）
-    //
-    // 类型是 String 而非 int：错误码是「5 位字符串」= 来源（A/B/C）+ 4 位编号，
-    // 首位是字母，数字类型装不下。这也顺带杜绝了前端写 if (code) 把 0 当假值的写法。
+    /**
+     * 业务状态码：00000 表示成功，其余为失败（取值见 ErrorCode）
+     *
+     * 类型是 String 而非 int：错误码是「5 位字符串」= 来源（A/B/C）+ 4 位编号，
+     * 首位是字母，数字类型装不下。这也顺带杜绝了前端写 if (code) 把 0 当假值的写法。
+     */
     private String code;
 
-    // 业务数据，用泛型表示（返回前无法确定具体类型）；失败时为 null
+    /** 业务数据，用泛型表示（返回前无法确定具体类型）；失败时为 null */
     private T data;
 
-    // 提示信息，成功时为 "ok"
+    /** 提示信息，成功时为 "ok" */
     private String message;
 
-    // 全参构造：业务代码一般不直接调用，优先用 ResultUtils 的静态方法，
-    // 避免各处手写状态码造成不一致
-    //
-    // @param code 业务状态码
-    // @param data 业务数据
-    // @param message 提示信息
+    /**
+     * 全参构造：业务代码一般不直接调用，优先用 ResultUtils 的静态方法，
+     * 避免各处手写状态码造成不一致
+     *
+     * @param code 业务状态码
+     * @param data 业务数据
+     * @param message 提示信息
+     */
     public BaseResponse(String code, T data, String message) {
         this.code = code;
         this.data = data;
         this.message = message;
     }
 
-    // 不传 message 的构造（message 置为空串），供内部复用
-    //
-    // @param code 业务状态码
-    // @param data 业务数据
+    /**
+     * 不传 message 的构造（message 置为空串），供内部复用
+     *
+     * @param code 业务状态码
+     * @param data 业务数据
+     */
     public BaseResponse(String code, T data) {
         this(code, data, "");
     }
 
-    // 用错误码枚举构造失败响应：code 与 message 都取自枚举，避免两处手写导致不一致
-    //
-    // @param errorCode 错误码枚举
+    /**
+     * 用错误码枚举构造失败响应：code 与 message 都取自枚举，避免两处手写导致不一致
+     *
+     * @param errorCode 错误码枚举
+     */
     public BaseResponse(ErrorCode errorCode) {
         this(errorCode.getCode(), null, errorCode.getMessage());
     }

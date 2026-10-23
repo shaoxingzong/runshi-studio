@@ -23,7 +23,7 @@ beforeEach(() => {
     mineMember.mockResolvedValue(null);
 });
 
-// 等掉 setLogin 内部触发的异步档案补拉（不 await 的火里捞栗）
+/** 等掉 setLogin 内部触发的异步档案补拉（不 await 的火里捞栗） */
 function flush() {
     return new Promise((resolve) => setTimeout(resolve, 0));
 }

@@ -7,10 +7,10 @@ import { Marked, type RendererObject } from 'marked';
 // （项目里已经有够多的「两边必须一致」的约定了，没必要再添一个）。
 //
 // 提供三样增强：
-// - 代码块一键复制： bindCodeCopy 用事件委托（ v-html
+// - 代码块一键复制：bindCodeCopy 用事件委托（ v-html
 // 里挂不了 Vue 事件，委托是唯一干净的做法），按钮标记由 renderMarkdown
 // 的自定义 renderer 生成；
-// - 长文目录： renderMarkdown 单次渲染时顺带抽取 h2/h3 并注入
+// - 长文目录：renderMarkdown 单次渲染时顺带抽取 h2/h3 并注入
 // id——抽取与注入是同一次遍历，不存在「目录里的 id 和标题上的 id 对不上」；
 // - 图片懒加载：renderer 输出 loading="lazy"，长文首屏不被图片拖慢。
 //
@@ -19,7 +19,7 @@ import { Marked, type RendererObject } from 'marked';
 // 都在页面已有的白名单之外，页面必须同步放行这些标签与属性，否则会被洗掉、
 // 增强静默失效（表现：复制按钮不见了但没人报错）。
 
-// 目录项：只收 h2/h3（h1 是文章标题本身，收进来等于重复）
+/** 目录项：只收 h2/h3（h1 是文章标题本身，收进来等于重复） */
 export interface TocItem {
     // 标题锚点 id（已去重，可直接拼进 URL hash）
     id: string;
@@ -35,18 +35,20 @@ export interface MarkdownResult {
     toc: TocItem[];
 }
 
-// 少于这个数就不值得展示目录——两行字的文章配个目录框很滑稽
+/** 少于这个数就不值得展示目录——两行字的文章配个目录框很滑稽 */
 export const TOC_MIN_ITEMS = 3;
 
-// DOMPurify 白名单（帖子 / 项目详情共用，故提在这里做单一事实来源）
-//
-// 为什么出口集中：两个页面的清洗配置必须一模一样——
-// 它们消费的是同一个 renderer 的输出。各写一份的后果是「给项目页加了新属性、
-// 帖子页忘了加」，那种不一致在测试里很难发现，在线上表现为奇偶不同的怪 bug。
-// 页面侧只保留自己的策略差异（如帖子页额外的 img 站内限制）。
-//
-// div/button/id/type/aria-label/loading/decoding 是本工具增强输出的载体
-// （代码块包装、复制按钮、标题锚点、图片懒加载），少任何一个，对应的增强会被静默洗掉。
+/**
+ * DOMPurify 白名单（帖子 / 项目详情共用，故提在这里做单一事实来源）
+ *
+ * 为什么出口集中：两个页面的清洗配置必须一模一样——
+ * 它们消费的是同一个 renderer 的输出。各写一份的后果是「给项目页加了新属性、
+ * 帖子页忘了加」，那种不一致在测试里很难发现，在线上表现为奇偶不同的怪 bug。
+ * 页面侧只保留自己的策略差异（如帖子页额外的 img 站内限制）。
+ *
+ * div/button/id/type/aria-label/loading/decoding 是本工具增强输出的载体
+ * （代码块包装、复制按钮、标题锚点、图片懒加载），少任何一个，对应的增强会被静默洗掉。
+ */
 export const MARKDOWN_ALLOWED_TAGS = [
     'p', 'br', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
     'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'strong', 'em', 'del',
@@ -69,12 +71,12 @@ function escapeHtml(text: string): string {
         .replace(/"/g, '&quot;');
 }
 
-// 属性值转义：引号必须处理（否则 href="x" onmouseover="..." 这类注入能破窗而出）
+/** 属性值转义：引号必须处理（否则 href="x" onmouseover="..." 这类注入能破窗而出） */
 function escapeAttr(text: string): string {
     return escapeHtml(text).replace(/'/g, '&#39;');
 }
 
-// 剥掉内联 HTML 的标签，拿纯文本（目录展示与 slug 都用它）
+/** 剥掉内联 HTML 的标签，拿纯文本（目录展示与 slug 都用它） */
 function plainText(html: string): string {
     return html
         .replace(/<[^>]+>/g, '')
@@ -86,8 +88,10 @@ function plainText(html: string): string {
         .trim();
 }
 
-// 标题转锚点 id：中文保留（技术文章的标题大量中文，转拼音既不准确也没必要），
-// 空格转连字符，其余标点清掉；空了兜底 section（纯符号标题是合法输入）
+/**
+ * 标题转锚点 id：中文保留（技术文章的标题大量中文，转拼音既不准确也没必要），
+ * 空格转连字符，其余标点清掉；空了兜底 section（纯符号标题是合法输入）
+ */
 function slugify(text: string): string {
     return (
         text
@@ -99,14 +103,16 @@ function slugify(text: string): string {
     );
 }
 
-// 渲染 Markdown，顺带产出目录
-//
-// 为什么每次渲染 new 一个 Marked 实例：renderer 需要闭包承载「本次渲染」的
-// 目录数组与去重计数，用模块级单例就要在并发渲染间共享可变状态（文章切换快的场景）。
-// Marked 实例很轻，文章级渲染完全感知不到开销。
+/**
+ * 渲染 Markdown，顺带产出目录
+ *
+ * 为什么每次渲染 new 一个 Marked 实例：renderer 需要闭包承载「本次渲染」的
+ * 目录数组与去重计数，用模块级单例就要在并发渲染间共享可变状态（文章切换快的场景）。
+ * Marked 实例很轻，文章级渲染完全感知不到开销。
+ */
 export function renderMarkdown(source: string): MarkdownResult {
     const toc: TocItem[] = [];
-    // 同名标题的id去重：第二节也叫「使用方法」时，第二个变成 使用方法-1
+    /** 同名标题的id去重：第二节也叫「使用方法」时，第二个变成 使用方法-1 */
     const slugCounts = new Map<string, number>();
 
     const uniqueSlug = (base: string): string => {
@@ -126,8 +132,10 @@ export function renderMarkdown(source: string): MarkdownResult {
             return `<h${depth} id="${id}">${inlineHtml}</h${depth}>`;
         },
         code({ text, lang }) {
-            // 复制按钮放在 pre 外面（包一层 div）：按钮自己绝不能进 pre，
-            // 否则用户「全选复制」时会把它一起抄走
+            /**
+             * 复制按钮放在 pre 外面（包一层 div）：按钮自己绝不能进 pre，
+             * 否则用户「全选复制」时会把它一起抄走
+             */
             const langClass = lang ? ` class="language-${escapeAttr(lang)}"` : '';
             return (
                 '<div class="code-block">' +
@@ -150,13 +158,15 @@ export function renderMarkdown(source: string): MarkdownResult {
     return { html, toc };
 }
 
-// 给代码块绑「一键复制」（事件委托，返回解绑函数）
-//
-// 为什么用委托而不是给每个按钮挂监听：HTML 是 v-html 出来的，
-// Vue 的 @click 够不着里面的节点； delegated 在容器上绑一次，
-// 文章重新渲染（切文章、重试加载）也不会叠加监听器。
-//
-// @param container 正文容器（.markdown-body 元素）
+/**
+ * 给代码块绑「一键复制」（事件委托，返回解绑函数）
+ *
+ * 为什么用委托而不是给每个按钮挂监听：HTML 是 v-html 出来的，
+ * Vue 的 @click 够不着里面的节点；delegated 在容器上绑一次，
+ * 文章重新渲染（切文章、重试加载）也不会叠加监听器。
+ *
+ * @param container 正文容器（.markdown-body 元素）
+ */
 export function bindCodeCopy(container: HTMLElement): () => void {
     const onClick = (event: MouseEvent) => {
         const target = event.target as HTMLElement | null;
@@ -184,7 +194,7 @@ export function bindCodeCopy(container: HTMLElement): () => void {
     return () => container.removeEventListener('click', onClick);
 }
 
-// clipboard API 在非安全上下文（http）下整体不可用，此时让调用方提示手动复制
+/** clipboard API 在非安全上下文（http）下整体不可用，此时让调用方提示手动复制 */
 async function copyText(text: string): Promise<boolean> {
     try {
         await navigator.clipboard.writeText(text);
@@ -194,16 +204,18 @@ async function copyText(text: string): Promise<boolean> {
     }
 }
 
-// 目录滚动高亮（IntersectionObserver，返回断开函数）
-//
-// 为什么不用 scroll 事件：滚动回调高频，每次回调读标题位置会强制重排，
-// 长文掉帧肉眼可见；IntersectionObserver 把「谁在视野里」的判断交给浏览器合成线程。
-//
-// 多选一时取文档顺序中第一个可见的标题——用户从上往下读，
-// 「当前章节」应该是视野里最靠上的那个，而不是最后进入视野的那个。
-//
-// @param container 正文容器
-// @param onActive 当前章节 id 变化回调
+/**
+ * 目录滚动高亮（IntersectionObserver，返回断开函数）
+ *
+ * 为什么不用 scroll 事件：滚动回调高频，每次回调读标题位置会强制重排，
+ * 长文掉帧肉眼可见；IntersectionObserver 把「谁在视野里」的判断交给浏览器合成线程。
+ *
+ * 多选一时取文档顺序中第一个可见的标题——用户从上往下读，
+ * 「当前章节」应该是视野里最靠上的那个，而不是最后进入视野的那个。
+ *
+ * @param container 正文容器
+ * @param onActive 当前章节 id 变化回调
+ */
 export function observeTocHighlight(
     container: HTMLElement,
     onActive: (id: string) => void,
@@ -240,11 +252,13 @@ export function observeTocHighlight(
     return () => observer.disconnect();
 }
 
-// 平滑滚动到指定标题
-//
-// 尊重系统的「减少动态效果」偏好（ prefers-reduced-motion）——
-// 对动效敏感的用户直接跳转，不播动画。偏移由 CSS 的 scroll-margin-top
-// 处理（吸顶导航高度），JS 只管行为。
+/**
+ * 平滑滚动到指定标题
+ *
+ * 尊重系统的「减少动态效果」偏好（ prefers-reduced-motion）——
+ * 对动效敏感的用户直接跳转，不播动画。偏移由 CSS 的 scroll-margin-top
+ * 处理（吸顶导航高度），JS 只管行为。
+ */
 export function scrollToHeading(id: string): void {
     const target = document.getElementById(id);
     if (!target) {

@@ -5,17 +5,19 @@ import { postApi } from '@/api/post';
 import ErrorRetry from '@/components/ErrorRetry.vue';
 import type { PageResult, PostCommentAudit } from '@/api/types';
 
-// 评论待审队列（管理员）
-//
-// 为什么本页没有「删除」按钮：队列里全是待审评论，
-// 而后端的删除接口只接受已通过的评论（待审内容应当走驳回，让作者收到反馈）。
-// 所以删除入口放在帖子详情页——管理员浏览已发布的帖子时，
-// 看到的评论都是已通过的，在那里删才符合接口语义。
+/**
+ * 评论待审队列（管理员）
+ *
+ * 为什么本页没有「删除」按钮：队列里全是待审评论，
+ * 而后端的删除接口只接受已通过的评论（待审内容应当走驳回，让作者收到反馈）。
+ * 所以删除入口放在帖子详情页——管理员浏览已发布的帖子时，
+ * 看到的评论都是已通过的，在那里删才符合接口语义。
+ */
 const page = reactive({ current: 1, pageSize: 10 });
 const result = ref<PageResult<PostCommentAudit> | null>(null);
 const selected = ref<string[]>([]);
 const loading = ref(false);
-// 队列加载失败的原因（空 = 正常）。失败时给原因 + 重试，而不是留一张空白表格
+/** 队列加载失败的原因（空 = 正常）。失败时给原因 + 重试，而不是留一张空白表格 */
 const error = ref('');
 
 const AI_TAG: Record<number, { text: string; type: 'success' | 'warning' | 'danger' | 'info' }> = {

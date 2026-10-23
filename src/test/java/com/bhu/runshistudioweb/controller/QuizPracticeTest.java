@@ -24,18 +24,20 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-// 刷题流程验收测试（C 端：三种模式、判分、跳过、错题本、概览）
-//
-// 覆盖的规则：
-// - 三种模式：顺序（排除已作答）、错题重刷（只出待复习）、随机（范围内不重复）；
-// - 判分：多选不给部分分（漏选/多选/错选均判错）、单选传多标签是 A0401 而不是判错；
-// - 跳过：不记错、不计入正确率、响应不含答案；
-// - 错题本状态机：答错入本 → 连对 2 次消解 → 再答错自动回待复习；
-// - 幂等：重复提交只落一条、返回首次判定、统计不翻倍；
-// - 概览口径：累计作答不含跳过、0 次作答时正确率为 null。
-//
-// 为什么用 @Transactional：答题的写操作（作答记录 + 错题本）都在事务内，
-// 测试回滚即可撤销。
+/**
+ * 刷题流程验收测试（C 端：三种模式、判分、跳过、错题本、概览）
+ *
+ * 覆盖的规则：
+ * - 三种模式：顺序（排除已作答）、错题重刷（只出待复习）、随机（范围内不重复）；
+ * - 判分：多选不给部分分（漏选/多选/错选均判错）、单选传多标签是 A0401 而不是判错；
+ * - 跳过：不记错、不计入正确率、响应不含答案；
+ * - 错题本状态机：答错入本 → 连对 2 次消解 → 再答错自动回待复习；
+ * - 幂等：重复提交只落一条、返回首次判定、统计不翻倍；
+ * - 概览口径：累计作答不含跳过、0 次作答时正确率为 null。
+ *
+ * 为什么用 @Transactional：答题的写操作（作答记录 + 错题本）都在事务内，
+ * 测试回滚即可撤销。
+ */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -65,10 +67,10 @@ class QuizPracticeTest {
 
     private String chapter;
 
-    // 测试用的成员 token
+    /** 测试用的成员 token */
     private String memberToken;
 
-    // 测试用的成员账号 ID
+    /** 测试用的成员账号 ID */
     private long memberId;
 
     @BeforeEach
@@ -501,7 +503,7 @@ class QuizPracticeTest {
 
     // ==================== 工具方法 ====================
 
-    // 建一道题并返回 ID
+    /** 建一道题并返回 ID */
     private long createQuestion(String stem, int type, String correct, int seq) {
         String token = support.adminToken();
         String json = """
@@ -515,7 +517,7 @@ class QuizPracticeTest {
         return Long.parseLong(support.data(body).asText());
     }
 
-    // 开一批顺序题
+    /** 开一批顺序题 */
     private JsonNode startBatch(int mode, int size) {
         String body = support.postJson("/quiz/batch",
                 "{\"mode\":" + mode + ",\"textbookName\":\"" + textbook
@@ -524,14 +526,14 @@ class QuizPracticeTest {
         return support.data(body);
     }
 
-    // 提交答案，返回原始响应体
+    /** 提交答案，返回原始响应体 */
     private String answer(String batchId, long questionId, String labels) {
         return support.postJson("/quiz/answer",
                 "{\"batchId\":" + batchId + ",\"questionId\":" + questionId
                         + ",\"chosenLabels\":\"" + labels + "\"}", memberToken);
     }
 
-    // 开一批、答一题、返回判定（每次用新批次，便于重复答同一题）
+    /** 开一批、答一题、返回判定（每次用新批次，便于重复答同一题） */
     private JsonNode answerInNewBatch(long questionId, String labels) {
         // 错题模式只会出待复习的题，所以这里用随机模式 + 单题范围来保证能拿到目标题
         String batchBody = support.postJson("/quiz/batch",

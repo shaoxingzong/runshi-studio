@@ -25,21 +25,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-// 流量埋点与统计验收测试
-//
-// 覆盖的规则（与产品口径一一对应）：
-// - 鉴权：埋点匿名可访问（游客也要统计）；统计接口匿名 A0201、
-// 普通用户 A0301、admin 放行；
-// - 埋点：参数缺失 A0401；路径里的 query / hash 被服务端剥掉
-// （防 token 随埋点入库）；登录用户的 user_id 由登录态取而非请求体；
-// - 统计：PV 每次访问 +1、UV 按 visitor_id 去重；
-// 今日值只算当天；无访问的日期补 0 而不是断档；热门页面按 PV 倒序取前 10。
-//
-// 为什么用 @Transactional：埋点写入在本测试事务内，
-// 回滚即可撤销，不需要按前缀手工清理。
-//
-// 类名不能以 Admin 开头：会排在 Ai* 测试之前，
-// 导致 Spring 上下文被 stop、后续登录类批量失败（见 PostManageTest 注释）。
+/**
+ * 流量埋点与统计验收测试
+ *
+ * 覆盖的规则（与产品口径一一对应）：
+ * - 鉴权：埋点匿名可访问（游客也要统计）；统计接口匿名 A0201、
+ * 普通用户 A0301、admin 放行；
+ * - 埋点：参数缺失 A0401；路径里的 query / hash 被服务端剥掉
+ * （防 token 随埋点入库）；登录用户的 user_id 由登录态取而非请求体；
+ * - 统计：PV 每次访问 +1、UV 按 visitor_id 去重；
+ * 今日值只算当天；无访问的日期补 0 而不是断档；热门页面按 PV 倒序取前 10。
+ *
+ * 为什么用 @Transactional：埋点写入在本测试事务内，
+ * 回滚即可撤销，不需要按前缀手工清理。
+ *
+ * 类名不能以 Admin 开头：会排在 Ai* 测试之前，
+ * 导致 Spring 上下文被 stop、后续登录类批量失败（见 PostManageTest 注释）。
+ */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional

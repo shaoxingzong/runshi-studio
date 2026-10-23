@@ -26,21 +26,23 @@ import org.springframework.web.bind.annotation.RequestParam;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RestController;
 
-// 项目案例接口：C 端（官网展示）+ 管理端（管理员增删改查）
-//
-// Controller 只做三件事——接参、调 Service、包成 BaseResponse；
-// 校验与业务规则全在 Service 层。
-//
-// 两组接口的界线（本类最重要的约定）：
-// 接口分组
-// 分组 | 路径 | 鉴权
-// C 端 | /project/list、 /project/detail | 匿名可访问——已加入 Sa-Token 白名单的精确路径 | （见 SaTokenMvcConfig），官网游客必须能看到项目案例页
-// 管理端 | /project/add、 /project/update、 | /project/delete、 /project/get、 /project/list/page | 全部要求 @SaCheckRole("admin")
-//
-// 两个容易看混的路径： /project/list（C 端，匿名，只返回脱敏列表）
-// 与 /project/list/page（管理端，要求 admin，返回全字段）。
-// 白名单里只登记前者，且必须写精确路径——写成 /project/**
-// 会把管理端接口一起放行。
+/**
+ * 项目案例接口：C 端（官网展示）+ 管理端（管理员增删改查）
+ *
+ * Controller 只做三件事——接参、调 Service、包成 BaseResponse；
+ * 校验与业务规则全在 Service 层。
+ *
+ * 两组接口的界线（本类最重要的约定）：
+ * 接口分组
+ * 分组 | 路径 | 鉴权
+ * C 端 | /project/list、/project/detail | 匿名可访问——已加入 Sa-Token 白名单的精确路径 | （见 SaTokenMvcConfig），官网游客必须能看到项目案例页
+ * 管理端 | /project/add、/project/update、/project/delete、/project/get、/project/list/page | 全部要求 @SaCheckRole("admin")
+ *
+ * 两个容易看混的路径：/project/list（C 端，匿名，只返回脱敏列表）
+ * 与 /project/list/page（管理端，要求 admin，返回全字段）。
+ * 白名单里只登记前者，且必须写精确路径——写成 /project/**
+ * 会把管理端接口一起放行。
+ */
 @Tag(name = "项目案例模块", description = "官网项目展示（匿名可访问）与管理员项目管理")
 @RestController
 @RequestMapping("/project")
@@ -51,31 +53,35 @@ public class ProjectController {
 
     // ==================== C 端：官网展示，匿名可访问 ====================
 
-    // 官网项目列表（游客可访问，真分页）
-    //
-    // 筛选： title 模糊、 status 精确；
-    // 忽略请求里的 sortField / sortOrder（固定 置顶权重正序…见下），
-    // pageSize 上限 50。
-    //
-    // 返回的 ProjectFrontVO 不含 content：
-    // 它是 Markdown 正文大字段，列表带上会让每行都回传整篇正文，
-    // 只有详情接口才取。
-    //
-    // @param projectQueryRequest 查询条件（title / status / current / pageSize），允许为空
-    // @return 分页结果，记录为脱敏的 ProjectFrontVO
+    /**
+     * 官网项目列表（游客可访问，真分页）
+     *
+     * 筛选：title 模糊、status 精确；
+     * 忽略请求里的 sortField / sortOrder（固定 置顶权重正序…见下），
+     * pageSize 上限 50。
+     *
+     * 返回的 ProjectFrontVO 不含 content：
+     * 它是 Markdown 正文大字段，列表带上会让每行都回传整篇正文，
+     * 只有详情接口才取。
+     *
+     * @param projectQueryRequest 查询条件（title / status / current / pageSize），允许为空
+     * @return 分页结果，记录为脱敏的 ProjectFrontVO
+     */
     @GetMapping("/list")
     @Operation(summary = "官网项目列表", description = "匿名可访问；支持标题模糊与状态筛选 + 真分页，固定按置顶权重倒序")
     public BaseResponse<Page<ProjectFrontVO>> listFrontProjects(ProjectQueryRequest projectQueryRequest) {
         return ResultUtils.success(studioProjectService.listFrontProjects(projectQueryRequest));
     }
 
-    // 官网项目详情（游客可访问）
-    //
-    // 与列表的唯一区别是返回 content 正文——所以详情单独一个 VO，
-    // 而不是让列表带一个「要不要正文」的开关。
-    //
-    // @param id 项目 ID
-    // @return 脱敏详情（列表字段 + content）；不存在返回 A0402
+    /**
+     * 官网项目详情（游客可访问）
+     *
+     * 与列表的唯一区别是返回 content 正文——所以详情单独一个 VO，
+     * 而不是让列表带一个「要不要正文」的开关。
+     *
+     * @param id 项目 ID
+     * @return 脱敏详情（列表字段 + content）；不存在返回 A0402
+     */
     @GetMapping("/detail")
     @Operation(summary = "官网项目详情", description = "匿名可访问；返回含 Markdown 正文的详情，不存在返回 A0402")
     public BaseResponse<ProjectFrontDetailVO> getFrontProjectById(@RequestParam("id") long id) {
@@ -85,13 +91,15 @@ public class ProjectController {
 
     // ==================== 管理端：全部要求 admin 角色 ====================
 
-    // 管理员新增项目
-    //
-    // 新增时会在同一事务内把队长写入成员-项目关联表（DESIGN 2.3），
-    // 保证「队长必然出现在参与成员列表中」。
-    //
-    // @param projectAddRequest 新增请求（title / description / leaderId 必填）
-    // @return 新项目 ID
+    /**
+     * 管理员新增项目
+     *
+     * 新增时会在同一事务内把队长写入成员-项目关联表（DESIGN 2.3），
+     * 保证「队长必然出现在参与成员列表中」。
+     *
+     * @param projectAddRequest 新增请求（title / description / leaderId 必填）
+     * @return 新项目 ID
+     */
     @PostMapping("/add")
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】新增项目", description = "队长必须存在；同事务同步队长到参与成员列表")
@@ -101,10 +109,12 @@ public class ProjectController {
         return ResultUtils.success(studioProjectService.addProject(projectAddRequest));
     }
 
-    // 管理员更新项目（部分更新：字段为 null 表示不修改）
-    //
-    // @param projectUpdateRequest 更新请求（id 必填；传 leaderId 即换队长）
-    // @return true 表示更新成功
+    /**
+     * 管理员更新项目（部分更新：字段为 null 表示不修改）
+     *
+     * @param projectUpdateRequest 更新请求（id 必填；传 leaderId 即换队长）
+     * @return true 表示更新成功
+     */
     @PostMapping("/update")
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】更新项目", description = "null 表示不修改；换队长时同事务同步新队长，旧队长保留")
@@ -113,10 +123,12 @@ public class ProjectController {
         return ResultUtils.success(studioProjectService.updateProject(projectUpdateRequest));
     }
 
-    // 管理员删除项目（逻辑删除）
-    //
-    // @param deleteRequest 删除请求（id 必填）
-    // @return true 表示删除成功
+    /**
+     * 管理员删除项目（逻辑删除）
+     *
+     * @param deleteRequest 删除请求（id 必填）
+     * @return true 表示删除成功
+     */
     @PostMapping("/delete")
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】删除项目", description = "逻辑删除；同事务清理成员-项目关联，数据可追溯")
@@ -125,10 +137,12 @@ public class ProjectController {
         return ResultUtils.success(studioProjectService.deleteProject(deleteRequest.getId()));
     }
 
-    // 管理员按 id 查询项目详情
-    //
-    // @param id 项目 ID
-    // @return 含 content / leaderId / sortOrder / 审计字段的项目信息
+    /**
+     * 管理员按 id 查询项目详情
+     *
+     * @param id 项目 ID
+     * @return 含 content / leaderId / sortOrder / 审计字段的项目信息
+     */
     @GetMapping("/get")
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】查询项目详情")
@@ -137,13 +151,15 @@ public class ProjectController {
         return ResultUtils.success(studioProjectService.getProjectById(id));
     }
 
-    // 管理员分页查询项目
-    //
-    // 筛选： title 模糊、 status 精确、 leaderId 精确；
-    // 排序字段走白名单，默认 sort_order DESC → created_at DESC → id DESC。
-    //
-    // @param projectQueryRequest 查询条件，允许为空
-    // @return 分页结果，记录为含内部字段的 ProjectVO
+    /**
+     * 管理员分页查询项目
+     *
+     * 筛选：title 模糊、status 精确、leaderId 精确；
+     * 排序字段走白名单，默认 sort_order DESC → created_at DESC → id DESC。
+     *
+     * @param projectQueryRequest 查询条件，允许为空
+     * @return 分页结果，记录为含内部字段的 ProjectVO
+     */
     @GetMapping("/list/page")
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】分页查询项目", description = "支持标题模糊、状态与队长精确筛选，每页最多 50 条")

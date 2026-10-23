@@ -19,17 +19,19 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-// 站内通知 · 触发点测试（走真实接口全流程）
-//
-// 契约正确不代表「该发的时候会发」——这组用例盯三个接线点：
-// 帖子审核结论（通过 / 驳回）、评论回复通过、成员身份授予。
-// 全部走 HTTP 接口（建帖 → 审核 → 查通知），不直接调 Service：
-// 要验证的正是「接口链路走完，通知有没有产生」。
-//
-// 评论为什么走人工审核而不是等 AI：评论先审后发，测试环境未配 AI
-// （判定失败转人工），异步回调与人工审核的先后顺序两种都安全——
-// 人工先审（状态已离开发审），AI 后到（eq 待审更新 0 行），互不干扰。
-// 这也顺带验证了「通知挂在评论真正可见的那一刻」而非提交那一刻。
+/**
+ * 站内通知 · 触发点测试（走真实接口全流程）
+ *
+ * 契约正确不代表「该发的时候会发」——这组用例盯三个接线点：
+ * 帖子审核结论（通过 / 驳回）、评论回复通过、成员身份授予。
+ * 全部走 HTTP 接口（建帖 → 审核 → 查通知），不直接调 Service：
+ * 要验证的正是「接口链路走完，通知有没有产生」。
+ *
+ * 评论为什么走人工审核而不是等 AI：评论先审后发，测试环境未配 AI
+ * （判定失败转人工），异步回调与人工审核的先后顺序两种都安全——
+ * 人工先审（状态已离开发审），AI 后到（eq 待审更新 0 行），互不干扰。
+ * 这也顺带验证了「通知挂在评论真正可见的那一刻」而非提交那一刻。
+ */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -69,7 +71,7 @@ class NotificationTriggerTest {
 
     // ==================== 工具 ====================
 
-    // 建一篇待审帖子，返回帖子 ID
+    /** 建一篇待审帖子，返回帖子 ID */
     private long createPendingPost(String token, String title) {
         String body = support.postJson("/post/add",
                 "{\"title\":\"" + title + "\",\"content\":\"通知触发点测试正文\"}", token);
@@ -77,7 +79,7 @@ class NotificationTriggerTest {
         return Long.parseLong(support.data(body).asText());
     }
 
-    // 审核帖子（批量接口，单个 id 也走它）
+    /** 审核帖子（批量接口，单个 id 也走它） */
     private void auditPost(long postId, String action, String reason) {
         String json = reason == null
                 ? "{\"ids\":[" + postId + "],\"action\":\"" + action + "\"}"
@@ -86,7 +88,7 @@ class NotificationTriggerTest {
         assertEquals("00000", support.code(body), "审核失败：" + body);
     }
 
-    // 在我的通知里找指定类型的那条（找不到返回 null）
+    /** 在我的通知里找指定类型的那条（找不到返回 null） */
     private JsonNode findType(String token, String type) {
         String page = support.getBody("/notification/page?current=1&pageSize=50", token);
         for (JsonNode record : support.data(page).get("records")) {

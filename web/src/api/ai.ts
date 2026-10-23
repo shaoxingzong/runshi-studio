@@ -42,9 +42,11 @@ export interface StreamHandlers {
     onError?: (payload: { code: string; message: string }) => void;
 }
 
-// SSE 流式提问
-//
-// 事件序列（后端契约）：meta → sources → delta* → done / error
+/**
+ * SSE 流式提问
+ *
+ * 事件序列（后端契约）：meta → sources → delta* → done / error
+ */
 export async function chatStream(
     payload: { sessionId?: string | null; message: string },
     handlers: StreamHandlers,
@@ -64,8 +66,10 @@ export async function chatStream(
         signal,
     });
 
-    // 未登录 / 被拦截 / 服务端异常时返回的不是事件流，而是统一响应体的 JSON。
-    // 必须先判内容类型，否则会把一段 JSON 当成 SSE 帧去分帧，最后一个事件也收不到
+    /**
+     * 未登录 / 被拦截 / 服务端异常时返回的不是事件流，而是统一响应体的 JSON。
+     * 必须先判内容类型，否则会把一段 JSON 当成 SSE 帧去分帧，最后一个事件也收不到
+     */
     const contentType = response.headers.get('content-type') ?? '';
     if (!contentType.includes('text/event-stream')) {
         const body = (await response.json().catch(() => null)) as ApiResponse<unknown> | null;
@@ -85,7 +89,7 @@ export async function chatStream(
             break;
         }
         buffer += decoder.decode(value, { stream: true });
-        // SSE 以空行分隔事件帧
+        /** SSE 以空行分隔事件帧 */
         let index: number;
         while ((index = buffer.indexOf('\n\n')) >= 0) {
             const frame = buffer.slice(0, index);

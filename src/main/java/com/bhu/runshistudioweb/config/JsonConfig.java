@@ -13,21 +13,27 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 
-// 全局 JSON 序列化与反序列化配置。
-//
-// 为什么用 Customizer 而不自己 new 一个 ObjectMapper：Spring MVC 的 HttpMessageConverter
-// 使用的是 Spring 容器里的 JsonMapper，自己 new 出来的实例不会被使用，只有注册 Customizer
-// 才能真正改写全局序列化行为。
+/**
+ * 全局 JSON 序列化与反序列化配置。
+ *
+ * 为什么用 Customizer 而不自己 new 一个 ObjectMapper：Spring MVC 的 HttpMessageConverter
+ * 使用的是 Spring 容器里的 JsonMapper，自己 new 出来的实例不会被使用，只有注册 Customizer
+ * 才能真正改写全局序列化行为。
+ */
 @Configuration
 public class JsonConfig {
 
-    // 统一的时间输出格式，避免前端再对 ISO-8601 的 "T" 做二次处理。
-    // 包级可见，供 RedisConfig 复用，保证缓存与接口的时间格式一致
+    /**
+     * 统一的时间输出格式，避免前端再对 ISO-8601 的 "T" 做二次处理。
+     * 包级可见，供 RedisConfig 复用，保证缓存与接口的时间格式一致
+     */
     static final DateTimeFormatter DATE_TIME_FORMATTER =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    // 时间反序列化格式：同时兼容 "2026-09-27 10:30:05" 与 ISO-8601 的 "2026-09-27T10:30:05"（含毫秒）。
-    // 只写死其中一种，前端按另一种格式传参时会直接抛 InvalidFormatException。
+    /**
+     * 时间反序列化格式：同时兼容 "2026-09-27 10:30:05" 与 ISO-8601 的 "2026-09-27T10:30:05"（含毫秒）。
+     * 只写死其中一种，前端按另一种格式传参时会直接抛 InvalidFormatException。
+     */
     static final DateTimeFormatter LENIENT_DATE_TIME_PARSER = new DateTimeFormatterBuilder()
             .append(DateTimeFormatter.ISO_LOCAL_DATE)
             .optionalStart().appendLiteral(' ').optionalEnd()
@@ -35,9 +41,11 @@ public class JsonConfig {
             .append(DateTimeFormatter.ISO_LOCAL_TIME)
             .toFormatter();
 
-    // 定制全局 JsonMapper（Spring Boot 4 的 Jackson 3 定制入口）
-    //
-    // @return Customizer，Spring Boot 会自动收集并应用到容器中的 JsonMapper
+    /**
+     * 定制全局 JsonMapper（Spring Boot 4 的 Jackson 3 定制入口）
+     *
+     * @return Customizer，Spring Boot 会自动收集并应用到容器中的 JsonMapper
+     */
     @Bean
     public JsonMapperBuilderCustomizer jsonMapperBuilderCustomizer() {
         return builder -> builder
@@ -49,7 +57,7 @@ public class JsonConfig {
                 .addModule(jsonTypeModule());
     }
 
-    // JSON 类型转换模块：Long 转字符串 + 时间格式统一
+    /** JSON 类型转换模块：Long 转字符串 + 时间格式统一 */
     private SimpleModule jsonTypeModule() {
         SimpleModule module = new SimpleModule("runshi-json-module");
 

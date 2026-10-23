@@ -4,14 +4,16 @@ import { ElMessage } from 'element-plus';
 import { quizApi } from '@/api/quiz';
 import type { QuizWrongDetail, QuizWrongItem } from '@/api/types';
 
-// 错题本抽屉（分页列表 + 详情回看 + 手动标记已掌握）
-//
-// 为什么列表不带答案、详情才带：错题列表可能一次展示几十条，
-// 每条都带正确答案等于把整页答案交给客户端——用户完全可以在答题时
-// 另开一个标签页翻错题本。详情带答案是合理的：那道题你已经做错过。
-//
-// 为什么详情里要显示「你上次选了什么」：只给正确答案的话，
-// 用户不知道自己当时错在哪——而「错在哪」才是错题本的价值。
+/**
+ * 错题本抽屉（分页列表 + 详情回看 + 手动标记已掌握）
+ *
+ * 为什么列表不带答案、详情才带：错题列表可能一次展示几十条，
+ * 每条都带正确答案等于把整页答案交给客户端——用户完全可以在答题时
+ * 另开一个标签页翻错题本。详情带答案是合理的：那道题你已经做错过。
+ *
+ * 为什么详情里要显示「你上次选了什么」：只给正确答案的话，
+ * 用户不知道自己当时错在哪——而「错在哪」才是错题本的价值。
+ */
 const props = defineProps<{
     modelValue: boolean;
 }>();
@@ -24,7 +26,7 @@ const list = ref<QuizWrongItem[]>([]);
 const page = ref({ current: 1, pageSize: 10 });
 const total = ref(0);
 
-// 详情弹窗
+/** 详情弹窗 */
 const detailVisible = ref(false);
 const detail = ref<QuizWrongDetail | null>(null);
 const detailLoading = ref(false);
@@ -57,11 +59,13 @@ async function openDetail(item: QuizWrongItem) {
     }
 }
 
-// 手动标记已掌握
-//
-// 后端是幂等的：已经消解时直接返回 true。因此这里不需要先判断状态，
-// 点了就发——但成功提示要区分「刚消解」与「本来就已经消解」，
-// 否则用户重复点击会以为没生效。
+/**
+ * 手动标记已掌握
+ *
+ * 后端是幂等的：已经消解时直接返回 true。因此这里不需要先判断状态，
+ * 点了就发——但成功提示要区分「刚消解」与「本来就已经消解」，
+ * 否则用户重复点击会以为没生效。
+ */
 async function resolve(item: QuizWrongItem) {
     try {
         await quizApi.resolveWrong(item.id);

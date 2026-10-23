@@ -8,13 +8,15 @@ import { userApi } from '@/api/user';
 import { useUserStore } from '@/stores/user';
 import type { AttendanceBoardItem, AttendanceRecord } from '@/api/types';
 
-// 成员工作台（考勤）
-//
-// 准入：只有在队成员能用（与发帖同一套判定，认 studio_member 表）。
-// 非成员进来会被拦下并送回首页——不是报错，因为「不是成员」是正常的身份状态。
-//
-// 隐私：看板数据刻意不含 IP / UA / 账号，这里只呈现「是否内网」的布尔结论，
-// 不展示任何位置或网段信息。
+/**
+ * 成员工作台（考勤）
+ *
+ * 准入：只有在队成员能用（与发帖同一套判定，认 studio_member 表）。
+ * 非成员进来会被拦下并送回首页——不是报错，因为「不是成员」是正常的身份状态。
+ *
+ * 隐私：看板数据刻意不含 IP / UA / 账号，这里只呈现「是否内网」的布尔结论，
+ * 不展示任何位置或网段信息。
+ */
 const router = useRouter();
 const user = useUserStore();
 
@@ -22,14 +24,14 @@ const loading = ref(false);
 const checkingIn = ref(false);
 const board = ref<AttendanceBoardItem[]>([]);
 const history = ref<AttendanceRecord[]>([]);
-// 当前登录账号 ID：用于在看板里定位「我」这一行
+/** 当前登录账号 ID：用于在看板里定位「我」这一行 */
 const userId = ref('');
-// 加载失败：非空时展示错误条 + 重试
+/** 加载失败：非空时展示错误条 + 重试 */
 const error = ref('');
 
-// 看板里属于我的那一行
+/** 看板里属于我的那一行 */
 const me = computed(() => board.value.find((item) => item.userId === userId.value));
-// 今天是否已打卡（看板里我自己那行的标记）
+/** 今天是否已打卡（看板里我自己那行的标记） */
 const checkedToday = computed(() => !!me.value?.checkedIn);
 
 async function load() {

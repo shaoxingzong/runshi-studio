@@ -14,30 +14,34 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 
-// SysUserMapper 验收测试
-//
-// 这是真连数据库的集成测试，验证的是「框架配置是否真的生效」，而不是业务逻辑：
-// - 主键是否回填（雪花 ID）、审计字段是否被自动填充 —— 对应 ADR-2；
-// - 逻辑删除是否生效、落库值是否为毫秒时间戳 —— 对应 ADR-1、ADR-7。
-//
-// 注意：测试数据必须保证唯一（账号后缀用 System.nanoTime()），
-// 否则 (user_account, deleted_at) 唯一索引会让第二次运行直接失败。
+/**
+ * SysUserMapper 验收测试
+ *
+ * 这是真连数据库的集成测试，验证的是「框架配置是否真的生效」，而不是业务逻辑：
+ * - 主键是否回填（雪花 ID）、审计字段是否被自动填充 —— 对应 ADR-2；
+ * - 逻辑删除是否生效、落库值是否为毫秒时间戳 —— 对应 ADR-1、ADR-7。
+ *
+ * 注意：测试数据必须保证唯一（账号后缀用 System.nanoTime()），
+ * 否则 (user_account, deleted_at) 唯一索引会让第二次运行直接失败。
+ */
 @SpringBootTest
 class SysUserMapperTest {
 
-    // 用 @Resource 而不是 @Autowired：按名称注入，报错信息更直观（MyBatis 官方示例也这么写）
+    /** 用 @Resource 而不是 @Autowired：按名称注入，报错信息更直观（MyBatis 官方示例也这么写） */
     @Resource
     private SysUserMapper sysUserMapper;
 
-    // 直接查库校验真实落库值：有些行为（如逻辑删除到底写入了什么）必须绕过 ORM 才能看清
+    /** 直接查库校验真实落库值：有些行为（如逻辑删除到底写入了什么）必须绕过 ORM 才能看清 */
     @Resource
     private JdbcTemplate jdbcTemplate;
 
-    // 构造测试用户：这里只填必填字段，审计字段（createdAt 等）故意不填，
-    // 因为要验证的就是「不填也会被自动填充」
-    //
-    // @param account 登录账号，调用方负责保证唯一
-    // @return 待插入的实体
+    /**
+     * 构造测试用户：这里只填必填字段，审计字段（createdAt 等）故意不填，
+     * 因为要验证的就是「不填也会被自动填充」
+     *
+     * @param account 登录账号，调用方负责保证唯一
+     * @return 待插入的实体
+     */
     private SysUser newUser(String account) {
         SysUser user = new SysUser();
         user.setUserAccount(account);

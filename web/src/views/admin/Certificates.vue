@@ -7,7 +7,7 @@ import ErrorRetry from '@/components/ErrorRetry.vue';
 import ImageUploader from '@/components/ImageUploader.vue';
 import type { AdminCertificate, AdminMember, Member, PageResult } from '@/api/types';
 
-// 等级 / 类型的中文映射：后端存英文枚举，表格必须转中文（与官网荣誉墙保持一致）
+/** 等级 / 类型的中文映射：后端存英文枚举，表格必须转中文（与官网荣誉墙保持一致） */
 const LEVEL_TEXT: Record<string, string> = { national: '国家级', provincial: '省级', municipal: '市级/校级' };
 const TYPE_TEXT: Record<string, string> = {
     competition: '学科竞赛',
@@ -16,11 +16,11 @@ const TYPE_TEXT: Record<string, string> = {
     paper: '论文',
 };
 
-// 证书管理（等级与类型是闭集枚举，后端会校验非法值 → A0401）
+/** 证书管理（等级与类型是闭集枚举，后端会校验非法值 → A0401） */
 const page = reactive({ current: 1, pageSize: 10 });
 const result = ref<PageResult<AdminCertificate> | null>(null);
 const loading = ref(false);
-// 列表加载失败的原因（空 = 正常）。失败时给原因 + 重试，而不是留一张空白表格
+/** 列表加载失败的原因（空 = 正常）。失败时给原因 + 重试，而不是留一张空白表格 */
 const error = ref('');
 
 const dialogVisible = ref(false);
@@ -34,11 +34,11 @@ const form = reactive<Record<string, unknown>>({
     sortOrder: 0,
 });
 
-// ==================== 获奖成员（关联维护） ====================
+// ==================== 获奖成员（关联维护）====================
 
-// 已绑定的获奖成员
+/** 已绑定的获奖成员 */
 const certMembers = ref<AdminMember[]>([]);
-// 候选成员
+/** 候选成员 */
 const memberOptions = ref<Member[]>([]);
 const memberLoading = ref(false);
 const pickedMember = ref('');

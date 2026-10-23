@@ -6,11 +6,11 @@ import ErrorRetry from '@/components/ErrorRetry.vue';
 import ImageUploader from '@/components/ImageUploader.vue';
 import type { AdminMember, AdminUser, PageResult } from '@/api/types';
 
-// 成员管理：分页表格 + 新增/编辑/删除
+/** 成员管理：分页表格 + 新增/编辑/删除 */
 const page = reactive({ current: 1, pageSize: 10 });
 const result = ref<PageResult<AdminMember> | null>(null);
 const loading = ref(false);
-// 列表加载失败的原因（空 = 正常）。失败时给原因 + 重试，而不是留一张空白表格
+/** 列表加载失败的原因（空 = 正常）。失败时给原因 + 重试，而不是留一张空白表格 */
 const error = ref('');
 
 const dialogVisible = ref(false);
@@ -32,10 +32,12 @@ const form = reactive<Record<string, unknown>>({
 
 const POSITION_TEXT: Record<string, string> = { member: '成员', leader: '队长', tech_lead: '组长' };
 
-// 候选登录账号：用来把「注册用户」转成「成员」
-//
-// 这是成员能否发帖、能否打卡的唯一开关——成员身份认的是 studio_member.user_id，
-// 不是账号的角色。管理员没有这个入口的话，就只能靠改数据库才能让自己变成成员。
+/**
+ * 候选登录账号：用来把「注册用户」转成「成员」
+ *
+ * 这是成员能否发帖、能否打卡的唯一开关——成员身份认的是 studio_member.user_id，
+ * 不是账号的角色。管理员没有这个入口的话，就只能靠改数据库才能让自己变成成员。
+ */
 const userOptions = ref<AdminUser[]>([]);
 
 async function loadUsers() {
@@ -47,7 +49,7 @@ async function loadUsers() {
     }
 }
 
-// 由 userId 反查账号名，让表格里的绑定状态一眼可读
+/** 由 userId 反查账号名，让表格里的绑定状态一眼可读 */
 function accountOf(userId: string): string {
     const found = userOptions.value.find((item) => item.id === userId);
     return found ? found.userAccount : userId;
@@ -106,8 +108,10 @@ async function save() {
         ElMessage.warning('姓名必填');
         return;
     }
-    // 未选账号时不带该字段：后端 @Positive 不接受空串，
-    // 而「null = 不修改绑定」是后端的既有语义——留空不等于解绑
+    /**
+     * 未选账号时不带该字段：后端 @Positive 不接受空串，
+     * 而「null = 不修改绑定」是后端的既有语义——留空不等于解绑
+     */
     const payload: Record<string, unknown> = { ...form };
     if (!payload.userId) {
         delete payload.userId;

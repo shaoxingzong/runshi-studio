@@ -29,27 +29,29 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-// 帖子点赞验收测试
-//
-// 覆盖的规则（与产品口径一一对应）：
-// - 必须登录：未登录点赞返回 A0201，且不产生任何数据；
-// - 只能赞、不能取消：没有 unlike 接口，重复点赞幂等（不重复计数）；
-// - 只有「已通过」的文章可赞：待审 / 不存在统一 A0402「帖子不存在」，不暴露存在性；
-// - 计数是冗余列 like_count，由 SQL 原子自增维护；关系行落在
-// studio_post_like，唯一键 uk_post_user 保证一人一赞。
-//
-// 为什么用 @Transactional：点赞的写操作（insert + update）都在事务内，
-// 测试回滚即可撤销，不需要像非事务测试类那样按前缀手工清理。
-// 用例里对 studio_post 的状态改写也只影响本用例。
-//
-// 为什么不调 AI Stub：本类不经过发帖接口，文章由 #createApprovedPost
-// 直接以「已通过」状态落库——要验的是点赞本身，先把内容审核链路排除在外。
+/**
+ * 帖子点赞验收测试
+ *
+ * 覆盖的规则（与产品口径一一对应）：
+ * - 必须登录：未登录点赞返回 A0201，且不产生任何数据；
+ * - 只能赞、不能取消：没有 unlike 接口，重复点赞幂等（不重复计数）；
+ * - 只有「已通过」的文章可赞：待审 / 不存在统一 A0402「帖子不存在」，不暴露存在性；
+ * - 计数是冗余列 like_count，由 SQL 原子自增维护；关系行落在
+ * studio_post_like，唯一键 uk_post_user 保证一人一赞。
+ *
+ * 为什么用 @Transactional：点赞的写操作（insert + update）都在事务内，
+ * 测试回滚即可撤销，不需要像非事务测试类那样按前缀手工清理。
+ * 用例里对 studio_post 的状态改写也只影响本用例。
+ *
+ * 为什么不调 AI Stub：本类不经过发帖接口，文章由 createApprovedPost
+ * 直接以「已通过」状态落库——要验的是点赞本身，先把内容审核链路排除在外。
+ */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
 class PostLikeTest {
 
-    // 测试账号前缀（便于在数据里认出本类产生的用户）
+    /** 测试账号前缀（便于在数据里认出本类产生的用户） */
     private static final String ACCOUNT_PREFIX = "T32like_";
 
     @Resource
@@ -102,7 +104,7 @@ class PostLikeTest {
         assertTrue(detail.contains("\"liked\":true"), "详情应标记已赞：" + detail);
     }
 
-    // ==================== ③ 幂等（只能赞不能取消） ====================
+    // ==================== ③ 幂等（只能赞不能取消）====================
 
     @Test
     @DisplayName("幂等：同一用户重复点赞不重复计数，也没有取消入口")
@@ -207,7 +209,7 @@ class PostLikeTest {
 
     // ==================== 工具方法 ====================
 
-    // 发起点赞，返回响应体
+    /** 发起点赞，返回响应体 */
     private String like(long postId, String token) throws Exception {
         return postJson("/post/like", "{\"postId\":" + postId + "}", token);
     }
@@ -238,12 +240,12 @@ class PostLikeTest {
         return jsonMapper.readTree(body).get("message").asText();
     }
 
-    // 取响应体 data 的数值（点赞接口返回最新点赞数）
+    /** 取响应体 data 的数值（点赞接口返回最新点赞数） */
     private long dataValue(String body) throws Exception {
         return jsonMapper.readTree(body).get("data").asLong();
     }
 
-    // 从列表响应里找某篇帖子的 liked 值；没找到返回 null（让断言失败时信息更明确）
+    /** 从列表响应里找某篇帖子的 liked 值；没找到返回 null（让断言失败时信息更明确） */
     private Boolean likedOf(String listBody, long postId) throws Exception {
         JsonNode records = jsonMapper.readTree(listBody).get("data").get("records");
         for (JsonNode node : records) {
@@ -264,7 +266,7 @@ class PostLikeTest {
                 .eq(StudioPostLike::getPostId, postId));
     }
 
-    // 建一个指定角色的测试用户，返回用户 id
+    /** 建一个指定角色的测试用户，返回用户 id */
     private long createUser(String role) {
         String account = ACCOUNT_PREFIX + (System.nanoTime() % 100000000);
         SysUser user = new SysUser();
@@ -277,7 +279,7 @@ class PostLikeTest {
         return user.getId();
     }
 
-    // 登录并取 token
+    /** 登录并取 token */
     private String tokenOf(long userId) throws Exception {
         String account = jdbcTemplate.queryForObject(
                 "SELECT user_account FROM sys_user WHERE id = ?", String.class, userId);
@@ -288,9 +290,11 @@ class PostLikeTest {
         return body.substring(start, body.indexOf('"', start));
     }
 
-    // 直接落一篇「已通过」的文章
-    //
-    // 刻意不走发帖接口：那条链路会触发 AI 审核，而本类要验的是点赞本身。
+    /**
+     * 直接落一篇「已通过」的文章
+     *
+     * 刻意不走发帖接口：那条链路会触发 AI 审核，而本类要验的是点赞本身。
+     */
     private long createApprovedPost(long authorId) {
         StudioPost post = new StudioPost();
         post.setTitle("T32-点赞测试文章");

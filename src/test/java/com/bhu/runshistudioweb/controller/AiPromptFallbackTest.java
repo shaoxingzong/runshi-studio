@@ -32,14 +32,16 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-// 系统提示词文件缺失时的降级验收测试
-//
-// 与「AI 不配也能启动」同一条纪律的实证：location 指向一个不存在的文件时，
-// 应用必须照常启动（启动日志 warn），聊天接口照常可用，
-// 只是不带 system 消息——少一句身份约束，不该让整个功能不可用。
-//
-// 断言落点放在 Stub 收到的请求体上（messages 只有一条 user），
-// 因为「没有 system 消息」这件事在响应里看不出来，只有模型侧能证明。
+/**
+ * 系统提示词文件缺失时的降级验收测试
+ *
+ * 与「AI 不配也能启动」同一条纪律的实证：location 指向一个不存在的文件时，
+ * 应用必须照常启动（启动日志 warn），聊天接口照常可用，
+ * 只是不带 system 消息——少一句身份约束，不该让整个功能不可用。
+ *
+ * 断言落点放在 Stub 收到的请求体上（messages 只有一条 user），
+ * 因为「没有 system 消息」这件事在响应里看不出来，只有模型侧能证明。
+ */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -54,10 +56,12 @@ class AiPromptFallbackTest {
     @Resource
     private SysUserMapper sysUserMapper;
 
-    // AI 熔断器：每个用例前重置。
-    //
-    // 本类的 Stub 会返回 500 / 空响应来验证降级，这些失败会累计进熔断器；
-    // 而它是进程内单例，不重置会把失败传染给后跑的测试类。
+    /**
+     * AI 熔断器：每个用例前重置。
+     *
+     * 本类的 Stub 会返回 500 / 空响应来验证降级，这些失败会累计进熔断器；
+     * 而它是进程内单例，不重置会把失败传染给后跑的测试类。
+     */
     @Resource
     private AiCircuitBreaker circuitBreaker;
 
@@ -68,7 +72,7 @@ class AiPromptFallbackTest {
 
     private static HttpServer stub;
 
-    // 最近一次收到的请求体（用于断言消息组装）
+    /** 最近一次收到的请求体（用于断言消息组装） */
     private static volatile String lastRequestBody;
 
     @BeforeAll
@@ -103,10 +107,12 @@ class AiPromptFallbackTest {
         stub.stop(0);
     }
 
-    // 注册一个成员用户并登录，返回 token
-    //
-    // 本用例关注的是「提示词文件缺失时的降级」，与权限无关；
-    // 但 AI 服务已要求登录，因此需要先取得一个可用的登录态。
+    /**
+     * 注册一个成员用户并登录，返回 token
+     *
+     * 本用例关注的是「提示词文件缺失时的降级」，与权限无关；
+     * 但 AI 服务已要求登录，因此需要先取得一个可用的登录态。
+     */
     private String loginToken() throws Exception {
         String account = "T25fb_" + (System.nanoTime() % 100000);
         SysUser user = new SysUser();

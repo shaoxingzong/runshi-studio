@@ -23,17 +23,19 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-// 成员-证书关联接口（全部为管理端）
-//
-// Controller 只做接参、调 Service、包响应三件事；存在性、重复绑定等规则全在 Service 里。
-//
-// 本模块没有 C 端接口：官网「某成员的证书」是 GET /member/certificate/list，
-// 挂在 StudioMemberController 上（因为它是从「成员」维度出发的展示接口，
-// 与成员列表同前缀，也便于白名单按 /member/... 精确登记）。
-//
-// 路径前缀用 /member-certificate 而不是 /member/certificate：
-// 后者会被白名单里的 /member/list 之外的路径混淆视听（例如误以为
-// /member/certificate/... 也属公开），扁平且独立的模块前缀更不容易看错。
+/**
+ * 成员-证书关联接口（全部为管理端）
+ *
+ * Controller 只做接参、调 Service、包响应三件事；存在性、重复绑定等规则全在 Service 里。
+ *
+ * 本模块没有 C 端接口：官网「某成员的证书」是 GET /member/certificate/list，
+ * 挂在 StudioMemberController 上（因为它是从「成员」维度出发的展示接口，
+ * 与成员列表同前缀，也便于白名单按 /member/... 精确登记）。
+ *
+ * 路径前缀用 /member-certificate 而不是 /member/certificate：
+ * 后者会被白名单里的 /member/list 之外的路径混淆视听（例如误以为
+ * /member/certificate/... 也属公开），扁平且独立的模块前缀更不容易看错。
+ */
 @Tag(name = "成员证书关联", description = "管理员维护成员与证书的绑定关系")
 @RestController
 @RequestMapping("/member-certificate")
@@ -42,10 +44,12 @@ public class MemberCertificateController {
 
     private final MemberCertificateService memberCertificateService;
 
-    // 绑定成员与证书
-    //
-    // @param bindRequest 绑定请求（memberId 与 certificateId 均必填）
-    // @return true 表示绑定成功
+    /**
+     * 绑定成员与证书
+     *
+     * @param bindRequest 绑定请求（memberId 与 certificateId 均必填）
+     * @return true 表示绑定成功
+     */
     @PostMapping("/bind")
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】绑定成员与证书", description = "重复绑定返回 A0401；并发下由唯一索引兜底")
@@ -55,10 +59,12 @@ public class MemberCertificateController {
                 memberCertificateService.bind(bindRequest.getMemberId(), bindRequest.getCertificateId()));
     }
 
-    // 解绑成员与证书
-    //
-    // @param bindRequest 解绑请求（与绑定共用同一个请求体结构）
-    // @return true 表示解绑成功
+    /**
+     * 解绑成员与证书
+     *
+     * @param bindRequest 解绑请求（与绑定共用同一个请求体结构）
+     * @return true 表示解绑成功
+     */
     @PostMapping("/unbind")
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】解绑成员与证书", description = "关系不存在返回 A0402「该成员未绑定此证书」")
@@ -68,15 +74,17 @@ public class MemberCertificateController {
                 memberCertificateService.unbind(bindRequest.getMemberId(), bindRequest.getCertificateId()));
     }
 
-    // 查某成员持有的全部证书（管理端视图）
-    //
-    // 用 DTO 接参而不是 @RequestParam long memberId：
-    // 基本类型接参时「忘了传 memberId」会抛 MissingServletRequestParameterException，
-    // 全局处理器没接它 → 变成 B0001「系统错误」；用包装类型 + 这里显式判空，
-    // 才能给出「成员 id 不能为空」这种准确的 A0401。
-    //
-    // @param query 查询条件（memberId 必填）
-    // @return 证书列表（含图片 / 置顶权重 / 审计时间），按 sort_order → award_date → id 倒序
+    /**
+     * 查某成员持有的全部证书（管理端视图）
+     *
+     * 用 DTO 接参而不是 @RequestParam long memberId：
+     * 基本类型接参时「忘了传 memberId」会抛 MissingServletRequestParameterException，
+     * 全局处理器没接它 → 变成 B0001「系统错误」；用包装类型 + 这里显式判空，
+     * 才能给出「成员 id 不能为空」这种准确的 A0401。
+     *
+     * @param query 查询条件（memberId 必填）
+     * @return 证书列表（含图片 / 置顶权重 / 审计时间），按 sort_order → award_date → id 倒序
+     */
     @GetMapping("/certificate/list")
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】查成员的证书", description = "成员不存在返回 A0402")
@@ -86,10 +94,12 @@ public class MemberCertificateController {
         return ResultUtils.success(memberCertificateService.listCertificatesByMember(query.getMemberId()));
     }
 
-    // 查某证书关联的全部成员（管理端视图，反向查询）
-    //
-    // @param query 查询条件（certificateId 必填）
-    // @return 成员列表（含内部字段），按 sort_order → id 倒序
+    /**
+     * 查某证书关联的全部成员（管理端视图，反向查询）
+     *
+     * @param query 查询条件（certificateId 必填）
+     * @return 成员列表（含内部字段），按 sort_order → id 倒序
+     */
     @GetMapping("/member/list")
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】查证书的成员", description = "证书不存在返回 A0402")

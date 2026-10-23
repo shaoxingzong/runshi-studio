@@ -13,17 +13,21 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-// 统一响应体与错误码的验收测试
-//
-// 这就是所谓的「契约测试」：不启动 Spring 容器、不连数据库，只锁定对外契约。
-// 以后谁把成功码改成 200、把失败响应的 data 字段去掉，这里会立刻红，不用等到联调才发现。
-//
-// 注意：Spring Boot 4 使用 Jackson 3，ObjectMapper 的包名为 tools.jackson.databind，
-// 写成 Jackson 2 的 com.fasterxml.jackson.databind.ObjectMapper 会直接编译不过。
+/**
+ * 统一响应体与错误码的验收测试
+ *
+ * 这就是所谓的「契约测试」：不启动 Spring 容器、不连数据库，只锁定对外契约。
+ * 以后谁把成功码改成 200、把失败响应的 data 字段去掉，这里会立刻红，不用等到联调才发现。
+ *
+ * 注意：Spring Boot 4 使用 Jackson 3，ObjectMapper 的包名为 tools.jackson.databind，
+ * 写成 Jackson 2 的 com.fasterxml.jackson.databind.ObjectMapper 会直接编译不过。
+ */
 class BaseResponseTest {
 
-    // 这里故意用 new 出来的 ObjectMapper：本测试校验的是「响应体的结构约定」，
-    // 与 Spring 容器里那个被 JsonConfig 定制过的实例无关（后者的验收在 JsonConfigTest）
+    /**
+     * 这里故意用 new 出来的 ObjectMapper：本测试校验的是「响应体的结构约定」，
+     * 与 Spring 容器里那个被 JsonConfig 定制过的实例无关（后者的验收在 JsonConfigTest）
+     */
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test

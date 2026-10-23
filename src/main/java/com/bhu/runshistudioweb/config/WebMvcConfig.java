@@ -9,35 +9,39 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
-// Spring MVC 静态资源映射：把上传目录暴露成可访问的 URL
-//
-// 为什么需要它： FileManager 只是把文件写进磁盘目录，磁盘目录默认不是 Web 可访问路径。
-// 本类把 URL /uploads/** 映射到磁盘上的上传根目录，前端才能用
-// 直接展示图片。
-//
-// 完整链路： POST /api/file/upload 落盘 → 返回 /uploads/2026/09/xxx.png
-// → 前端拼上 context-path 直接请求 → 由本类映射的静态资源处理器返回文件字节。
-//
-// 两个必须注意的点：
-// - 注意 @Value 的 import：必须是
-// org.springframework.beans.factory.annotation.Value。
-// 若误写成 Lettuce 的 io.lettuce.core.dynamic.annotation.Value（同名不同包，
-// IDE 自动补全很容易选错），Spring 不会注入， rootDir 保持 null，
-// Paths.get(null) 会抛空指针；更隐蔽的是：这类注解误用会让 javac 直接跳过注解处理，
-// 导致 Lombok 生成的 getter/setter 全部"找不到符号"，报出几百条迷惑性错误；
-// - 静态资源也必须过鉴权： /uploads/** 需要在 Sa-Token 白名单里
-// （见 SaTokenMvcConfig），否则图片 URL 对未登录的游客会返回 A0201，官网页面上就是一片裂图。
+/**
+ * Spring MVC 静态资源映射：把上传目录暴露成可访问的 URL
+ *
+ * 为什么需要它：FileManager 只是把文件写进磁盘目录，磁盘目录默认不是 Web 可访问路径。
+ * 本类把 URL /uploads/** 映射到磁盘上的上传根目录，前端才能用
+ * 直接展示图片。
+ *
+ * 完整链路：POST /api/file/upload 落盘 → 返回 /uploads/2026/09/xxx.png
+ * → 前端拼上 context-path 直接请求 → 由本类映射的静态资源处理器返回文件字节。
+ *
+ * 两个必须注意的点：
+ * - 注意 @Value 的 import：必须是
+ * org.springframework.beans.factory.annotation.Value。
+ * 若误写成 Lettuce 的 io.lettuce.core.dynamic.annotation.Value（同名不同包，
+ * IDE 自动补全很容易选错），Spring 不会注入，rootDir 保持 null，
+ * Paths.get(null) 会抛空指针；更隐蔽的是：这类注解误用会让 javac 直接跳过注解处理，
+ * 导致 Lombok 生成的 getter/setter 全部"找不到符号"，报出几百条迷惑性错误；
+ * - 静态资源也必须过鉴权：/uploads/** 需要在 Sa-Token 白名单里
+ * （见 SaTokenMvcConfig），否则图片 URL 对未登录的游客会返回 A0201，官网页面上就是一片裂图。
+ */
 @Configuration
 @RequiredArgsConstructor
 public class WebMvcConfig implements WebMvcConfigurer {
 
-    // 上传文件的存储根目录，与 FileManager 读的是同一个配置项
+    /** 上传文件的存储根目录，与 FileManager 读的是同一个配置项 */
     @Value("${studio.file.root-dir}")
     private final String rootDir;
 
-    // 注册静态资源映射
-    //
-    // @param registry 资源处理器注册表
+    /**
+     * 注册静态资源映射
+     *
+     * @param registry 资源处理器注册表
+     */
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
         // 强制转为规范的绝对路径，解决 spring-boot:run 与 jar 部署时相对路径工作目录不一致的问题

@@ -9,11 +9,13 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-// Markdown 正文白名单清洗单测（纯函数，不起容器）
-//
-// 锁定三类行为：该清的必须清（原始 HTML / 危险 scheme，含常见混淆变体）、
-// 该留的必须留（Markdown 语法、代码块里的 HTML 示例、站内图片）、
-// 边界不炸（null / 空串 / 纯代码块）。
+/**
+ * Markdown 正文白名单清洗单测（纯函数，不起容器）
+ *
+ * 锁定三类行为：该清的必须清（原始 HTML / 危险 scheme，含常见混淆变体）、
+ * 该留的必须留（Markdown 语法、代码块里的 HTML 示例、站内图片）、
+ * 边界不炸（null / 空串 / 纯代码块）。
+ */
 class MarkdownSanitizerTest {
 
     // ==================== 原始 HTML：该清的全部清掉 ====================

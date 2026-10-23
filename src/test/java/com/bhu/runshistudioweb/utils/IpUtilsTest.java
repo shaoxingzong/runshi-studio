@@ -10,11 +10,13 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-// IP 工具类验收测试（纯单测：不启 Spring、不连数据库、无外部依赖）
-//
-// 本类守的是「同一个地址必须归一成同一个字符串」这条底线。
-// 它一旦破，表现是「明明在工作室却被记为外网」，而且不报任何错——
-// 所以每个归一化分支都必须有对应用例，不能只测 happy path。
+/**
+ * IP 工具类验收测试（纯单测：不启 Spring、不连数据库、无外部依赖）
+ *
+ * 本类守的是「同一个地址必须归一成同一个字符串」这条底线。
+ * 它一旦破，表现是「明明在工作室却被记为外网」，而且不报任何错——
+ * 所以每个归一化分支都必须有对应用例，不能只测 happy path。
+ */
 class IpUtilsTest {
 
     // ==================== 归一化 ====================

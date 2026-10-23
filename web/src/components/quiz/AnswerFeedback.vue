@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import type { QuizVerdict } from '@/api/types';
 
-// 判定反馈：正确/错误横幅 + 正确答案 + 解析 + 错题本动作提示
-//
-// 错题本动作的文案为什么要分五种：用户最关心的不是「对/错」本身
-// （选项着色已经说明了），而是「这道题接下来会怎样」——
-// 是进了错题本、还是再答对一次就消解、还是已经消解了。
-// 只显示「回答错误」会让用户以为错题本会自动收，但实际上只有
-// added / reopened 两种情况才是「刚进本」。
+/**
+ * 判定反馈：正确/错误横幅 + 正确答案 + 解析 + 错题本动作提示
+ *
+ * 错题本动作的文案为什么要分五种：用户最关心的不是「对/错」本身
+ * （选项着色已经说明了），而是「这道题接下来会怎样」——
+ * 是进了错题本、还是再答对一次就消解、还是已经消解了。
+ * 只显示「回答错误」会让用户以为错题本会自动收，但实际上只有
+ * added / reopened 两种情况才是「刚进本」。
+ */
 const props = defineProps<{
     verdict: QuizVerdict;
 }>();
@@ -20,7 +22,7 @@ const ACTION_TEXT: Record<QuizVerdict['wrongBookAction'], string> = {
     none: '',
 };
 
-// 错题本提示的完整文案（progress 时带上「还差几次」）
+/** 错题本提示的完整文案（progress 时带上「还差几次」） */
 function actionText(): string {
     const base = ACTION_TEXT[props.verdict.wrongBookAction];
     if (!base) {
@@ -32,7 +34,7 @@ function actionText(): string {
     return base;
 }
 
-// 提示条的语气：进本/回本用警告色，消解用成功色，其余中性
+/** 提示条的语气：进本/回本用警告色，消解用成功色，其余中性 */
 function actionTone(): string {
     switch (props.verdict.wrongBookAction) {
         case 'added':

@@ -33,27 +33,29 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-// 刷题接口（C 端，仅工作室成员）
-//
-// 准入规则：全部方法只挂 @SaCheckLogin，真正的成员校验在 Service 层
-// （ QuizPracticeServiceImpl#requireActiveMember），查的是 studio_member 表。
-//
-// 为什么这里只挂 @SaCheckLogin 而不挂 @SaCheckRole("member")：
-// 与 AttendanceController 完全同一条理由——「成员」不是角色标签，
-// 而是管理员在成员表里录的一条档案。角色可能与档案不同步，
-// 若按角色放行，就绕开了真正的准入规则。
-//
-// 白名单一条都不加： /quiz/** 全部走「默认要求登录」。
-// 刷题是成员专属能力，没有任何匿名入口——这与「游客可浏览帖子」的定位不同。
-//
-// 答案不下发的边界：
-// - /quiz/batch（出题）返回 QuizQuestionVO，结构上没有答案字段；
-// - /quiz/answer（提交）返回 QuizVerdictVO，只含刚提交那一题的答案；
-// - /quiz/skip（跳过）什么都不返回——否则跳过就成了看答案的捷径；
-// - /quiz/wrong/page（错题列表）不含答案；详情 /quiz/wrong/detail 才含，
-// 前提是这道题该用户已经做错过。
-//
-// 接口地址前缀 /api，完整路径形如 http://localhost:8080/api/quiz/catalog。
+/**
+ * 刷题接口（C 端，仅工作室成员）
+ *
+ * 准入规则：全部方法只挂 @SaCheckLogin，真正的成员校验在 Service 层
+ * （ QuizPracticeServiceImpl#requireActiveMember），查的是 studio_member 表。
+ *
+ * 为什么这里只挂 @SaCheckLogin 而不挂 @SaCheckRole("member")：
+ * 与 AttendanceController 完全同一条理由——「成员」不是角色标签，
+ * 而是管理员在成员表里录的一条档案。角色可能与档案不同步，
+ * 若按角色放行，就绕开了真正的准入规则。
+ *
+ * 白名单一条都不加：/quiz/** 全部走「默认要求登录」。
+ * 刷题是成员专属能力，没有任何匿名入口——这与「游客可浏览帖子」的定位不同。
+ *
+ * 答案不下发的边界：
+ * - /quiz/batch（出题）返回 QuizQuestionVO，结构上没有答案字段；
+ * - /quiz/answer（提交）返回 QuizVerdictVO，只含刚提交那一题的答案；
+ * - /quiz/skip（跳过）什么都不返回——否则跳过就成了看答案的捷径；
+ * - /quiz/wrong/page（错题列表）不含答案；详情 /quiz/wrong/detail 才含，
+ * 前提是这道题该用户已经做错过。
+ *
+ * 接口地址前缀 /api，完整路径形如 http://localhost:8080/api/quiz/catalog。
+ */
 @RestController
 @RequestMapping("/quiz")
 @Tag(name = "刷题模块", description = "工作室成员刷政治选择题：三种模式、服务端判分、错题本")
@@ -66,14 +68,16 @@ public class QuizController {
 
     private final QuizWrongService quizWrongService;
 
-    // 教材 → 章节树（C 端下拉数据源）
-    //
-    // 为什么这里要显式校验成员身份：数据来自 QuizQuestionService，
-    // 那个 Service 是管理端与 C 端共用的，不做准入判定。若这里只挂
-    // @SaCheckLogin，「只有账号、没有成员档案」的普通用户就能读到题库目录——
-    // 数据不敏感，但这是准入规则的漏洞：他本不该进入这个模块的任何入口。
-    //
-    // @return 教材列表，每本含其章节（只统计启用题）
+    /**
+     * 教材 → 章节树（C 端下拉数据源）
+     *
+     * 为什么这里要显式校验成员身份：数据来自 QuizQuestionService，
+     * 那个 Service 是管理端与 C 端共用的，不做准入判定。若这里只挂
+     * @SaCheckLogin，「只有账号、没有成员档案」的普通用户就能读到题库目录——
+     * 数据不敏感，但这是准入规则的漏洞：他本不该进入这个模块的任何入口。
+     *
+     * @return 教材列表，每本含其章节（只统计启用题）
+     */
     @GetMapping("/catalog")
     @SaCheckLogin
     @Operation(summary = "【成员】教材与章节树", description = "只统计启用题；章节随题目存在，空章节不会出现")
@@ -83,9 +87,11 @@ public class QuizController {
         return ResultUtils.success(quizQuestionService.listCatalog());
     }
 
-    // 学习概览（四个数字）
-    //
-    // @return 累计作答 / 正确率 / 待复习错题 / 已消解
+    /**
+     * 学习概览（四个数字）
+     *
+     * @return 累计作答 / 正确率 / 待复习错题 / 已消解
+     */
     @GetMapping("/overview")
     @SaCheckLogin
     @Operation(summary = "【成员】学习概览", description = "累计作答与正确率不含跳过；正确率在 0 次作答时为 null")
@@ -93,13 +99,15 @@ public class QuizController {
         return ResultUtils.success(quizPracticeService.getOverview());
     }
 
-    // 开一批题目
-    //
-    // 三种模式的必填参数不同：顺序模式必须指定教材 + 章节；
-    // 错题重刷与随机刷题可只指定范围（或完全不指定 = 全库）。
-    //
-    // @param request 开批请求（mode 必填）
-    // @return 批次 ID + 题目列表（不含答案）
+    /**
+     * 开一批题目
+     *
+     * 三种模式的必填参数不同：顺序模式必须指定教材 + 章节；
+     * 错题重刷与随机刷题可只指定范围（或完全不指定 = 全库）。
+     *
+     * @param request 开批请求（mode 必填）
+     * @return 批次 ID + 题目列表（不含答案）
+     */
     @PostMapping("/batch")
     @SaCheckLogin
     @Operation(summary = "【成员】开始一轮刷题",
@@ -110,13 +118,15 @@ public class QuizController {
         return ResultUtils.success(quizPracticeService.startBatch(request));
     }
 
-    // 提交作答（幂等）
-    //
-    // 重复提交同一题（断网重试、双击）会返回首次判定，
-    // 不重复计数、不重复影响错题本。
-    //
-    // @param request 作答请求（batchId / questionId / chosenLabels 必填）
-    // @return 判定结果 + 正确答案 + 解析 + 错题本动作
+    /**
+     * 提交作答（幂等）
+     *
+     * 重复提交同一题（断网重试、双击）会返回首次判定，
+     * 不重复计数、不重复影响错题本。
+     *
+     * @param request 作答请求（batchId / questionId / chosenLabels 必填）
+     * @return 判定结果 + 正确答案 + 解析 + 错题本动作
+     */
     @PostMapping("/answer")
     @SaCheckLogin
     @Operation(summary = "【成员】提交答案",
@@ -126,13 +136,15 @@ public class QuizController {
         return ResultUtils.success(quizPracticeService.submitAnswer(request));
     }
 
-    // 跳过题目（不返回答案、不写错题本）
-    //
-    // 返回布尔而不是「进度对象」：一旦返回任何题目相关信息，
-    // 跳过按钮就可能被用来探测答案。前端自己维护「第几题」。
-    //
-    // @param request 跳过请求
-    // @return true 表示记录成功
+    /**
+     * 跳过题目（不返回答案、不写错题本）
+     *
+     * 返回布尔而不是「进度对象」：一旦返回任何题目相关信息，
+     * 跳过按钮就可能被用来探测答案。前端自己维护「第几题」。
+     *
+     * @param request 跳过请求
+     * @return true 表示记录成功
+     */
     @PostMapping("/skip")
     @SaCheckLogin
     @Operation(summary = "【成员】跳过本题",
@@ -142,10 +154,12 @@ public class QuizController {
         return ResultUtils.success(quizPracticeService.skipQuestion(request));
     }
 
-    // 我的错题本（分页，不含答案）
-    //
-    // @param request 查询条件（可按教材/章节筛选）
-    // @return 分页结果
+    /**
+     * 我的错题本（分页，不含答案）
+     *
+     * @param request 查询条件（可按教材/章节筛选）
+     * @return 分页结果
+     */
     @GetMapping("/wrong/page")
     @SaCheckLogin
     @Operation(summary = "【成员】我的错题本",
@@ -154,10 +168,12 @@ public class QuizController {
         return ResultUtils.success(quizWrongService.listMyWrongByPage(currentUserId(), request));
     }
 
-    // 错题详情（含答案与解析）
-    //
-    // @param id 错题本条目 ID（不是题目 ID）
-    // @return 详情
+    /**
+     * 错题详情（含答案与解析）
+     *
+     * @param id 错题本条目 ID（不是题目 ID）
+     * @return 详情
+     */
     @GetMapping("/wrong/detail")
     @SaCheckLogin
     @Operation(summary = "【成员】错题详情", description = "含正确答案与解析，以及你上次选了什么")
@@ -166,10 +182,12 @@ public class QuizController {
         return ResultUtils.success(quizWrongService.getMyWrongDetail(currentUserId(), id));
     }
 
-    // 手动标记「已掌握」
-    //
-    // @param request 请求（错题本条目 ID）
-    // @return true 表示成功（已消解时幂等返回 true）
+    /**
+     * 手动标记「已掌握」
+     *
+     * @param request 请求（错题本条目 ID）
+     * @return true 表示成功（已消解时幂等返回 true）
+     */
     @PostMapping("/wrong/resolve")
     @SaCheckLogin
     @Operation(summary = "【成员】标记已掌握", description = "幂等：已消解时直接返回，不改消解时间")
@@ -178,11 +196,13 @@ public class QuizController {
         return ResultUtils.success(quizWrongService.resolveManually(currentUserId(), request.getId()));
     }
 
-    // 当前登录用户 ID
-    //
-    // 抽一个私有方法而不是在每个接口里写 StpUtil.getLoginIdAsLong()：
-    // 成员校验发生在 Service 层，Controller 这里只需要「是谁」。
-    // 未登录由拦截器直接挡掉（A0201），走不到这里。
+    /**
+     * 当前登录用户 ID
+     *
+     * 抽一个私有方法而不是在每个接口里写 StpUtil.getLoginIdAsLong()：
+     * 成员校验发生在 Service 层，Controller 这里只需要「是谁」。
+     * 未登录由拦截器直接挡掉（A0201），走不到这里。
+     */
     private long currentUserId() {
         return cn.dev33.satoken.stp.StpUtil.getLoginIdAsLong();
     }

@@ -20,28 +20,30 @@ const route = useRoute();
 const router = useRouter();
 const detail = ref<ProjectDetailType | null>(null);
 const loading = ref(false);
-// 加载失败（含 id 不存在）：此前提炼只有 v-if="detail"，失败时整页空白
+/** 加载失败（含 id 不存在）：此前提炼只有 v-if="detail"，失败时整页空白 */
 const error = ref('');
 
 const STATUS_TEXT: Record<string, string> = { 0: '研发中', 1: '已上线', 2: '已结题' };
 
-// 正文容器：代码块复制与目录高亮都要在真实 DOM 上接线（v-html 的内容 Vue 管不着）
+/** 正文容器：代码块复制与目录高亮都要在真实 DOM 上接线（v-html 的内容 Vue 管不着） */
 const bodyRef = ref<HTMLElement | null>(null);
 
-// 正文是 Markdown，渲染链路是：共享工具（renderMarkdown）→ 白名单清洗 → v-html
-//
-// ⚠️ 为什么必须清洗：marked 只负责「Markdown 转 HTML」，它 v15 起已移除内置的
-// sanitize——原文里的 ``、`onerror=` 会被原样保留。而 `v-html` 是直接写入
-// DOM，等于把正文作者当成了可信来源。
-//
-// 因此这里统一走 DOMPurify 白名单清洗：
-// - 保留正文需要的标签（标题/列表/代码/链接/图片）；
-// - 剥掉脚本、事件属性、`javascript:` 协议等注入载体。
-// 「管理员录入」不能替代清洗——账号被盗、越权、导入外部数据都可能让正文不可信。
-//
-// 白名单里额外放行 div/button/id/type/aria-label/loading/decoding：
-// 这些是共享 renderer 的增强输出（代码块包装、复制按钮、标题锚点、图片懒加载），
-// 不放行会被静默洗掉——表现是「复制按钮不见了但没人报错」。
+/**
+ * 正文是 Markdown，渲染链路是：共享工具（renderMarkdown）→ 白名单清洗 → v-html
+ *
+ * ⚠️ 为什么必须清洗：marked 只负责「Markdown 转 HTML」，它 v15 起已移除内置的
+ * sanitize——原文里的 ``、`onerror=` 会被原样保留。而 `v-html` 是直接写入
+ * DOM，等于把正文作者当成了可信来源。
+ *
+ * 因此这里统一走 DOMPurify 白名单清洗：
+ * - 保留正文需要的标签（标题/列表/代码/链接/图片）；
+ * - 剥掉脚本、事件属性、`javascript:` 协议等注入载体。
+ * 「管理员录入」不能替代清洗——账号被盗、越权、导入外部数据都可能让正文不可信。
+ *
+ * 白名单里额外放行 div/button/id/type/aria-label/loading/decoding：
+ * 这些是共享 renderer 的增强输出（代码块包装、复制按钮、标题锚点、图片懒加载），
+ * 不放行会被静默洗掉——表现是「复制按钮不见了但没人报错」。
+ */
 const rendered = computed(() => {
     const result = renderMarkdown(detail.value?.content ?? '');
     // 白名单与工具同源（MARKDOWN_ALLOWED_*）：项目页无额外的 img 限制（管理员录入，
@@ -54,14 +56,14 @@ const rendered = computed(() => {
 });
 
 const contentHtml = computed(() => rendered.value.html);
-// 目录（共享工具单次渲染时顺带抽取，与标题 id 同源，不会对不上）
+/** 目录（共享工具单次渲染时顺带抽取，与标题 id 同源，不会对不上） */
 const toc = computed(() => rendered.value.toc);
-// 短文不出目录：两行字的文章配个目录框很滑稽
+/** 短文不出目录：两行字的文章配个目录框很滑稽 */
 const showToc = computed(() => toc.value.length >= TOC_MIN_ITEMS);
-// 当前阅读章节（IntersectionObserver 驱动，见 observeTocHighlight）
+/** 当前阅读章节（IntersectionObserver 驱动，见 observeTocHighlight） */
 const activeHeading = ref('');
 
-// 文章重渲染（重试加载、切页）时先摘旧监听再绑新的，不叠加
+/** 文章重渲染（重试加载、切页）时先摘旧监听再绑新的，不叠加 */
 let unbindCopy: (() => void) | null = null;
 let unobserve: (() => void) | null = null;
 

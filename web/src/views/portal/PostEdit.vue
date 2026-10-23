@@ -7,14 +7,16 @@ import 'md-editor-v3/lib/style.css';
 import { postApi, uploadPostImage } from '@/api/post';
 import { useUserStore } from '@/stores/user';
 
-// 发帖 / 修改被驳回的稿子（仅工作室成员）
-//
-// 准入判断：进入页面时会主动拉一次「我的成员档案」——
-// 不能只看 localStorage 里的角色（角色是权限标签，可能与成员档案不同步）。
-// 后端同样只准成员发帖，这里是同一规则的界面表达，不是真正的拦截。
-//
-// 改稿模式：从「我的发帖」点「修改重投」进来时带 ?edit=<帖子id>。
-// 该模式下加载原稿内容、提交走 /post/update-mine，保存后回到待审。
+/**
+ * 发帖 / 修改被驳回的稿子（仅工作室成员）
+ *
+ * 准入判断：进入页面时会主动拉一次「我的成员档案」——
+ * 不能只看 localStorage 里的角色（角色是权限标签，可能与成员档案不同步）。
+ * 后端同样只准成员发帖，这里是同一规则的界面表达，不是真正的拦截。
+ *
+ * 改稿模式：从「我的发帖」点「修改重投」进来时带 ?edit=<帖子id>。
+ * 该模式下加载原稿内容、提交走 /post/update-mine，保存后回到待审。
+ */
 const router = useRouter();
 const route = useRoute();
 const user = useUserStore();
@@ -23,9 +25,9 @@ const form = reactive({ title: '', content: '', summary: '', coverImage: '' });
 const submitting = ref(false);
 const coverInput = ref<HTMLInputElement | null>(null);
 
-// 改稿模式：正在修改的帖子 id（空串 = 新建）
+/** 改稿模式：正在修改的帖子 id（空串 = 新建） */
 const editingId = ref('');
-// 改稿模式下原稿的加载态：正文没回来之前禁用保存，避免提交半模态数据
+/** 改稿模式下原稿的加载态：正文没回来之前禁用保存，避免提交半模态数据 */
 const loadingDraft = ref(false);
 
 const isEditing = computed(() => !!editingId.value);
@@ -44,9 +46,11 @@ onMounted(async () => {
     }
 });
 
-// 加载待修改的原稿
-//
-// 正文必须单独拉：列表 VO 刻意不含 content，而公开详情只返回已通过的帖子。
+/**
+ * 加载待修改的原稿
+ *
+ * 正文必须单独拉：列表 VO 刻意不含 content，而公开详情只返回已通过的帖子。
+ */
 async function loadDraft(postId: string) {
     loadingDraft.value = true;
     try {
@@ -65,11 +69,13 @@ async function loadDraft(postId: string) {
     }
 }
 
-// 编辑器上传图片
-//
-// 必须上传到站内并把返回的 `/uploads/...` 路径回调给编辑器：
-// 后端会拒绝正文里的外链图（防追踪像素与裂图），
-// 而 base64 内嵌会让正文膨胀到难以存储。
+/**
+ * 编辑器上传图片
+ *
+ * 必须上传到站内并把返回的 `/uploads/...` 路径回调给编辑器：
+ * 后端会拒绝正文里的外链图（防追踪像素与裂图），
+ * 而 base64 内嵌会让正文膨胀到难以存储。
+ */
 async function onUploadImg(files: Array<File>, callback: (urls: string[]) => void) {
     try {
         const urls = await Promise.all(files.map((file) => uploadPostImage(file)));
@@ -81,24 +87,28 @@ async function onUploadImg(files: Array<File>, callback: (urls: string[]) => voi
     }
 }
 
-// 编辑器实例（只声明本页用到的 expose 方法）
-//
-// md-editor-v3 的 `insert` 能把内容插到当前光标处——这正是粘贴 / 拖拽上传需要的；
-// 若改用 `v-model` 整体赋值，插入点会被推到正文末尾。
+/**
+ * 编辑器实例（只声明本页用到的 expose 方法）
+ *
+ * md-editor-v3 的 `insert` 能把内容插到当前光标处——这正是粘贴 / 拖拽上传需要的；
+ * 若改用 `v-model` 整体赋值，插入点会被推到正文末尾。
+ */
 type EditorExpose = {
     insert: (generate: (selectedText: string) => { targetValue: string }) => void;
 };
 const editorRef = ref<EditorExpose | null>(null);
 
-// 正在上传的图片张数（用于界面提示，0 表示空闲）
+/** 正在上传的图片张数（用于界面提示，0 表示空闲） */
 const uploading = ref(0);
 
-// 上传图片并插入正文光标处（粘贴与拖拽共用）
-//
-// 与工具栏上传的分工：两条链路最终都走 uploadPostImage，
-// 差别只在「谁触发」和「插到哪」——这里由粘贴 / 拖拽触发，并显式插到光标处。
-//
-// @param files 待处理的文件列表（可能混有非图片，内部会过滤）
+/**
+ * 上传图片并插入正文光标处（粘贴与拖拽共用）
+ *
+ * 与工具栏上传的分工：两条链路最终都走 uploadPostImage，
+ * 差别只在「谁触发」和「插到哪」——这里由粘贴 / 拖拽触发，并显式插到光标处。
+ *
+ * @param files 待处理的文件列表（可能混有非图片，内部会过滤）
+ */
 async function insertImages(files: File[]) {
     const images = files.filter((file) => file.type.startsWith('image/'));
     if (!images.length) {
@@ -108,7 +118,7 @@ async function insertImages(files: File[]) {
     uploading.value += images.length;
     try {
         for (const file of images) {
-            // 必须是站内路径：后端会拒绝正文里的外链图，base64 内嵌又会让正文膨胀
+            /** 必须是站内路径：后端会拒绝正文里的外链图，base64 内嵌又会让正文膨胀 */
             const url = await uploadPostImage(file);
             // 末尾补一个换行：连续插入多张图时不会挤在同一行
             editorRef.value?.insert(() => ({ targetValue: `![](${url})\n` }));
@@ -122,13 +132,15 @@ async function insertImages(files: File[]) {
     }
 }
 
-// 粘贴图片（Ctrl+V 截图即可插入正文）
-//
-// md-editor-v3 没有暴露 paste 事件（`EditorEmits` 里没有它），
-// 但 contenteditable 区域内的 paste 会冒泡到外层容器，因此在这里统一接管。
-//
-// ⚠️ `preventDefault` 必须在同步阶段调用：等 `await` 之后再调就无效了
-// （事件已分发完毕，默认的「插入文本」行为早已发生）。
+/**
+ * 粘贴图片（Ctrl+V 截图即可插入正文）
+ *
+ * md-editor-v3 没有暴露 paste 事件（`EditorEmits` 里没有它），
+ * 但 contenteditable 区域内的 paste 会冒泡到外层容器，因此在这里统一接管。
+ *
+ * ⚠️ `preventDefault` 必须在同步阶段调用：等 `await` 之后再调就无效了
+ * （事件已分发完毕，默认的「插入文本」行为早已发生）。
+ */
 async function onPaste(event: ClipboardEvent) {
     const files = Array.from(event.clipboardData?.files ?? []);
     if (!files.some((file) => file.type.startsWith('image/'))) {
@@ -138,11 +150,13 @@ async function onPaste(event: ClipboardEvent) {
     await insertImages(files);
 }
 
-// 拖拽图片到编辑器
-//
-// md-editor-v3 用 `onDrop` prop 透传拖拽事件。
-// ⚠️ 必须 `preventDefault`：浏览器默认会把拖入的图片当作「打开文件」直接导航走，
-// 正文里什么都不会留下。
+/**
+ * 拖拽图片到编辑器
+ *
+ * md-editor-v3 用 `onDrop` prop 透传拖拽事件。
+ * ⚠️ 必须 `preventDefault`：浏览器默认会把拖入的图片当作「打开文件」直接导航走，
+ * 正文里什么都不会留下。
+ */
 async function onDrop(event: DragEvent) {
     const files = Array.from(event.dataTransfer?.files ?? []);
     if (!files.some((file) => file.type.startsWith('image/'))) {

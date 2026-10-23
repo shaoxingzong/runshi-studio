@@ -12,91 +12,101 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-// 题目批量导入的文本解析器（纯函数，不碰数据库）
-//
-// 为什么是「粘贴文本」而不是 Excel / 文件上传：
-// 题库的来源几乎都是从文档、网页、PDF 里复制一段题目，粘贴比
-// 「下载模板 → 填 → 上传」少两步；而且文本解析的失败信息可以精确到行号，
-// 比「文件第 3 个 sheet 第 12 行有问题」直观得多。
-//
-// 支持的格式（一条题一个块，块之间空行分隔；空行不是必需的，
-// 遇到下一个「题型行」也会开新块）：
-// 【单选】物质的唯一特性是？
-// A. 运动性
-// B. 客观实在性
-// C. 可知性
-// D. 矛盾性
-// 答案：B
-// 解析：客观实在性是物质的唯一特性；运动是物质的根本属性。
-//
-// 【多选】下列属于唯物辩证法基本规律的有？
-// A. 对立统一规律*
-// B. 质量互变规律*
-// C. 否定之否定规律*
-// D. 因果律
-//
-// 两种答案写法，同时存在时以「答案：」为准：
-// - 行尾 *：贴真题时最常见；
-// - 独立 答案：ABD 行：从教材/题库导出时最常见。
-// 为什么以「答案：」为准：它是显式声明，而 * 可能只是题干里的强调符号
-// （虽然我们只在选项行里认它）。显式优先于隐式，是这类解析的通用纪律。
-//
-// 解析器只负责「语法」，不负责「语义校验」：
-// 「单选题有 2 个正确项」这类跨字段规则由 QuizQuestionServiceImpl 校验，
-// 因为新增/修改/导入三条入口必须共用同一套规则。这里只保证
-// 「能解析出来的字段是合法的」（标签连续、选项数在范围内、有正确答案）。
-//
-// 本类不依赖 Spring、不写库，因此 QuizImportParserTest 可以用
-// 极低成本覆盖全部边界。
+/**
+ * 题目批量导入的文本解析器（纯函数，不碰数据库）
+ *
+ * 为什么是「粘贴文本」而不是 Excel / 文件上传：
+ * 题库的来源几乎都是从文档、网页、PDF 里复制一段题目，粘贴比
+ * 「下载模板 → 填 → 上传」少两步；而且文本解析的失败信息可以精确到行号，
+ * 比「文件第 3 个 sheet 第 12 行有问题」直观得多。
+ *
+ * 支持的格式（一条题一个块，块之间空行分隔；空行不是必需的，
+ * 遇到下一个「题型行」也会开新块）：
+ * 【单选】物质的唯一特性是？
+ * A. 运动性
+ * B. 客观实在性
+ * C. 可知性
+ * D. 矛盾性
+ * 答案：B
+ * 解析：客观实在性是物质的唯一特性；运动是物质的根本属性。
+ *
+ * 【多选】下列属于唯物辩证法基本规律的有？
+ * A. 对立统一规律*
+ * B. 质量互变规律*
+ * C. 否定之否定规律*
+ * D. 因果律
+ *
+ * 两种答案写法，同时存在时以「答案：」为准：
+ * - 行尾 *：贴真题时最常见；
+ * - 独立 答案：ABD 行：从教材/题库导出时最常见。
+ * 为什么以「答案：」为准：它是显式声明，而 * 可能只是题干里的强调符号
+ * （虽然我们只在选项行里认它）。显式优先于隐式，是这类解析的通用纪律。
+ *
+ * 解析器只负责「语法」，不负责「语义校验」：
+ * 「单选题有 2 个正确项」这类跨字段规则由 QuizQuestionServiceImpl 校验，
+ * 因为新增/修改/导入三条入口必须共用同一套规则。这里只保证
+ * 「能解析出来的字段是合法的」（标签连续、选项数在范围内、有正确答案）。
+ *
+ * 本类不依赖 Spring、不写库，因此 QuizImportParserTest 可以用
+ * 极低成本覆盖全部边界。
+ */
 public final class QuizImportParser {
 
-    // 题型行： 【单选】 / [多选]，允许行首空白
-    //
-    // 同时认全角方括号与半角方括号：从不同来源复制过来时两者都会出现。
+    /**
+     * 题型行：【单选】/ [多选]，允许行首空白
+     *
+     * 同时认全角方括号与半角方括号：从不同来源复制过来时两者都会出现。
+     */
     private static final Pattern TYPE_LINE = Pattern.compile(
             "^\\s*[【\\[]\\s*(单选|多选|单项选择题|多项选择题)\\s*[】\\]]\\s*(.*)$");
 
-    // 选项行： A. / A、 / A． / A: / A）
-    //
-    // 捕获三段：标签、正文、行尾星号（星号表示「这是正确项」）。
-    // 分隔符全角半角都认——这是粘贴文本最常见的差异来源。
+    /**
+     * 选项行：A. / A、/ A． / A: / A）
+     *
+     * 捕获三段：标签、正文、行尾星号（星号表示「这是正确项」）。
+     * 分隔符全角半角都认——这是粘贴文本最常见的差异来源。
+     */
     private static final Pattern OPTION_LINE = Pattern.compile(
             "^\\s*([A-Fa-f])\\s*[.、．:：)）]\\s*(.+?)\\s*(\\*)?\\s*$");
 
-    // 答案行： 答案：ABD / 正确答案: A
+    /** 答案行： 答案：ABD / 正确答案: A */
     private static final Pattern ANSWER_LINE = Pattern.compile(
             "^\\s*(?:正确)?答案\\s*[:：]\\s*([A-Fa-f,\\s，、]+)\\s*$");
 
-    // 解析行： 解析：……（可多行，后续行追加到解析里）
+    /** 解析行： 解析：……（可多行，后续行追加到解析里） */
     private static final Pattern ANALYSIS_LINE = Pattern.compile(
             "^\\s*(?:解析|分析|解答)\\s*[:：]\\s*(.*)$");
 
-    // 解析结果：成功解析出的题目 + 逐行错误
-    //
-    // 做成 record 而不是返回 List + 抛异常：
-    // 「部分块有错」是正常输入，不是异常。用返回值表达能让调用方
-    // 一次性把所有错误展示给管理员，而不是改一个错再撞下一个。
+    /**
+     * 解析结果：成功解析出的题目 + 逐行错误
+     *
+     * 做成 record 而不是返回 List + 抛异常：
+     * 「部分块有错」是正常输入，不是异常。用返回值表达能让调用方
+     * 一次性把所有错误展示给管理员，而不是改一个错再撞下一个。
+     */
     public record ParseResult(List<ParsedQuestion> questions, List<LineError> errors) {
 
-        // 是否整批都合法
+        /** 是否整批都合法 */
         public boolean hasError() {
             return !errors.isEmpty();
         }
     }
 
-    // 单条解析出的题目（尚未落库）
+    /** 单条解析出的题目（尚未落库） */
     public record ParsedQuestion(QuizQuestionTypeEnum type, String stem, List<QuizOptionItem> options,
                                  String correctLabels, String analysis, int startLine) {
     }
 
-    // 单条错误：行号 + 原因
+    /** 单条错误：行号 + 原因 */
     public record LineError(int line, String message) {
     }
 
-    // 解析粘贴的文本
-    //
-    // @param text 待解析文本，可为 null（返回空结果）
-    // @return 解析结果；永不为 null
+    /**
+     * 解析粘贴的文本
+     *
+     * @param text 待解析文本，可为 null（返回空结果）
+     * @return 解析结果；永不为 null
+     */
     public static ParseResult parse(String text) {
         List<ParsedQuestion> questions = new ArrayList<>();
         List<LineError> errors = new ArrayList<>();
@@ -183,9 +193,11 @@ public final class QuizImportParser {
         return new ParseResult(questions, errors);
     }
 
-    // 结算一个块：校验并转成 ParsedQuestion
-    //
-    // @return 恒为 null（调用方用它清空 current，语义更清楚）
+    /**
+     * 结算一个块：校验并转成 ParsedQuestion
+     *
+     * @return 恒为 null（调用方用它清空 current，语义更清楚）
+     */
     private static Builder flush(Builder block, List<ParsedQuestion> questions, List<LineError> errors) {
         if (block == null) {
             return null;
@@ -265,17 +277,19 @@ public final class QuizImportParser {
         return null;
     }
 
-    // 题型文案 → 枚举（"单项选择题" 这类长写法也认）
+    /** 题型文案 → 枚举（"单项选择题" 这类长写法也认） */
     private static QuizQuestionTypeEnum typeNameToType(String name) {
         return name.startsWith("多") || name.contains("多项")
                 ? QuizQuestionTypeEnum.MULTIPLE
                 : QuizQuestionTypeEnum.SINGLE;
     }
 
-    // 块构建器（可变，只在解析过程中存活）
-    //
-    // 为什么用可变对象而不是 record：解析是「逐行累积」的过程，
-    // 用不可变结构会让每一步都产生新对象，代码反而更难读。
+    /**
+     * 块构建器（可变，只在解析过程中存活）
+     *
+     * 为什么用可变对象而不是 record：解析是「逐行累积」的过程，
+     * 用不可变结构会让每一步都产生新对象，代码反而更难读。
+     */
     private static final class Builder {
 
         private final int startLine;
@@ -286,12 +300,12 @@ public final class QuizImportParser {
 
         private final List<QuizOptionItem> options = new ArrayList<>();
 
-        // 行尾星号标出的正确项（保持输入顺序，最终会被排序成升序串）
+        /** 行尾星号标出的正确项（保持输入顺序，最终会被排序成升序串） */
         private final Set<String> starLabels = new LinkedHashSet<>();
 
         private final List<String> analysisLines = new ArrayList<>();
 
-        // 显式「答案：」行（优先于星号）
+        /** 显式「答案：」行（优先于星号） */
         private String explicitAnswer;
 
         private Builder(int startLine, QuizQuestionTypeEnum type) {

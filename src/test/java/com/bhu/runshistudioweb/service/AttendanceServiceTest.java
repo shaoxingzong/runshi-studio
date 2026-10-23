@@ -33,23 +33,25 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-// 考勤服务验收测试（纯单测：不启 Spring、不连数据库）
-//
-// 依赖全部替换成 Mock / 真实轻量实现：
-// - 两个 Mapper 用 Mockito 替身的——本类要验证的是 Service 的编排逻辑
-// （准入、防抖、落库参数、三次查询的合并），而不是 SQL 能不能跑通；
-// - ClientIpManager 用真实实例：内外网判定是本次的核心业务规则，
-// 用真实实现才能真正覆盖到「192.168.1.5 算内网」这条链路；
-// - StpUtil 是静态调用，用 mockStatic 替换登录态。
-//
-// 最关键的两条用例是准入（非成员必须被拒）与脱敏（VO 结构上不允许出现 ip）：
-// 前者是产品明确要求的安全边界，后者一旦被破坏就是隐私泄露，所以都用断言钉死。
+/**
+ * 考勤服务验收测试（纯单测：不启 Spring、不连数据库）
+ *
+ * 依赖全部替换成 Mock / 真实轻量实现：
+ * - 两个 Mapper 用 Mockito 替身的——本类要验证的是 Service 的编排逻辑
+ * （准入、防抖、落库参数、三次查询的合并），而不是 SQL 能不能跑通；
+ * - ClientIpManager 用真实实例：内外网判定是本次的核心业务规则，
+ * 用真实实现才能真正覆盖到「192.168.1.5 算内网」这条链路；
+ * - StpUtil 是静态调用，用 mockStatic 替换登录态。
+ *
+ * 最关键的两条用例是准入（非成员必须被拒）与脱敏（VO 结构上不允许出现 ip）：
+ * 前者是产品明确要求的安全边界，后者一旦被破坏就是隐私泄露，所以都用断言钉死。
+ */
 class AttendanceServiceTest {
 
     private static final long USER_ID = 1001L;
     private static final long OTHER_USER_ID = 1002L;
 
-    // 配置的工作室网段，与 ClientIpManagerTest 的取值保持一致便于交叉理解
+    /** 配置的工作室网段，与 ClientIpManagerTest 的取值保持一致便于交叉理解 */
     private static final String LAN_CIDR = "192.168.1.0/24";
 
     private StudioAttendanceMapper attendanceMapper;
@@ -91,7 +93,7 @@ class AttendanceServiceTest {
         }
     }
 
-    // ==================== 准入：必须是成员（产品核心规则） ====================
+    // ==================== 准入：必须是成员（产品核心规则）====================
 
     @Test
     @DisplayName("普通注册用户签到：A0301 无权限（成员身份以 studio_member 表为准）")
@@ -282,7 +284,7 @@ class AttendanceServiceTest {
 
     // ==================== 辅助 ====================
 
-    // 构造一个已绑定账号的成员档案
+    /** 构造一个已绑定账号的成员档案 */
     private static StudioMember member(Long userId, String name) {
         StudioMember member = new StudioMember();
         member.setUserId(userId);

@@ -7,11 +7,11 @@ import ErrorRetry from '@/components/ErrorRetry.vue';
 import ImageUploader from '@/components/ImageUploader.vue';
 import type { AdminMember, AdminProject, Member, PageResult } from '@/api/types';
 
-// 项目管理：正文（Markdown）与技术栈是知识库的数据源，改完记得同步
+/** 项目管理：正文（Markdown）与技术栈是知识库的数据源，改完记得同步 */
 const page = reactive({ current: 1, pageSize: 10 });
 const result = ref<PageResult<AdminProject> | null>(null);
 const loading = ref(false);
-// 列表加载失败的原因（空 = 正常）。失败时给原因 + 重试，而不是留一张空白表格
+/** 列表加载失败的原因（空 = 正常）。失败时给原因 + 重试，而不是留一张空白表格 */
 const error = ref('');
 
 const dialogVisible = ref(false);
@@ -31,25 +31,27 @@ const form = reactive<Record<string, unknown>>({
 
 const STATUS_TEXT: Record<string, string> = { 0: '研发中', 1: '已上线', 2: '已结题' };
 
-// ==================== 参与成员（关联维护） ====================
+// ==================== 参与成员（关联维护）====================
 
-// 已绑定的参与成员（含队长）
+/** 已绑定的参与成员（含队长） */
 const projectMembers = ref<AdminMember[]>([]);
-// 候选成员：来自后台成员分页；成员量级很小，一次取 100 条足够
+/** 候选成员：来自后台成员分页；成员量级很小，一次取 100 条足够 */
 const memberOptions = ref<Member[]>([]);
 const memberLoading = ref(false);
 const pickedMember = ref('');
 
-// 是否为当前队长
-//
-// 队长由 `project.leaderId` 决定，后端拒绝把队长从成员列表里移除。
-// 这里提前判断并禁用按钮，而不是让用户点了才知道——后端的约束是对的，
-// 但错误的时机应该是「点之前」而不是「报错之后」。
+/**
+ * 是否为当前队长
+ *
+ * 队长由 `project.leaderId` 决定，后端拒绝把队长从成员列表里移除。
+ * 这里提前判断并禁用按钮，而不是让用户点了才知道——后端的约束是对的，
+ * 但错误的时机应该是「点之前」而不是「报错之后」。
+ */
 function isLeader(memberId: string): boolean {
     return String(form.leaderId ?? '') === memberId;
 }
 
-// 只加载候选成员：新增项目时还没有项目 ID，但队长下拉同样需要候选列表
+/** 只加载候选成员：新增项目时还没有项目 ID，但队长下拉同样需要候选列表 */
 async function loadMemberOptions() {
     try {
         const options = await adminApi.memberPage({ current: 1, pageSize: 100 });

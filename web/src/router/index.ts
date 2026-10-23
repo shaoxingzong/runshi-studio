@@ -3,11 +3,13 @@ import { useUserStore } from '@/stores/user';
 import { deviceType, referrerHost, trafficApi, visitorId } from '@/api/traffic';
 import { usePageMeta } from '@/composables/usePageMeta';
 
-// 路由表
-//
-// 两个布局：门户（PortalLayout，匿名可访问）与后台（AdminLayout，需登录）。
-// 所有视图用懒加载：门户首屏只需要首页与布局的代码，
-// 后台管理那一大坨（表格/表单/Element 组件）只有管理员点进去才会下载。
+/**
+ * 路由表
+ *
+ * 两个布局：门户（PortalLayout，匿名可访问）与后台（AdminLayout，需登录）。
+ * 所有视图用懒加载：门户首屏只需要首页与布局的代码，
+ * 后台管理那一大坨（表格/表单/Element 组件）只有管理员点进去才会下载。
+ */
 const routes: RouteRecordRaw[] = [
     {
         path: '/',

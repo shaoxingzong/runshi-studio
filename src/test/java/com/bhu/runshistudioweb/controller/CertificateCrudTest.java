@@ -29,12 +29,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-// 证书模块验收测试
-//
-// 覆盖两条线：
-// - 越权：匿名访问后台接口 A0201、普通用户 A0301、C 端列表匿名可访问；
-// - 四个考点：级别与类型正交存储、获奖日期不得晚于今天、图片非空、
-// 默认排序 = 置顶权重倒序 + 获奖日期倒序。
+/**
+ * 证书模块验收测试
+ *
+ * 覆盖两条线：
+ * - 越权：匿名访问后台接口 A0201、普通用户 A0301、C 端列表匿名可访问；
+ * - 四个考点：级别与类型正交存储、获奖日期不得晚于今天、图片非空、
+ * 默认排序 = 置顶权重倒序 + 获奖日期倒序。
+ */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional

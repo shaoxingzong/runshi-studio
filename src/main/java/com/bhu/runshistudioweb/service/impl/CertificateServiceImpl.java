@@ -25,54 +25,60 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.util.List;
 
-// 荣誉证书服务实现
-//
-// 继承 ServiceImpl<StudioCertificateMapper, StudioCertificate> 后单表 CRUD 已由
-// MyBatis-Plus 提供，本类只写「业务动作」：校验、排序、VO 转换。
-//
-// 本模块四个考点在实现里的落点：
-// - 级别与类型正交：两个字段分别用 CertificateLevelEnum /
-// CertificateTypeEnum 校验，绝不接收「国家级竞赛」这种合并写法（ADR-5）；
-// - 获奖日期：非空 + 不得晚于今天（ isAfter(LocalDate.now()) 即拒绝）；
-// - 证书图片：非空校验（DDL 中 image_url 是 NOT NULL，不校验会直接抛 SQL 错误）；
-// - 默认排序： sort_order 倒序 + award_date 倒序，
-// 与 idx_type_date / idx_level_date 的 (维度列, award_date DESC) 索引结构同向。
-//
-// 事务说明： #deleteCertificate 是「清理关联表 + 逻辑删除主表」两次写，
-// 已加 @Transactional(rollbackFor = Exception.class)（DESIGN.md 2.2）；
-// 新增与更新是一次写，不加事务。写 rollbackFor = Exception.class 的原因：
-// Spring 默认只回滚 RuntimeException，显式声明才能覆盖受检异常。
+/**
+ * 荣誉证书服务实现
+ *
+ * 继承 ServiceImpl<StudioCertificateMapper, StudioCertificate> 后单表 CRUD 已由
+ * MyBatis-Plus 提供，本类只写「业务动作」：校验、排序、VO 转换。
+ *
+ * 本模块四个考点在实现里的落点：
+ * - 级别与类型正交：两个字段分别用 CertificateLevelEnum /
+ * CertificateTypeEnum 校验，绝不接收「国家级竞赛」这种合并写法（ADR-5）；
+ * - 获奖日期：非空 + 不得晚于今天（ isAfter(LocalDate.now()) 即拒绝）；
+ * - 证书图片：非空校验（DDL 中 image_url 是 NOT NULL，不校验会直接抛 SQL 错误）；
+ * - 默认排序：sort_order 倒序 + award_date 倒序，
+ * 与 idx_type_date / idx_level_date 的 (维度列, award_date DESC) 索引结构同向。
+ *
+ * 事务说明：deleteCertificate 是「清理关联表 + 逻辑删除主表」两次写，
+ * 已加 @Transactional(rollbackFor = Exception.class)（DESIGN.md 2.2）；
+ * 新增与更新是一次写，不加事务。写 rollbackFor = Exception.class 的原因：
+ * Spring 默认只回滚 RuntimeException，显式声明才能覆盖受检异常。
+ */
 @Service
 @RequiredArgsConstructor
 public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper, StudioCertificate>
         implements CertificateService {
 
-    // 分页每页条数的默认值与上限（上限防「一次拉全表」）
+    /** 分页每页条数的默认值与上限（上限防「一次拉全表」） */
     private static final long DEFAULT_PAGE_SIZE = 10L;
     private static final long MAX_PAGE_SIZE = 50L;
 
-    // C 端公开列表的最大返回行数：匿名接口必须设上限，游客流量不可控
+    /** C 端公开列表的最大返回行数：匿名接口必须设上限，游客流量不可控 */
     private static final long FRONT_LIST_MAX_SIZE = 200L;
 
-    // 置顶权重不传时的默认值（0 表示不置顶，与 DDL 默认值一致）
+    /** 置顶权重不传时的默认值（0 表示不置顶，与 DDL 默认值一致） */
     private static final int DEFAULT_SORT_ORDER = 0;
 
-    // 成员-证书关联服务：删除证书时要级联清理关联关系
-    //
-    // 依赖方向单向（本类 → 关联服务），不构成循环依赖：
-    // MemberCertificateServiceImpl 只注入 Mapper，不依赖本类。
+    /**
+     * 成员-证书关联服务：删除证书时要级联清理关联关系
+     *
+     * 依赖方向单向（本类 → 关联服务），不构成循环依赖：
+     * MemberCertificateServiceImpl 只注入 Mapper，不依赖本类。
+     */
     private final MemberCertificateService memberCertificateService;
 
     // ==================== 管理端 ====================
 
-    // 新增证书（契约见 CertificateService）
-    //
-    // 实现要点：四个必填项其实对应四种「不拦住就会出事」的情况——
-    // 其中 imageUrl 非空校验是为了把数据库报错提前成参数提示：
-    // DDL 里该列是 NOT NULL，不校验的话用户只会看到 B0001「系统错误」。
-    //
-    // sortOrder 不传时显式置 0 而不是留 null：显示赋值比依赖 DDL 默认值更直观，
-    // 将来 DDL 改默认值时行为也不会漂移。
+    /**
+     * 新增证书（契约见 CertificateService）
+     *
+     * 实现要点：四个必填项其实对应四种「不拦住就会出事」的情况——
+     * 其中 imageUrl 非空校验是为了把数据库报错提前成参数提示：
+     * DDL 里该列是 NOT NULL，不校验的话用户只会看到 B0001「系统错误」。
+     *
+     * sortOrder 不传时显式置 0 而不是留 null：显示赋值比依赖 DDL 默认值更直观，
+     * 将来 DDL 改默认值时行为也不会漂移。
+     */
     @Override
     public long addCertificate(CertificateAddRequest certificateAddRequest) {
         // 请求体整体为 null 时 @Valid 不会触发，这里兜一层避免后面 getXxx() 抛 NPE 变成 500
@@ -106,13 +112,15 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
         return certificate.getId();
     }
 
-    // 更新证书（部分更新：字段为 null 表示不修改）
-    //
-    // 两个刻意的处理：
-    // - 先查存在再更新： updateById 失败时只返回 false，
-    // 前端只能看到「更新失败」；先查一次才能给出 A0402「证书不存在」；
-    // - 传了才校验（包括"传空串要拦住"）：不传表示不改，
-    // 传了空串是想清空——NOT NULL 列不允许，必须在这里拦成 A0401。
+    /**
+     * 更新证书（部分更新：字段为 null 表示不修改）
+     *
+     * 两个刻意的处理：
+     * - 先查存在再更新：updateById 失败时只返回 false，
+     * 前端只能看到「更新失败」；先查一次才能给出 A0402「证书不存在」；
+     * - 传了才校验（包括"传空串要拦住"）：不传表示不改，
+     * 传了空串是想清空——NOT NULL 列不允许，必须在这里拦成 A0401。
+     */
     @Override
     public boolean updateCertificate(CertificateUpdateRequest certificateUpdateRequest) {
         ThrowUtils.throwIf(certificateUpdateRequest == null || certificateUpdateRequest.getId() == null,
@@ -156,18 +164,20 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
         return this.updateById(update);
     }
 
-    // 删除证书（逻辑删除 + 同一事务内清理成员-证书关联）
-    //
-    // 顺序是「先清关联、再删主表」，且两次写必须在同一事务内：
-    // 反过来（先删主表）一旦清理失败，就会留下指向已删除证书的悬空关联（DESIGN.md 2.2）；
-    // 而现在的顺序下，主表删除失败会让整个事务回滚，
-    // 不会出现「证书还在、关联却没了」的静默数据丢失。
-    //
-    // rollbackFor = Exception.class 必须写：Spring 默认只回滚
-    // RuntimeException，漏了它等于「事务声明了一半」。
-    //
-    // @param id 证书 ID
-    // @return true 表示删除成功
+    /**
+     * 删除证书（逻辑删除 + 同一事务内清理成员-证书关联）
+     *
+     * 顺序是「先清关联、再删主表」，且两次写必须在同一事务内：
+     * 反过来（先删主表）一旦清理失败，就会留下指向已删除证书的悬空关联（DESIGN.md 2.2）；
+     * 而现在的顺序下，主表删除失败会让整个事务回滚，
+     * 不会出现「证书还在、关联却没了」的静默数据丢失。
+     *
+     * rollbackFor = Exception.class 必须写：Spring 默认只回滚
+     * RuntimeException，漏了它等于「事务声明了一半」。
+     *
+     * @param id 证书 ID
+     * @return true 表示删除成功
+     */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean deleteCertificate(long id) {
@@ -183,10 +193,12 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
         return this.removeById(id);
     }
 
-    // 按 id 查证书（管理端视图）
-    //
-    // 查不到要抛 A0402 而不是返回 null：返回 null 会让前端收到
-    // 「code=0 但 data 为空」——它分不清这是"没有数据"还是"出错了"。
+    /**
+     * 按 id 查证书（管理端视图）
+     *
+     * 查不到要抛 A0402 而不是返回 null：返回 null 会让前端收到
+     * 「code=0 但 data 为空」——它分不清这是"没有数据"还是"出错了"。
+     */
     @Override
     public CertificateVO getCertificateById(long id) {
         ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "证书 id 不合法");
@@ -196,13 +208,15 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
         return this.getCertificateVO(certificate);
     }
 
-    // 管理端分页查询
-    //
-    // 分页参数在这里做兜底纠正而不是抛异常（页码 <1 视为 1、pageSize 收敛到 50）：
-    // 传错页码没必要让整个查询失败，收敛到合理区间继续查体验更好。
-    //
-    // 排序字段走白名单 switch：ORDER BY 位置无法用占位符参数化，
-    // 把前端字符串直接拼进去就是最典型的 SQL 注入入口，只能靠白名单。
+    /**
+     * 管理端分页查询
+     *
+     * 分页参数在这里做兜底纠正而不是抛异常（页码 <1 视为 1、pageSize 收敛到 50）：
+     * 传错页码没必要让整个查询失败，收敛到合理区间继续查体验更好。
+     *
+     * 排序字段走白名单 switch：ORDER BY 位置无法用占位符参数化，
+     * 把前端字符串直接拼进去就是最典型的 SQL 注入入口，只能靠白名单。
+     */
     @Override
     public Page<CertificateVO> listCertificateByPage(CertificateQueryRequest certificateQueryRequest) {
         CertificateQueryRequest query = certificateQueryRequest == null
@@ -223,12 +237,14 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
 
     // ==================== C 端 ====================
 
-    // C 端公开列表（游客可访问）
-    //
-    // 与管理端分页的三点不同，都是公开接口的必要约束：
-    // - 返回脱敏 VO（不含 sortOrder 与审计字段）；
-    // - 固定排序，忽略请求里的 sortField/sortOrder——排序由产品定义，不由请求方决定；
-    // - 强制上限：游客流量不可控，无上限的 list 等于把整表拉回内存。
+    /**
+     * C 端公开列表（游客可访问）
+     *
+     * 与管理端分页的三点不同，都是公开接口的必要约束：
+     * - 返回脱敏 VO（不含 sortOrder 与审计字段）；
+     * - 固定排序，忽略请求里的 sortField/sortOrder——排序由产品定义，不由请求方决定；
+     * - 强制上限：游客流量不可控，无上限的 list 等于把整表拉回内存。
+     */
     @Override
     public List<CertificateFrontVO> listFrontCertificates(CertificateQueryRequest certificateQueryRequest) {
         CertificateQueryRequest query = certificateQueryRequest == null
@@ -251,12 +267,14 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
 
     // ==================== VO 转换 ====================
 
-    // 实体转管理端 VO
-    //
-    // 用 BeanUtils.copyProperties 而不是手写一长串 setXxx：
-    // 漏一个字段就是线上 bug，而字段新增时还要记得回来补。
-    // 代价是类型不一致的属性会被静默跳过——所以两边字段名与类型必须严格对应
-    // （例如 awardDate 都用 LocalDate，用错类型会表现为"日期永远是 null"且不报错）。
+    /**
+     * 实体转管理端 VO
+     *
+     * 用 BeanUtils.copyProperties 而不是手写一长串 setXxx：
+     * 漏一个字段就是线上 bug，而字段新增时还要记得回来补。
+     * 代价是类型不一致的属性会被静默跳过——所以两边字段名与类型必须严格对应
+     * （例如 awardDate 都用 LocalDate，用错类型会表现为"日期永远是 null"且不报错）。
+     */
     @Override
     public CertificateVO getCertificateVO(StudioCertificate certificate) {
         if (certificate == null) {
@@ -268,11 +286,13 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
         return certificateVO;
     }
 
-    // 实体转 C 端 VO
-    //
-    // 脱敏靠「目标 VO 没有这些字段」实现：sortOrder 与审计字段在
-    // CertificateFrontVO 里根本不存在，copyProperties 也就拷不过去。
-    // 比"拷完再手动置空"可靠——以后实体新增敏感字段时，只要不加进 VO 就自动被挡住。
+    /**
+     * 实体转 C 端 VO
+     *
+     * 脱敏靠「目标 VO 没有这些字段」实现：sortOrder 与审计字段在
+     * CertificateFrontVO 里根本不存在，copyProperties 也就拷不过去。
+     * 比"拷完再手动置空"可靠——以后实体新增敏感字段时，只要不加进 VO 就自动被挡住。
+     */
     @Override
     public CertificateFrontVO getCertificateFrontVO(StudioCertificate certificate) {
         if (certificate == null) {
@@ -286,11 +306,13 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
 
     // ==================== 私有工具方法 ====================
 
-    // 解析并校验级别取值
-    //
-    // @param awardLevel 级别值
-    // @param required 是否必填（新增必填、更新非必填）
-    // @return 级别枚举；非必填且未传时返回 null
+    /**
+     * 解析并校验级别取值
+     *
+     * @param awardLevel 级别值
+     * @param required 是否必填（新增必填、更新非必填）
+     * @return 级别枚举；非必填且未传时返回 null
+     */
     private CertificateLevelEnum resolveLevel(String awardLevel, boolean required) {
         if (StrUtil.isBlank(awardLevel)) {
             ThrowUtils.throwIf(required, ErrorCode.PARAMS_ERROR, "证书级别不能为空");
@@ -303,11 +325,13 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
         return level;
     }
 
-    // 解析并校验类型取值
-    //
-    // @param awardType 类型值
-    // @param required 是否必填
-    // @return 类型枚举；非必填且未传时返回 null
+    /**
+     * 解析并校验类型取值
+     *
+     * @param awardType 类型值
+     * @param required 是否必填
+     * @return 类型枚举；非必填且未传时返回 null
+     */
     private CertificateTypeEnum resolveType(String awardType, boolean required) {
         if (StrUtil.isBlank(awardType)) {
             ThrowUtils.throwIf(required, ErrorCode.PARAMS_ERROR, "证书类型不能为空");
@@ -319,11 +343,13 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
         return type;
     }
 
-    // 校验获奖日期：非空（必填时）+ 不得晚于今天
-    //
-    // @param awardDate 获奖日期
-    // @param required 是否必填
-    // @return 日期；非必填且未传时返回 null
+    /**
+     * 校验获奖日期：非空（必填时）+ 不得晚于今天
+     *
+     * @param awardDate 获奖日期
+     * @param required 是否必填
+     * @return 日期；非必填且未传时返回 null
+     */
     private LocalDate resolveAwardDate(LocalDate awardDate, boolean required) {
         if (awardDate == null) {
             ThrowUtils.throwIf(required, ErrorCode.PARAMS_ERROR, "获奖日期不能为空");
@@ -334,13 +360,15 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
         return awardDate;
     }
 
-    // 构建筛选条件（管理端与 C 端共用，保证两边筛选语义一致）
-    //
-    // 用 LambdaQueryWrapper 而不是字符串版 QueryWrapper：
-    // 字段名写错在编译期就能发现，重构字段时也不会漏改 SQL 条件。
-    //
-    // @param query 查询条件
-    // @return 查询包装类
+    /**
+     * 构建筛选条件（管理端与 C 端共用，保证两边筛选语义一致）
+     *
+     * 用 LambdaQueryWrapper 而不是字符串版 QueryWrapper：
+     * 字段名写错在编译期就能发现，重构字段时也不会漏改 SQL 条件。
+     *
+     * @param query 查询条件
+     * @return 查询包装类
+     */
     private LambdaQueryWrapper<StudioCertificate> buildQueryWrapper(CertificateQueryRequest query) {
         LambdaQueryWrapper<StudioCertificate> wrapper = new LambdaQueryWrapper<>();
         // 条件重载的第一个参数为 false 时该条件不拼进 SQL，省去手写 if 判断
@@ -351,15 +379,17 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
         return wrapper;
     }
 
-    // 应用排序规则（白名单映射）
-    //
-    // 关键点：前端只能传「字段名」，由这里映射成实体字段引用。
-    // 如果把前端字符串直接拼进 ORDER BY，就是最典型的 SQL 注入入口——
-    // ORDER BY 位置无法用占位符参数化，只能靠白名单。
-    //
-    // @param wrapper 查询包装类
-    // @param sortField 排序字段名，可为空
-    // @param sortOrder 排序方向 asc / descend，可为空
+    /**
+     * 应用排序规则（白名单映射）
+     *
+     * 关键点：前端只能传「字段名」，由这里映射成实体字段引用。
+     * 如果把前端字符串直接拼进 ORDER BY，就是最典型的 SQL 注入入口——
+     * ORDER BY 位置无法用占位符参数化，只能靠白名单。
+     *
+     * @param wrapper 查询包装类
+     * @param sortField 排序字段名，可为空
+     * @param sortOrder 排序方向 asc / descend，可为空
+     */
     private void applySort(LambdaQueryWrapper<StudioCertificate> wrapper, String sortField, String sortOrder) {
         // 兼容前端常见的 "ascend / descend" 与后端常见的 "asc / desc" 两种写法
         boolean isAsc = "asc".equalsIgnoreCase(sortOrder) || "ascend".equalsIgnoreCase(sortOrder);
@@ -378,10 +408,12 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
         }
     }
 
-    // 实体分页转 VO 分页（保留 total/size/current，前端分页组件依赖这三个值）
-    //
-    // @param entityPage 实体分页
-    // @return VO 分页
+    /**
+     * 实体分页转 VO 分页（保留 total/size/current，前端分页组件依赖这三个值）
+     *
+     * @param entityPage 实体分页
+     * @return VO 分页
+     */
     private Page<CertificateVO> toCertificateVOPage(Page<StudioCertificate> entityPage) {
         Page<CertificateVO> voPage = new Page<>(entityPage.getCurrent(), entityPage.getSize(), entityPage.getTotal());
         voPage.setRecords(entityPage.getRecords().stream().map(this::getCertificateVO).toList());

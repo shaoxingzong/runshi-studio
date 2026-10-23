@@ -52,33 +52,35 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-// 刷题服务实现（C 端：出题、判分、跳过、概览）
-//
-// 准入以 studio_member 表为准（与考勤模块完全同源）：
-// 每个公开方法的第一步都是 assertIsActiveMember，
-// 非成员抛 A0301。连教材列表都不给——他没有刷题资格。
-//
-// 判分只在这里发生： #submitAnswer 是唯一知道
-// 「正确答案是什么」的地方，且它只在提交之后把答案回给调用方。
-// 出题接口（ #startBatch）走的是 QuizQuestionVO，
-// 那个类结构上就没有答案字段——这不是「记得删」，是「根本没有」。
-//
-// 三种模式的职责不重叠（见 QuizQuestionSampler 的类注释）：
-// 顺序负责「覆盖」、错题负责「消灭」、随机负责「抽查」。
-// 因此顺序模式排除的是「已作答」而不是「已掌握」——答错的题归错题重刷管，
-// 在两个入口都出现会让用户困惑「怎么又是这道」。
-//
-// 一个刻意的取舍：不校验 questionId 属于 batchId。
-// 服务端不持久化批次内容（题目不含答案，整批交给前端即可），
-// 因此无法校验。最坏影响是用户给自己刷出脏的作答记录，不涉及越权或他人数据。
-// 若将来要支持「历史成绩单」，才需要引入会话表。
+/**
+ * 刷题服务实现（C 端：出题、判分、跳过、概览）
+ *
+ * 准入以 studio_member 表为准（与考勤模块完全同源）：
+ * 每个公开方法的第一步都是 assertIsActiveMember，
+ * 非成员抛 A0301。连教材列表都不给——他没有刷题资格。
+ *
+ * 判分只在这里发生：submitAnswer 是唯一知道
+ * 「正确答案是什么」的地方，且它只在提交之后把答案回给调用方。
+ * 出题接口（ startBatch）走的是 QuizQuestionVO，
+ * 那个类结构上就没有答案字段——这不是「记得删」，是「根本没有」。
+ *
+ * 三种模式的职责不重叠（见 QuizQuestionSampler 的类注释）：
+ * 顺序负责「覆盖」、错题负责「消灭」、随机负责「抽查」。
+ * 因此顺序模式排除的是「已作答」而不是「已掌握」——答错的题归错题重刷管，
+ * 在两个入口都出现会让用户困惑「怎么又是这道」。
+ *
+ * 一个刻意的取舍：不校验 questionId 属于 batchId。
+ * 服务端不持久化批次内容（题目不含答案，整批交给前端即可），
+ * 因此无法校验。最坏影响是用户给自己刷出脏的作答记录，不涉及越权或他人数据。
+ * 若将来要支持「历史成绩单」，才需要引入会话表。
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class QuizPracticeServiceImpl extends ServiceImpl<StudioQuizAnswerMapper, StudioQuizAnswer>
         implements QuizPracticeService {
 
-    // 顺序模式：排除已作答（正确或错误）的题
+    /** 顺序模式：排除已作答（正确或错误）的题 */
     private static final Set<Integer> ANSWERED_RESULTS = Set.of(
             QuizAnswerResultEnum.CORRECT.getValue(), QuizAnswerResultEnum.WRONG.getValue());
 
@@ -161,9 +163,11 @@ public class QuizPracticeServiceImpl extends ServiceImpl<StudioQuizAnswerMapper,
         return batch;
     }
 
-    // 顺序模式：本章启用题里，排除「已作答」的，取前 size 个
-    //
-    // @param restart true 表示「重新刷本章」，忽略排除条件
+    /**
+     * 顺序模式：本章启用题里，排除「已作答」的，取前 size 个
+     *
+     * @param restart true 表示「重新刷本章」，忽略排除条件
+     */
     private List<Long> sampleSequential(long userId, String textbookName, String chapterName,
                                         int size, boolean restart) {
         // 顺序模式必须明确刷哪一章：不指定的话「从哪开始」没有答案
@@ -185,7 +189,7 @@ public class QuizPracticeServiceImpl extends ServiceImpl<StudioQuizAnswerMapper,
         return QuizQuestionSampler.takeOrdered(candidates, size);
     }
 
-    // 错题模式：待复习的错题，最久没复习的先来
+    /** 错题模式：待复习的错题，最久没复习的先来 */
     private List<Long> sampleWrong(long userId, String textbookName, String chapterName, int size) {
         List<Long> candidates = quizWrongService.listPendingQuestionIds(userId, textbookName, chapterName);
         if (candidates.isEmpty()) {
@@ -194,10 +198,12 @@ public class QuizPracticeServiceImpl extends ServiceImpl<StudioQuizAnswerMapper,
         return QuizQuestionSampler.takeOrdered(candidates, size);
     }
 
-    // 随机模式：范围内全部启用题 → 服务端洗牌 → 取前 size 个
-    //
-    // 不用 ORDER BY RAND()：那是对整表排序，题量上万时是明显的慢查询。
-    // 只查 ID 列（索引覆盖，几千个 long 在内存里可忽略），再洗牌。
+    /**
+     * 随机模式：范围内全部启用题 → 服务端洗牌 → 取前 size 个
+     *
+     * 不用 ORDER BY RAND()：那是对整表排序，题量上万时是明显的慢查询。
+     * 只查 ID 列（索引覆盖，几千个 long 在内存里可忽略），再洗牌。
+     */
     private List<Long> sampleRandom(String textbookName, String chapterName, int size) {
         List<Long> candidates = enabledQuestionIdsOf(textbookName, chapterName);
         ThrowUtils.throwIf(candidates.isEmpty(), ErrorCode.NOT_FOUND_ERROR,
@@ -356,7 +362,7 @@ public class QuizPracticeServiceImpl extends ServiceImpl<StudioQuizAnswerMapper,
 
     // ==================== 私有：组装 ====================
 
-    // 组装判定结果（含答案与解析——本模块唯一的下发出口）
+    /** 组装判定结果（含答案与解析——本模块唯一的下发出口） */
     private QuizVerdictVO buildVerdict(long userId, StudioQuizQuestion question, StudioQuizAnswer answer,
                                        String action, Integer remainingStreak) {
         QuizVerdictVO vo = new QuizVerdictVO();
@@ -377,10 +383,12 @@ public class QuizPracticeServiceImpl extends ServiceImpl<StudioQuizAnswerMapper,
         return vo;
     }
 
-    // 实体 → C 端题目 VO（丢弃答案与解析）
-    //
-    // 这是本模块的脱敏出口： QuizQuestionVO 结构上没有答案字段，
-    // 因此这里「不需要记得删」——想泄露也没有地方放。
+    /**
+     * 实体 → C 端题目 VO（丢弃答案与解析）
+     *
+     * 这是本模块的脱敏出口：QuizQuestionVO 结构上没有答案字段，
+     * 因此这里「不需要记得删」——想泄露也没有地方放。
+     */
     private QuizQuestionVO toQuestionVO(StudioQuizQuestion question) {
         QuizQuestionVO vo = new QuizQuestionVO();
         vo.setId(question.getId());
@@ -391,7 +399,7 @@ public class QuizPracticeServiceImpl extends ServiceImpl<StudioQuizAnswerMapper,
         return vo;
     }
 
-    // 取该用户待复习错题的题目 ID（用于给题目打「在错题本里」的标记）
+    /** 取该用户待复习错题的题目 ID（用于给题目打「在错题本里」的标记） */
     private Set<Long> pendingWrongQuestionIds(long userId) {
         List<StudioQuizWrong> entries = studioQuizWrongMapper.selectList(
                 new LambdaQueryWrapper<StudioQuizWrong>()
@@ -405,7 +413,7 @@ public class QuizPracticeServiceImpl extends ServiceImpl<StudioQuizAnswerMapper,
         return ids;
     }
 
-    // 范围内（教材/章节，均可空）的启用题 ID，按题序升序
+    /** 范围内（教材/章节，均可空）的启用题 ID，按题序升序 */
     private List<Long> enabledQuestionIdsOf(String textbookName, String chapterName) {
         LambdaQueryWrapper<StudioQuizQuestion> wrapper = new LambdaQueryWrapper<>();
         wrapper.select(StudioQuizQuestion::getId)
@@ -420,9 +428,11 @@ public class QuizPracticeServiceImpl extends ServiceImpl<StudioQuizAnswerMapper,
                 .collect(Collectors.toList());
     }
 
-    // 该用户「已作答（正确或错误）」的题目 ID
-    //
-    // 不含跳过：跳过不是「作答过」——顺序模式下跳过过的题下次还应该出现。
+    /**
+     * 该用户「已作答（正确或错误）」的题目 ID
+     *
+     * 不含跳过：跳过不是「作答过」——顺序模式下跳过过的题下次还应该出现。
+     */
     private Set<Long> answeredQuestionIds(long userId) {
         LambdaQueryWrapper<StudioQuizAnswer> wrapper = new LambdaQueryWrapper<>();
         wrapper.select(StudioQuizAnswer::getQuestionId)
@@ -434,9 +444,11 @@ public class QuizPracticeServiceImpl extends ServiceImpl<StudioQuizAnswerMapper,
                 .collect(Collectors.toSet());
     }
 
-    // 按 (user, batch, question) 查已有作答记录
-    //
-    // @return 记录；不存在时返回 null
+    /**
+     * 按 (user, batch, question) 查已有作答记录
+     *
+     * @return 记录；不存在时返回 null
+     */
     private StudioQuizAnswer findAnswer(long userId, long batchId, long questionId) {
         List<StudioQuizAnswer> list = this.list(new LambdaQueryWrapper<StudioQuizAnswer>()
                 .eq(StudioQuizAnswer::getUserId, userId)
@@ -450,13 +462,15 @@ public class QuizPracticeServiceImpl extends ServiceImpl<StudioQuizAnswerMapper,
         return requireActiveMember();
     }
 
-    // 校验当前登录用户是在队成员，返回其账号 ID
-    //
-    // 与考勤模块同一套判定：认 studio_member 表，不认 user_role。
-    // 角色可能与档案不同步（有人被移出名录但角色没改），按角色放行会绕开真正的准入规则。
-    //
-    // @return 当前登录账号 ID
-    // @throws BusinessException 未登录（A0201）或非在队成员（A0301）时抛出
+    /**
+     * 校验当前登录用户是在队成员，返回其账号 ID
+     *
+     * 与考勤模块同一套判定：认 studio_member 表，不认 user_role。
+     * 角色可能与档案不同步（有人被移出名录但角色没改），按角色放行会绕开真正的准入规则。
+     *
+     * @return 当前登录账号 ID
+     * @throws BusinessException 未登录（A0201）或非在队成员（A0301）时抛出
+     */
     private long requireActiveMember() {
         ThrowUtils.throwIf(!StpUtil.isLogin(), ErrorCode.NOT_LOGIN_ERROR, "未登录");
         long userId = StpUtil.getLoginIdAsLong();
@@ -465,7 +479,7 @@ public class QuizPracticeServiceImpl extends ServiceImpl<StudioQuizAnswerMapper,
         return userId;
     }
 
-    // 「没有题」时的提示文案：按模式区分，让用户知道下一步该做什么
+    /** 「没有题」时的提示文案：按模式区分，让用户知道下一步该做什么 */
     private String emptyMessage(QuizModeEnum mode, String textbookName, String chapterName) {
         return switch (mode) {
             case SEQUENTIAL -> chapterName == null
@@ -475,7 +489,7 @@ public class QuizPracticeServiceImpl extends ServiceImpl<StudioQuizAnswerMapper,
         };
     }
 
-    // 聚合结果的数值转 int（走 Number：不同驱动下 COUNT 可能是 BigInteger）
+    /** 聚合结果的数值转 int（走 Number：不同驱动下 COUNT 可能是 BigInteger） */
     private static int asInt(Object value) {
         return value instanceof Number number ? number.intValue() : 0;
     }

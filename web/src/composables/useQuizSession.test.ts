@@ -28,7 +28,7 @@ const mockedStart = vi.mocked(quizApi.startBatch);
 const mockedAnswer = vi.mocked(quizApi.answer);
 const mockedSkip = vi.mocked(quizApi.skip);
 
-// 造一批两题（一单选一多选）
+/** 造一批两题（一单选一多选） */
 function batch(): QuizBatch {
     return {
         batchId: '1001',
@@ -58,7 +58,7 @@ function batch(): QuizBatch {
     };
 }
 
-// 造一个判定结果
+/** 造一个判定结果 */
 function verdict(overrides: Partial<QuizVerdict> = {}): QuizVerdict {
     return {
         questionId: 'q1',
@@ -239,7 +239,7 @@ describe('useQuizSession', () => {
         await first.start({ mode: 0 });
         first.next();
 
-        // 新实例模拟「刷新页面」
+        /** 新实例模拟「刷新页面」 */
         const second = useQuizSession();
         const ok = second.restore();
 

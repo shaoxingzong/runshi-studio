@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
 
-// 后台布局：侧边导航 + 顶栏（需要登录，见路由守卫）
+/** 后台布局：侧边导航 + 顶栏（需要登录，见路由守卫） */
 const router = useRouter();
 const user = useUserStore();
 
@@ -23,16 +23,18 @@ const menus = [
     { path: '/admin/traffic', label: '流量分析' },
 ];
 
-// 窄屏标志（< 768px）
-//
-// 为什么用 JS 而不是纯 CSS：el-aside 的宽度是 props（渲染成内联 style），
-// CSS 类选择器改不动内联样式，只能靠 :width 绑定。
-//
-// 为什么是「收窄」而不是「抽屉」：抽屉要把侧栏改成 fixed + 遮罩 + 汉堡按钮，
-// 而后台是工具页面、使用者是管理员（用电脑的概率远高于手机），
-// 为边缘场景引入一整套交互组件的代价不成比例。收窄到 132px 后
-// 菜单文字仍完整可读，内容区拿到更多宽度，表格横向滚动即可读——
-// 这是「保底可用」与「复杂度」之间的取舍。真要做抽屉时再加。
+/**
+ * 窄屏标志（< 768px）
+ *
+ * 为什么用 JS 而不是纯 CSS：el-aside 的宽度是 props（渲染成内联 style），
+ * CSS 类选择器改不动内联样式，只能靠 :width 绑定。
+ *
+ * 为什么是「收窄」而不是「抽屉」：抽屉要把侧栏改成 fixed + 遮罩 + 汉堡按钮，
+ * 而后台是工具页面、使用者是管理员（用电脑的概率远高于手机），
+ * 为边缘场景引入一整套交互组件的代价不成比例。收窄到 132px 后
+ * 菜单文字仍完整可读，内容区拿到更多宽度，表格横向滚动即可读——
+ * 这是「保底可用」与「复杂度」之间的取舍。真要做抽屉时再加。
+ */
 const narrow = ref(false);
 
 function syncNarrow() {

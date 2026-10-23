@@ -42,28 +42,30 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-// AI 咨询模块验收测试
-//
-// AI 调用用本地 HTTP Stub（JDK 自带 HttpServer，随机端口）代替真实服务商：
-// - 通过 @DynamicPropertySource 把 studio.ai.* 覆盖为 Stub 地址，
-// AiManager 在 @PostConstruct 构建 RestClient 时就会拿到它——这就是
-// 「base-url 必须来自配置」的验收理由；
-// - Stub 固定返回 OpenAI 兼容响应 {"choices":[{"message":{"content":"stub-回答"}}]}，
-// 并记录最近一次请求体，供「system 角色在首、上下文只取最近 N 条」断言取证；
-// - 请求正文包含 TRIGGER_FAIL 时 Stub 返回 500，用于验证失败分支
-// （C0200 + 保留用户消息 + 配额不加）。
-//
-// 覆盖十条线：
-// - 未登录一律 A0201（游客不可用）+ 精确白名单（既有公开接口回归、管理端接口仍 A0201）；
-// - 首轮自动建会话 + 落 user/assistant 两条消息（SQL 取证）；
-// - 续聊追加同会话、history 时间正序、上限 50；
-// - 普通用户配额逐次原子 +1（SQL 对齐）、超限 A0501；成员不限额；
-// - 参数非法 A0401、会话不存在 A0402；
-// - 会话归属：他人会话 A0402、匿名访问一律 A0201；
-// - AI 失败 → C0200 且无 assistant 消息、配额不加（SQL 取证）；
-// - 返回体 Long 全字符串；
-// - 上下文窗口：Stub 收到的 messages = system + 最近 10 条 + 本次提问；
-// - 全量基线用例保持全绿。
+/**
+ * AI 咨询模块验收测试
+ *
+ * AI 调用用本地 HTTP Stub（JDK 自带 HttpServer，随机端口）代替真实服务商：
+ * - 通过 @DynamicPropertySource 把 studio.ai.* 覆盖为 Stub 地址，
+ * AiManager 在 @PostConstruct 构建 RestClient 时就会拿到它——这就是
+ * 「base-url 必须来自配置」的验收理由；
+ * - Stub 固定返回 OpenAI 兼容响应 {"choices":[{"message":{"content":"stub-回答"}}]}，
+ * 并记录最近一次请求体，供「system 角色在首、上下文只取最近 N 条」断言取证；
+ * - 请求正文包含 TRIGGER_FAIL 时 Stub 返回 500，用于验证失败分支
+ * （C0200 + 保留用户消息 + 配额不加）。
+ *
+ * 覆盖十条线：
+ * - 未登录一律 A0201（游客不可用）+ 精确白名单（既有公开接口回归、管理端接口仍 A0201）；
+ * - 首轮自动建会话 + 落 user/assistant 两条消息（SQL 取证）；
+ * - 续聊追加同会话、history 时间正序、上限 50；
+ * - 普通用户配额逐次原子 +1（SQL 对齐）、超限 A0501；成员不限额；
+ * - 参数非法 A0401、会话不存在 A0402；
+ * - 会话归属：他人会话 A0402、匿名访问一律 A0201；
+ * - AI 失败 → C0200 且无 assistant 消息、配额不加（SQL 取证）；
+ * - 返回体 Long 全字符串；
+ * - 上下文窗口：Stub 收到的 messages = system + 最近 10 条 + 本次提问；
+ * - 全量基线用例保持全绿。
+ */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -87,14 +89,16 @@ class AiChatCrudTest {
     @Resource
     private JsonMapper jsonMapper;
 
-    // 起配额计数走 Redis，测试里读「用量」必须取合并值（DB 基准 + Redis 增量）
+    /** 起配额计数走 Redis，测试里读「用量」必须取合并值（DB 基准 + Redis 增量） */
     @Resource
     private AiQueryCountManager aiQueryCountManager;
 
-    // AI 熔断器
-    //
-    // 本类有「故意让 AI 失败」的用例，连续失败会打开熔断；而熔断器是进程内单例，
-    // 不重置的话同一 JVM 里后跑的 AI 测试会被快速失败成一批 C0200（2026-10-13 实测踩坑）。
+    /**
+     * AI 熔断器
+     *
+     * 本类有「故意让 AI 失败」的用例，连续失败会打开熔断；而熔断器是进程内单例，
+     * 不重置的话同一 JVM 里后跑的 AI 测试会被快速失败成一批 C0200（2026-10-13 实测踩坑）。
+     */
     @Resource
     private AiCircuitBreaker circuitBreaker;
 
@@ -106,10 +110,10 @@ class AiChatCrudTest {
 
     // ==================== 本地 AI Stub ====================
 
-    // Stub 服务：只认识 /chat/completions，其余路径一律 404
+    /** Stub 服务：只认识 /chat/completions，其余路径一律 404 */
     private static HttpServer stub;
 
-    // 最近一次收到的请求体（供上下文窗口断言）
+    /** 最近一次收到的请求体（供上下文窗口断言） */
     private static volatile String lastRequestBody;
 
     @BeforeAll
@@ -182,7 +186,7 @@ class AiChatCrudTest {
         return body.substring(start, body.indexOf('"', start));
     }
 
-    // 从 chat 响应里取 sessionId（JSON 里是字符串）
+    /** 从 chat 响应里取 sessionId（JSON 里是字符串） */
     private String sessionIdOf(String body) {
         int start = body.indexOf("\"sessionId\":\"") + 13;
         assertTrue(start > 13, "响应缺少 sessionId：" + body);
@@ -194,7 +198,7 @@ class AiChatCrudTest {
         return body.substring(start, body.indexOf('"', start));
     }
 
-    // 注册一个普通用户并登录，返回 token
+    /** 注册一个普通用户并登录，返回 token */
     private String loginUser() throws Exception {
         String account = "ai_u_" + (System.nanoTime() % 100000);
         SysUser user = new SysUser();
@@ -213,14 +217,16 @@ class AiChatCrudTest {
         return body.substring(start, body.indexOf('"', start));
     }
 
-    // 最近一次登录的用户 id（用于配额 SQL 断言）
+    /** 最近一次登录的用户 id（用于配额 SQL 断言） */
     private Long lastUserId;
 
-    // 注册一个成员用户并登录
-    //
-    // 成员不受提问次数限制，用它可以连续提问而不撞配额上限——
-    // 需要「多次提问」的用例（续聊、上下文窗口等）都用它，
-    // 顺带也覆盖了「成员不限额」这条规则。
+    /**
+     * 注册一个成员用户并登录
+     *
+     * 成员不受提问次数限制，用它可以连续提问而不撞配额上限——
+     * 需要「多次提问」的用例（续聊、上下文窗口等）都用它，
+     * 顺带也覆盖了「成员不限额」这条规则。
+     */
     private String loginMember() throws Exception {
         String account = "ai_m_" + (System.nanoTime() % 100000);
         SysUser user = new SysUser();
@@ -239,7 +245,7 @@ class AiChatCrudTest {
         return body.substring(start, body.indexOf('"', start));
     }
 
-    // 游客提问（匿名），返回响应体
+    /** 游客提问（匿名），返回响应体 */
     private String chatAnon(String sessionId, String messageText) throws Exception {
         String payload = sessionId == null
                 ? "{\"message\":\"" + messageText + "\"}"
@@ -247,7 +253,7 @@ class AiChatCrudTest {
         return postJson("/ai/chat", payload, null);
     }
 
-    // 登录用户提问，返回响应体
+    /** 登录用户提问，返回响应体 */
     private String chatLogged(String sessionId, String messageText, String token) throws Exception {
         String payload = sessionId == null
                 ? "{\"message\":\"" + messageText + "\"}"

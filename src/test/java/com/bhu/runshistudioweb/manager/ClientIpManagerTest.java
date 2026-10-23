@@ -11,15 +11,19 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-// 客户端 IP 解析与内外网判定验收测试（纯单测：不启 Spring、不连数据库）
-//
-// 本类最重要的用例是「伪造内网签到」那几条：考勤的区分能力完全取决于
-// 「请求头不可信时是否被忽略」。这些用例是安全边界，不是普通的功能校验——
-// 它们要是挂了，说明任何人都能在家里签到成「在工作室」。
+/**
+ * 客户端 IP 解析与内外网判定验收测试（纯单测：不启 Spring、不连数据库）
+ *
+ * 本类最重要的用例是「伪造内网签到」那几条：考勤的区分能力完全取决于
+ * 「请求头不可信时是否被忽略」。这些用例是安全边界，不是普通的功能校验——
+ * 它们要是挂了，说明任何人都能在家里签到成「在工作室」。
+ */
 class ClientIpManagerTest {
 
-    // 直接 new 一个 Manager：因它改用构造器注入且不依赖 HTTP，
-    // 测一个网段判定不需要 Mock 请求上下文，也就不需要启 Spring
+    /**
+     * 直接 new 一个 Manager：因它改用构造器注入且不依赖 HTTP，
+     * 测一个网段判定不需要 Mock 请求上下文，也就不需要启 Spring
+     */
     private static ClientIpManager manager(List<String> lanCidrs, List<String> trustedProxies) {
         AttendanceProperties props = new AttendanceProperties();
         props.setLanCidrs(lanCidrs);
@@ -27,7 +31,7 @@ class ClientIpManagerTest {
         return new ClientIpManager(props);
     }
 
-    // ==================== 信任链（安全边界） ====================
+    // ==================== 信任链（安全边界）====================
 
     @Test
     @DisplayName("对端不可信：一律忽略 X-Real-IP 与 XFF，直接用 TCP 对端（防伪造内网签到）")

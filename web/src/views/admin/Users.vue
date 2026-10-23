@@ -6,13 +6,15 @@ import ErrorRetry from '@/components/ErrorRetry.vue';
 import ImageUploader from '@/components/ImageUploader.vue';
 import type { AdminUser, PageResult } from '@/api/types';
 
-// 用户管理：「给注册用户授予成员身份」的地方
-//
-// 背景（与注册页配套）：注册只能产生普通用户（`user`）。
-// 管理员在这里把某个账号的角色改成 `member`（成员）或 `admin`，也可以封禁（`userStatus=1`）。
-//
-// 角色取值必须是后端 `UserRoleEnum` 的原始值（user / member / admin），
-// 中文只用于显示——写错了 `@SaCheckRole` 会判不出来，而界面看起来一切正常。
+/**
+ * 用户管理：「给注册用户授予成员身份」的地方
+ *
+ * 背景（与注册页配套）：注册只能产生普通用户（`user`）。
+ * 管理员在这里把某个账号的角色改成 `member`（成员）或 `admin`，也可以封禁（`userStatus=1`）。
+ *
+ * 角色取值必须是后端 `UserRoleEnum` 的原始值（user / member / admin），
+ * 中文只用于显示——写错了 `@SaCheckRole` 会判不出来，而界面看起来一切正常。
+ */
 const ROLES = [
     { value: 'user', label: '普通用户' },
     { value: 'member', label: '成员' },
@@ -22,7 +24,7 @@ const ROLES = [
 const query = reactive({ current: 1, pageSize: 10, userAccount: '', userRole: '' });
 const result = ref<PageResult<AdminUser> | null>(null);
 const loading = ref(false);
-// 列表加载失败的原因（空 = 正常）。失败时不能只靠请求层那一次弹窗——弹窗会消失，表格却一直空白
+/** 列表加载失败的原因（空 = 正常）。失败时不能只靠请求层那一次弹窗——弹窗会消失，表格却一直空白 */
 const error = ref('');
 
 const records = computed(() => result.value?.records ?? []);
@@ -45,7 +47,7 @@ async function load() {
     }
 }
 
-// 查询：从第一页重新开始，否则「在第 5 页筛选出 0 条」会让人以为没有数据
+/** 查询：从第一页重新开始，否则「在第 5 页筛选出 0 条」会让人以为没有数据 */
 function reload() {
     query.current = 1;
     void load();
@@ -89,11 +91,12 @@ async function toggleStatus(row: AdminUser) {
     }
 }
 
-// ===== 转为成员：创建成员档案 + 绑定账号 + 改角色，一步到位 =====
-//
-// 背景：注册只能产生普通用户（user），而「成员档案」在 studio_member 里，
-// 两者通过 studio_member.user_id 可选绑定。以前要让人成为成员，得先在成员管理
-// 建档案、再回来改角色，两步且容易漏掉绑定。这里合成一步。
+// =
+/**
+ * 背景：注册只能产生普通用户（user），而「成员档案」在 studio_member 里，
+ * 两者通过 studio_member.user_id 可选绑定。以前要让人成为成员，得先在成员管理
+ * 建档案、再回来改角色，两步且容易漏掉绑定。这里合成一步。
+ */
 const promoteVisible = ref(false);
 const promoteTarget = ref<AdminUser | null>(null);
 const promoteForm = reactive({
@@ -117,11 +120,13 @@ function openPromote(row: AdminUser) {
     promoteVisible.value = true;
 }
 
-// 提交的顺序是刻意的：先建档案（绑定账号），成功后再改角色。
-// 反过来会留下「角色已是成员、却没有成员档案」的不一致状态——
-// 那正是最难排查的一类脏数据（界面看不出异常，只是成员管理里查不到人）。
-//
-// 后端两个接口都是现成的，不需要新增任何接口。
+/**
+ * 提交的顺序是刻意的：先建档案（绑定账号），成功后再改角色。
+ * 反过来会留下「角色已是成员、却没有成员档案」的不一致状态——
+ * 那正是最难排查的一类脏数据（界面看不出异常，只是成员管理里查不到人）。
+ *
+ * 后端两个接口都是现成的，不需要新增任何接口。
+ */
 async function submitPromote() {
     const target = promoteTarget.value;
     if (!target) {
@@ -190,13 +195,15 @@ const createForm = reactive({
     userRole: 'member',
 });
 
-// 初始密码结果框（创建成功后弹出）
-//
-// 为什么必须弹这个框：管理员没填密码时，后端生成的是随机口令，
-// 只随创建响应返回这一次——后端不存明文、也没有二次查询的接口。
-// 不展示就等于管理员本人也不知道密码，账号等于白建。
+/**
+ * 初始密码结果框（创建成功后弹出）
+ *
+ * 为什么必须弹这个框：管理员没填密码时，后端生成的是随机口令，
+ * 只随创建响应返回这一次——后端不存明文、也没有二次查询的接口。
+ * 不展示就等于管理员本人也不知道密码，账号等于白建。
+ */
 const passwordResultVisible = ref(false);
-// 待展示给管理员的初始密码明文（展示后即弃，不落任何持久化存储）
+/** 待展示给管理员的初始密码明文（展示后即弃，不落任何持久化存储） */
 const initialPassword = ref('');
 
 function openCreate() {
@@ -209,10 +216,12 @@ function openCreate() {
     createVisible.value = true;
 }
 
-// 新增账号
-//
-// 密码留空时不下发 userPassword 字段：后端会生成随机初始密码，
-// 而下发空串会撞上 DTO 的 @Size(min=8)。这与「字段为 null 即不改」的部分更新语义一致。
+/**
+ * 新增账号
+ *
+ * 密码留空时不下发 userPassword 字段：后端会生成随机初始密码，
+ * 而下发空串会撞上 DTO 的 @Size(min=8)。这与「字段为 null 即不改」的部分更新语义一致。
+ */
 async function submitCreate() {
     if (createForm.userAccount.length < 4 || createForm.userAccount.length > 16) {
         ElMessage.warning('账号长度需为 4-16 位');
@@ -240,7 +249,7 @@ async function submitCreate() {
     }
 }
 
-// 复制初始密码到剪贴板：navigator.clipboard 在非安全上下文（http）下不可用，给个兜底提示
+/** 复制初始密码到剪贴板：navigator.clipboard 在非安全上下文（http）下不可用，给个兜底提示 */
 async function copyInitialPassword() {
     try {
         await navigator.clipboard.writeText(initialPassword.value);
@@ -251,7 +260,7 @@ async function copyInitialPassword() {
     }
 }
 
-// 删除账号（逻辑删除）：账号名会被释放、可被重新注册，所以确认文案里要说清后果
+/** 删除账号（逻辑删除）：账号名会被释放、可被重新注册，所以确认文案里要说清后果 */
 async function removeUser(row: AdminUser) {
     try {
         await ElMessageBox.confirm(
@@ -272,11 +281,12 @@ async function removeUser(row: AdminUser) {
     }
 }
 
-// ===== 编辑用户资料（昵称 + 头像）=====
-//
-// 后端 /user/update 是「部分更新」：传 null 的字段不改，空串会写入。
-// 所以本弹窗预填现有值、提交什么就改什么——只想改头像时昵称原样提交等于没改；
-// 两项都清空也允许（昵称为空时，列表与门户的作者名会兜底显示账号名）。
+// =
+/**
+ * 后端 /user/update 是「部分更新」：传 null 的字段不改，空串会写入。
+ * 所以本弹窗预填现有值、提交什么就改什么——只想改头像时昵称原样提交等于没改；
+ * 两项都清空也允许（昵称为空时，列表与门户的作者名会兜底显示账号名）。
+ */
 const editVisible = ref(false);
 const editTarget = ref<AdminUser | null>(null);
 const editForm = reactive({

@@ -5,7 +5,7 @@ import { usePageMeta } from './usePageMeta';
 // usePageMeta 单测（jsdom 下 document.title / meta 均可读写）
 //
 // 锁两条最容易回归的规则：
-// - 拼接格式： 标题 - 站点名；首页（空标题）退回纯站点名，
+// - 拼接格式：标题 - 站点名；首页（空标题）退回纯站点名，
 // 不带冗余的「首页 - 」前缀；
 // - 响应式跟进：详情页传 computed，数据异步回来后标题自动换真名——
 // 这是详情页 SEO 的命门（静态标题「项目详情」对收录毫无价值）。
@@ -30,7 +30,7 @@ describe('usePageMeta', () => {
     });
 
     it('响应式标题：数据异步回来后自动更新（详情页场景）', async () => {
-        // 模拟详情页：先有占位标题，接口数据回来后有真名
+        /** 模拟详情页：先有占位标题，接口数据回来后有真名 */
         const projectName = ref('');
         usePageMeta({ title: projectName });
 

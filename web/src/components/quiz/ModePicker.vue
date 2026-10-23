@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import type { QuizMode } from '@/api/types';
 
-// 三种模式的选择卡（对照设计稿的三张卡）
-//
-// 为什么错题重刷在「待复习为 0」时要置灰：后端对空错题本会返回 A0402，
-// 但如果按钮可点，用户会先点一下、看到一条报错，才知道「没有错题」。
-// 错误的时机应该在点之前，而不是报错之后。
+/**
+ * 三种模式的选择卡（对照设计稿的三张卡）
+ *
+ * 为什么错题重刷在「待复习为 0」时要置灰：后端对空错题本会返回 A0402，
+ * 但如果按钮可点，用户会先点一下、看到一条报错，才知道「没有错题」。
+ * 错误的时机应该在点之前，而不是报错之后。
+ */
 const props = defineProps<{
     modelValue: QuizMode;
     // 待复习错题数（错题卡右上角显示，为 0 时整卡置灰）
@@ -28,7 +30,7 @@ const MODES: ModeOption[] = [
     { value: 2, title: '随机刷题', desc: '随机抽题', needsWrongBook: false },
 ];
 
-// 某张卡是否禁用
+/** 某张卡是否禁用 */
 function disabled(option: ModeOption): boolean {
     return option.needsWrongBook && props.wrongPending <= 0;
 }

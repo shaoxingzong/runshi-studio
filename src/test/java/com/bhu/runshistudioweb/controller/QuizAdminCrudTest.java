@@ -20,26 +20,28 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-// 题库管理（管理端）验收测试
-//
-// 类名以 Quiz 开头：不能以 Admin 开头——
-// 那会排在 Ai* 测试类之前，而 Boot 4.1 在类切换时会 stop 紧邻的上下文，
-// 导致后续登录类测试复用被停掉的上下文（ LettuceConnectionFactory has been STOPPED）。
-// 详见 PostManageTest 的类注释。
-//
-// 覆盖的规则（与产品口径一一对应）：
-// - 鉴权：匿名 A0201、普通用户 A0301、admin 放行；
-// - 写入校验：单选恰好 1 个正确项、多选至少 2 个、标签从 A 连续、
-// 正确项必须属于选项、选项数在范围内——新增 / 修改 / 导入共用同一套；
-// - 部分更新：只传 analysis 时不因缺选项而报错；解析可以被清空；
-// - 判定相关变更：改答案 / 改题型 / 增删选项 → 重置错题连对进度，
-// 但不动 status（已消解的不退回待复习）；只改选项文字则不动；
-// - 停用 vs 删除：停用可逆（错题条目保留）、删除清理条目、作答记录都保留；
-// - 导入：整批全成功或全失败、dryRun 不落库、错误带行号；
-// - 章节/教材：批量改名（含合并）、移章、整章删除。
-//
-// 为什么用 @Transactional：所有写操作都在事务内，测试回滚即可撤销。
-// 用例里对错题条目的直接构造也会一并回滚，不污染开发库。
+/**
+ * 题库管理（管理端）验收测试
+ *
+ * 类名以 Quiz 开头：不能以 Admin 开头——
+ * 那会排在 Ai* 测试类之前，而 Boot 4.1 在类切换时会 stop 紧邻的上下文，
+ * 导致后续登录类测试复用被停掉的上下文（ LettuceConnectionFactory has been STOPPED）。
+ * 详见 PostManageTest 的类注释。
+ *
+ * 覆盖的规则（与产品口径一一对应）：
+ * - 鉴权：匿名 A0201、普通用户 A0301、admin 放行；
+ * - 写入校验：单选恰好 1 个正确项、多选至少 2 个、标签从 A 连续、
+ * 正确项必须属于选项、选项数在范围内——新增 / 修改 / 导入共用同一套；
+ * - 部分更新：只传 analysis 时不因缺选项而报错；解析可以被清空；
+ * - 判定相关变更：改答案 / 改题型 / 增删选项 → 重置错题连对进度，
+ * 但不动 status（已消解的不退回待复习）；只改选项文字则不动；
+ * - 停用 vs 删除：停用可逆（错题条目保留）、删除清理条目、作答记录都保留；
+ * - 导入：整批全成功或全失败、dryRun 不落库、错误带行号；
+ * - 章节/教材：批量改名（含合并）、移章、整章删除。
+ *
+ * 为什么用 @Transactional：所有写操作都在事务内，测试回滚即可撤销。
+ * 用例里对错题条目的直接构造也会一并回滚，不污染开发库。
+ */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -65,10 +67,10 @@ class QuizAdminCrudTest {
 
     private QuizTestSupport support;
 
-    // 测试用的教材名（每个用例独立，避免互相干扰）
+    /** 测试用的教材名（每个用例独立，避免互相干扰） */
     private String textbook;
 
-    // 测试用的章节名
+    /** 测试用的章节名 */
     private String chapter;
 
     @BeforeEach
@@ -538,7 +540,7 @@ class QuizAdminCrudTest {
 
     // ==================== 工具方法 ====================
 
-    // 单选题 JSON：三个选项 A/B/C，答案由参数指定
+    /** 单选题 JSON：三个选项 A/B/C，答案由参数指定 */
     private String singleJson(String correct) {
         return """
                 {"textbookName":"%s","chapterName":"%s","type":0,
@@ -549,7 +551,7 @@ class QuizAdminCrudTest {
                 """.formatted(textbook, chapter, System.nanoTime(), correct);
     }
 
-    // 多选题 JSON：四个选项，答案由参数指定
+    /** 多选题 JSON：四个选项，答案由参数指定 */
     private String multipleJson(String correct) {
         return """
                 {"textbookName":"%s","chapterName":"%s","type":1,
@@ -560,14 +562,14 @@ class QuizAdminCrudTest {
                 """.formatted(textbook, chapter, System.nanoTime(), correct);
     }
 
-    // 新增一道题并返回其 ID 字符串
+    /** 新增一道题并返回其 ID 字符串 */
     private String createQuestion(String token, String json) {
         String body = support.postJson("/admin/quiz/question/add", json, token);
         assertEquals("00000", support.code(body), "建题应成功：" + body);
         return support.data(body).asText();
     }
 
-    // 直接插入一条错题记录（不走答题接口，便于精确控制状态）
+    /** 直接插入一条错题记录（不走答题接口，便于精确控制状态） */
     private void insertWrong(long userId, long questionId, int status, int streak, int wrongCount) {
         jdbcTemplate.update("""
                 INSERT INTO studio_quiz_wrong
@@ -577,7 +579,7 @@ class QuizAdminCrudTest {
                 """, System.nanoTime(), userId, questionId, status, wrongCount, streak);
     }
 
-    // 读某用户对某题的错题连对进度
+    /** 读某用户对某题的错题连对进度 */
     private int wrongStreak(long userId, long questionId) {
         Integer value = jdbcTemplate.queryForObject(
                 "SELECT correct_streak FROM studio_quiz_wrong WHERE user_id = ? AND question_id = ? AND deleted_at = 0",
@@ -585,7 +587,7 @@ class QuizAdminCrudTest {
         return value == null ? -1 : value;
     }
 
-    // 读某用户对某题的错题状态
+    /** 读某用户对某题的错题状态 */
     private int wrongStatus(long userId, long questionId) {
         Integer value = jdbcTemplate.queryForObject(
                 "SELECT status FROM studio_quiz_wrong WHERE user_id = ? AND question_id = ? AND deleted_at = 0",
@@ -593,7 +595,7 @@ class QuizAdminCrudTest {
         return value == null ? -1 : value;
     }
 
-    // 某题的有效错题条目数
+    /** 某题的有效错题条目数 */
     private int wrongRows(long questionId) {
         Integer value = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM studio_quiz_wrong WHERE question_id = ? AND deleted_at = 0",
@@ -601,7 +603,7 @@ class QuizAdminCrudTest {
         return value == null ? 0 : value;
     }
 
-    // 本用例教材下的有效题目数
+    /** 本用例教材下的有效题目数 */
     private int questionCount() {
         Integer value = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM studio_quiz_question WHERE textbook_name = ? AND deleted_at = 0",
@@ -609,7 +611,7 @@ class QuizAdminCrudTest {
         return value == null ? 0 : value;
     }
 
-    // 在 C 端目录响应里找本章的题数；找不到返回 -1
+    /** 在 C 端目录响应里找本章的题数；找不到返回 -1 */
     private int chapterCountOf(String catalogBody) {
         for (JsonNode textbookNode : support.data(catalogBody)) {
             if (!textbook.equals(textbookNode.get("name").asText())) {

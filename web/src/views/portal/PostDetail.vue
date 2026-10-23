@@ -18,7 +18,7 @@ import {
 import { useUserStore } from '@/stores/user';
 import type { PostComment, PostDetail } from '@/api/types';
 
-// 帖子详情（游客可访问）＋ 楼中楼评论
+/** 帖子详情（游客可访问）＋ 楼中楼评论 */
 const route = useRoute();
 const router = useRouter();
 const user = useUserStore();
@@ -27,35 +27,37 @@ const id = String(route.params.id);
 const detail = ref<PostDetail | null>(null);
 const comments = ref<PostComment[]>([]);
 const loading = ref(false);
-// 加载失败 / 帖子不存在：非空时展示错误条 + 重试
+/** 加载失败 / 帖子不存在：非空时展示错误条 + 重试 */
 const error = ref('');
 
-// 顶层评论输入框
+/** 顶层评论输入框 */
 const commentText = ref('');
-// 正在回复的顶层评论 ID（null 表示没有打开任何回复框）
+/** 正在回复的顶层评论 ID（null 表示没有打开任何回复框） */
 const replyTo = ref<string | null>(null);
 const replyText = ref('');
 const submitting = ref(false);
-// 点赞请求中（按钮 loading，防连点）
+/** 点赞请求中（按钮 loading，防连点） */
 const liking = ref(false);
 
-// 正文容器：代码块复制与目录高亮都要在真实 DOM 上接线（v-html 的内容 Vue 管不着）
+/** 正文容器：代码块复制与目录高亮都要在真实 DOM 上接线（v-html 的内容 Vue 管不着） */
 const bodyRef = ref<HTMLElement | null>(null);
 
-// 正文渲染：共享工具（renderMarkdown）→ 白名单清洗 → v-html
-//
-// 为什么必须清洗：marked 只负责「Markdown 转 HTML」，它 v15 起已移除内置 sanitize——
-// 正文里的 ``、`onerror=` 会被原样保留，而 `v-html` 是直接写 DOM，
-// 等于把发帖人当成了可信来源。
-//
-// 比项目详情页更严一步：帖子是成员自己提交的，
-// 可信度低于管理员录入的项目正文，因此这里额外限制 `img` 的 `src`
-// 只能是站内 `/uploads/` 路径——外链图既会被后端拒绝，
-// 也可能成为追踪像素泄露访客 IP。
-//
-// 白名单里额外放行 div/button/id/type/aria-label/loading/decoding：
-// 这些是共享 renderer 的增强输出（代码块包装、复制按钮、标题锚点、图片懒加载），
-// 不放行会被静默洗掉——表现是「复制按钮不见了但没人报错」。
+/**
+ * 正文渲染：共享工具（renderMarkdown）→ 白名单清洗 → v-html
+ *
+ * 为什么必须清洗：marked 只负责「Markdown 转 HTML」，它 v15 起已移除内置 sanitize——
+ * 正文里的 ``、`onerror=` 会被原样保留，而 `v-html` 是直接写 DOM，
+ * 等于把发帖人当成了可信来源。
+ *
+ * 比项目详情页更严一步：帖子是成员自己提交的，
+ * 可信度低于管理员录入的项目正文，因此这里额外限制 `img` 的 `src`
+ * 只能是站内 `/uploads/` 路径——外链图既会被后端拒绝，
+ * 也可能成为追踪像素泄露访客 IP。
+ *
+ * 白名单里额外放行 div/button/id/type/aria-label/loading/decoding：
+ * 这些是共享 renderer 的增强输出（代码块包装、复制按钮、标题锚点、图片懒加载），
+ * 不放行会被静默洗掉——表现是「复制按钮不见了但没人报错」。
+ */
 const rendered = computed(() => {
     const result = renderMarkdown(detail.value?.content ?? '');
 
@@ -83,14 +85,14 @@ const rendered = computed(() => {
 });
 
 const contentHtml = computed(() => rendered.value.html);
-// 目录（共享工具单次渲染时顺带抽取，与标题 id 同源，不会对不上）
+/** 目录（共享工具单次渲染时顺带抽取，与标题 id 同源，不会对不上） */
 const toc = computed(() => rendered.value.toc);
-// 短文不出目录：两行字的文章配个目录框很滑稽
+/** 短文不出目录：两行字的文章配个目录框很滑稽 */
 const showToc = computed(() => toc.value.length >= TOC_MIN_ITEMS);
-// 当前阅读章节（IntersectionObserver 驱动，见 observeTocHighlight）
+/** 当前阅读章节（IntersectionObserver 驱动，见 observeTocHighlight） */
 const activeHeading = ref('');
 
-// 文章重渲染（重试加载、切页）时先摘旧监听再绑新的，不叠加
+/** 文章重渲染（重试加载、切页）时先摘旧监听再绑新的，不叠加 */
 let unbindCopy: (() => void) | null = null;
 let unobserve: (() => void) | null = null;
 
@@ -131,9 +133,11 @@ async function load() {
     }
 }
 
-// 未登录时把人送去登录，并记住来源
-//
-// @param action 动作名（评论 / 回复 / 点赞），用于提示文案
+/**
+ * 未登录时把人送去登录，并记住来源
+ *
+ * @param action 动作名（评论 / 回复 / 点赞），用于提示文案
+ */
 function requireLogin(action: string): boolean {
     if (user.isLogin) {
         return true;
@@ -175,14 +179,16 @@ async function submitReply(parentId: string) {
     }
 }
 
-// 删除评论（管理员）
-//
-// 为什么删除入口在这里而不是审核队列：本页的评论列表本身只含已通过的内容，
-// 正好符合后端「只能删除已通过评论」的约束；而审核队列里全是待审内容，
-// 在那里删会被后端拒绝（待审应当走驳回，让作者收到反馈）。
-//
-// 删除是级联的：删顶层评论会连它的回复一起删，
-// 不留「父已删、子还在」的孤儿回复——所以确认文案必须说清楚会连带影响回复。
+/**
+ * 删除评论（管理员）
+ *
+ * 为什么删除入口在这里而不是审核队列：本页的评论列表本身只含已通过的内容，
+ * 正好符合后端「只能删除已通过评论」的约束；而审核队列里全是待审内容，
+ * 在那里删会被后端拒绝（待审应当走驳回，让作者收到反馈）。
+ *
+ * 删除是级联的：删顶层评论会连它的回复一起删，
+ * 不留「父已删、子还在」的孤儿回复——所以确认文案必须说清楚会连带影响回复。
+ */
 async function removeComment(id: string, withReplies: boolean) {
     try {
         await ElMessageBox.confirm(
@@ -200,13 +206,15 @@ async function removeComment(id: string, withReplies: boolean) {
     await load();
 }
 
-// 点赞（只能赞、不能取消）
-//
-// 数字以后端返回为准，不做乐观 +1：后端是幂等的，
-// 前端自己加 1 会出现「重复点击数字跳两次」的错乱。
-//
-// 已赞后按钮即禁用：本模块没有取消点赞的能力，
-// 界面上就不该再留一个可点的入口。
+/**
+ * 点赞（只能赞、不能取消）
+ *
+ * 数字以后端返回为准，不做乐观 +1：后端是幂等的，
+ * 前端自己加 1 会出现「重复点击数字跳两次」的错乱。
+ *
+ * 已赞后按钮即禁用：本模块没有取消点赞的能力，
+ * 界面上就不该再留一个可点的入口。
+ */
 async function like() {
     if (!requireLogin('点赞')) {
         return;

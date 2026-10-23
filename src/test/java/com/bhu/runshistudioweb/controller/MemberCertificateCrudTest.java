@@ -27,17 +27,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-// 成员-证书关联模块验收测试
-//
-// 覆盖四条线：
-// - 绑定/解绑主流程：绑定后两个方向都能查到，解绑后都消失；
-// - 错误码约定：参数非法 A0401、成员/证书不存在 A0402、
-// 重复绑定 A0401、解绑不存在的关系 A0402；
-// - C 端脱敏与匿名可访问：官网接口不带 token 可用，且不含置顶权重与审计字段；
-// - 级联清理：删成员 / 删证书时，关联行必须被同一事务清掉（DESIGN.md 2.2）。
-//
-// 测试数据一律通过管理端接口创建（而不是直接插库），这样也顺带验证了主表接口可用；
-// 关联行是否残留则用 Mapper 直查，避免「用同一个 Service 的读方法验证它的写方法」。
+/**
+ * 成员-证书关联模块验收测试
+ *
+ * 覆盖四条线：
+ * - 绑定/解绑主流程：绑定后两个方向都能查到，解绑后都消失；
+ * - 错误码约定：参数非法 A0401、成员/证书不存在 A0402、
+ * 重复绑定 A0401、解绑不存在的关系 A0402；
+ * - C 端脱敏与匿名可访问：官网接口不带 token 可用，且不含置顶权重与审计字段；
+ * - 级联清理：删成员 / 删证书时，关联行必须被同一事务清掉（DESIGN.md 2.2）。
+ *
+ * 测试数据一律通过管理端接口创建（而不是直接插库），这样也顺带验证了主表接口可用；
+ * 关联行是否残留则用 Mapper 直查，避免「用同一个 Service 的读方法验证它的写方法」。
+ */
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -52,7 +54,7 @@ class MemberCertificateCrudTest {
     @Resource
     private StudioMemberCertificateMapper relationMapper;
 
-    // 管理员 token：本模块后台接口全部要求 admin 角色
+    /** 管理员 token：本模块后台接口全部要求 admin 角色 */
     private String token;
 
     @BeforeEach
@@ -110,7 +112,7 @@ class MemberCertificateCrudTest {
         return body.substring(start, body.indexOf('"', start));
     }
 
-    // 通过管理端接口新增成员，返回其 id
+    /** 通过管理端接口新增成员，返回其 id */
     private long addMember(String name) throws Exception {
         String body = postJson("/member/add",
                 "{\"name\":\"" + name + "\",\"gradeYear\":2022}", token);
@@ -118,7 +120,7 @@ class MemberCertificateCrudTest {
         return Long.parseLong(dataValue(body));
     }
 
-    // 通过管理端接口新增证书，返回其 id
+    /** 通过管理端接口新增证书，返回其 id */
     private long addCertificate(String title, int sortOrder) throws Exception {
         String body = postJson("/certificate/add",
                 "{\"title\":\"" + title + "\",\"awardLevel\":\"" + CertificateLevelEnum.NATIONAL.getValue()
@@ -217,7 +219,7 @@ class MemberCertificateCrudTest {
         assertEquals("A0401", code(getBody("/member-certificate/member/list", token)), "缺 certificateId 应返回 A0401");
     }
 
-    // ==================== 排序（原 C 端用例改用管理端接口） ====================
+    // ==================== 排序（原 C 端用例改用管理端接口）====================
 
     // 原有两个 C 端用例（「匿名可访问 + 脱敏」「C 端排序」）已随 /member/certificate/list
     // 整体删除。排序这条行为本身仍值得守住，

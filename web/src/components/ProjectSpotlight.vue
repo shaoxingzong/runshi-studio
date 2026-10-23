@@ -3,28 +3,30 @@ import { onMounted, ref } from 'vue';
 import { portalApi } from '@/api/portal';
 import type { Project } from '@/api/types';
 
-// 首页「项目精选」轮播
-//
-// 数据驱动，而不是写死的图片轮播：内容直接来自 GET /project/list，
-// 运营在后台增删项目，首页自动跟着变。写死图片的做法会让轮播与后台脱节——
-// 后台改了项目，首页却不更新，那是最难发现的一类不一致。
-//
-// 封面策略（先占位，后续可替换）：
-// - 项目填了 coverImage → 用它（运营一上传就自动生效，无需改代码）；
-// - 没填 → 用「渐变底 + 项目名首字」占位，不依赖任何图片资源。
-//
-// 失败与空数据的区别：失败（接口报错）显示一条错误提示 + 重试按钮——
-// 与门户其它页面同一套错误态；确实没有项目时才整块不渲染（空轮播框比没有轮播更糟）。
+/**
+ * 首页「项目精选」轮播
+ *
+ * 数据驱动，而不是写死的图片轮播：内容直接来自 GET /project/list，
+ * 运营在后台增删项目，首页自动跟着变。写死图片的做法会让轮播与后台脱节——
+ * 后台改了项目，首页却不更新，那是最难发现的一类不一致。
+ *
+ * 封面策略（先占位，后续可替换）：
+ * - 项目填了 coverImage → 用它（运营一上传就自动生效，无需改代码）；
+ * - 没填 → 用「渐变底 + 项目名首字」占位，不依赖任何图片资源。
+ *
+ * 失败与空数据的区别：失败（接口报错）显示一条错误提示 + 重试按钮——
+ * 与门户其它页面同一套错误态；确实没有项目时才整块不渲染（空轮播框比没有轮播更糟）。
+ */
 const MAX_COUNT = 6;
 
-// 项目状态：取值与后端 ProjectStatusEnum 一致（0 研发中 / 1 已上线 / 2 已结题）
+/** 项目状态：取值与后端 ProjectStatusEnum 一致（0 研发中 / 1 已上线 / 2 已结题） */
 const STATUS: Record<number, { text: string; type: 'success' | 'warning' | 'info' }> = {
     0: { text: '研发中', type: 'warning' },
     1: { text: '已上线', type: 'success' },
     2: { text: '已结题', type: 'info' },
 };
 
-// 占位封面渐变色板：按序号循环，避免所有卡片长得一样
+/** 占位封面渐变色板：按序号循环，避免所有卡片长得一样 */
 const COVER_GRADIENTS = [
     'linear-gradient(135deg, #4f7cff 0%, #7aa2ff 100%)',
     'linear-gradient(135deg, #0e7490 0%, #22d3ee 100%)',
@@ -36,10 +38,10 @@ const COVER_GRADIENTS = [
 
 const projects = ref<Project[]>([]);
 const failed = ref(false);
-// 失败原因：展示给用户而不是静默消失（此前 failed 时整块无提示）
+/** 失败原因：展示给用户而不是静默消失（此前 failed 时整块无提示） */
 const failedReason = ref('');
 
-// 拉取项目；失败置标记 + 记原因，供模板展示错误条与重试
+/** 拉取项目；失败置标记 + 记原因，供模板展示错误条与重试 */
 async function loadProjects() {
     try {
         const page = await portalApi.projectList({ current: 1, pageSize: MAX_COUNT });
@@ -54,7 +56,7 @@ async function loadProjects() {
     }
 }
 
-// 重试：先清掉旧数据再拉，避免「新的没回来、旧的还挂着」的中间态
+/** 重试：先清掉旧数据再拉，避免「新的没回来、旧的还挂着」的中间态 */
 function retry() {
     projects.value = [];
     loadProjects();
@@ -66,7 +68,7 @@ function gradientOf(index: number): string {
     return COVER_GRADIENTS[index % COVER_GRADIENTS.length];
 }
 
-// 首字：用于占位封面上的大字（中文取首字，英文自动大写）
+/** 首字：用于占位封面上的大字（中文取首字，英文自动大写） */
 function initialOf(title: string): string {
     return title ? title.trim().charAt(0).toUpperCase() : '?';
 }

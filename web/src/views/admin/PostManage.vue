@@ -6,23 +6,27 @@ import ErrorRetry from '@/components/ErrorRetry.vue';
 import ImageUploader from '@/components/ImageUploader.vue';
 import type { PageResult, PostAdminDetail, PostAudit } from '@/api/types';
 
-// 帖子管理（管理员）
-//
-// 与「帖子审核」的分工：
-// - 帖子审核页只面对待审队列——一种状态、批量处置、先进先出；
-// - 本页管理全部帖子——三种状态都能查，能删、能置顶、能代改。
-// 审核是治理的一个环节，不是全部：已通过的帖子要能置顶 / 下架，
-// 已驳回的要能看看作者改过没有，出问题的要能直接删掉。
-//
-// 编辑后为什么文章会「消失」：保存时后端把非待审的帖子重置为待审
-// 重新送审（先审后发的后门必须堵住）。所以保存成功的提示里必须说清这件事，
-// 否则管理员会以为改坏了。
+/**
+ * 帖子管理（管理员）
+ *
+ * 与「帖子审核」的分工：
+ * - 帖子审核页只面对待审队列——一种状态、批量处置、先进先出；
+ * - 本页管理全部帖子——三种状态都能查，能删、能置顶、能代改。
+ * 审核是治理的一个环节，不是全部：已通过的帖子要能置顶 / 下架，
+ * 已驳回的要能看看作者改过没有，出问题的要能直接删掉。
+ *
+ * 编辑后为什么文章会「消失」：保存时后端把非待审的帖子重置为待审
+ * 重新送审（先审后发的后门必须堵住）。所以保存成功的提示里必须说清这件事，
+ * 否则管理员会以为改坏了。
+ */
 const page = reactive({ current: 1, pageSize: 10 });
 
-// 筛选条件
-//
-// status 用 null 表示「全部状态」——与后端口径一致
-// （不传该参数即不按状态过滤）。这与待审队列的关键区别就在这里。
+/**
+ * 筛选条件
+ *
+ * status 用 null 表示「全部状态」——与后端口径一致
+ * （不传该参数即不按状态过滤）。这与待审队列的关键区别就在这里。
+ */
 const filters = reactive({
     status: null as number | null,
     titleKeyword: '',
@@ -31,10 +35,10 @@ const filters = reactive({
 
 const result = ref<PageResult<PostAudit> | null>(null);
 const loading = ref(false);
-// 列表加载失败的原因（空 = 正常）。失败时给原因 + 重试，而不是留一张空白表格
+/** 列表加载失败的原因（空 = 正常）。失败时给原因 + 重试，而不是留一张空白表格 */
 const error = ref('');
 
-// AI 初判结论：与「帖子审核」页保持同一套映射（同一字段两处展示，映射不一致会误导人）
+/** AI 初判结论：与「帖子审核」页保持同一套映射（同一字段两处展示，映射不一致会误导人） */
 const AI_TAG: Record<number, { text: string; type: 'success' | 'warning' | 'danger' | 'info' }> = {
     0: { text: '待 AI 初判', type: 'info' },
     1: { text: 'AI 判安全', type: 'success' },
@@ -43,7 +47,7 @@ const AI_TAG: Record<number, { text: string; type: 'success' | 'warning' | 'dang
     4: { text: 'AI 不可用', type: 'danger' },
 };
 
-// 审核状态：0-待审, 1-已通过, 2-已驳回
+/** 审核状态：0-待审, 1-已通过, 2-已驳回 */
 const STATUS_TAG: Record<number, { text: string; type: 'info' | 'success' | 'danger' }> = {
     0: { text: '待审', type: 'info' },
     1: { text: '已通过', type: 'success' },
@@ -76,7 +80,7 @@ async function load() {
     }
 }
 
-// 换条件必须回到第一页：否则可能停在一个已经不存在的页码上，看到空列表还以为没数据
+/** 换条件必须回到第一页：否则可能停在一个已经不存在的页码上，看到空列表还以为没数据 */
 function query() {
     page.current = 1;
     load();
@@ -101,13 +105,15 @@ function turn(delta: number) {
 
 // ==================== 置顶 ====================
 
-// 置顶 / 取消置顶
-//
-// 只有「已通过」的行开关可点（后端同规则）：置顶待审帖在公开列表里
-// 没有效果——公开列表只展示已通过的内容，属于典型误操作。
-//
-// 失败时必须刷新：开关会停在用户点到的位置，与后端真实状态不一致，
-// 不刷新的话界面就在撒谎。
+/**
+ * 置顶 / 取消置顶
+ *
+ * 只有「已通过」的行开关可点（后端同规则）：置顶待审帖在公开列表里
+ * 没有效果——公开列表只展示已通过的内容，属于典型误操作。
+ *
+ * 失败时必须刷新：开关会停在用户点到的位置，与后端真实状态不一致，
+ * 不刷新的话界面就在撒谎。
+ */
 async function togglePin(row: PostAudit, pinned: number) {
     loading.value = true;
     try {
@@ -121,10 +127,12 @@ async function togglePin(row: PostAudit, pinned: number) {
 
 // ==================== 删除 ====================
 
-// 删除帖子（级联删除评论与点赞）
-//
-// 确认文案必须写清「连带删除」与「无法恢复」——逻辑删除对用户不可见，
-// 不说清楚的话，管理员会以为这只是从列表里隐藏。
+/**
+ * 删除帖子（级联删除评论与点赞）
+ *
+ * 确认文案必须写清「连带删除」与「无法恢复」——逻辑删除对用户不可见，
+ * 不说清楚的话，管理员会以为这只是从列表里隐藏。
+ */
 async function remove(row: PostAudit) {
     try {
         await ElMessageBox.confirm(
@@ -154,7 +162,7 @@ async function remove(row: PostAudit) {
 
 const editVisible = ref(false);
 const editLoading = ref(false);
-// 保存中的独立 loading：用页面级 loading 会把整个编辑弹窗一起遮住
+/** 保存中的独立 loading：用页面级 loading 会把整个编辑弹窗一起遮住 */
 const saving = ref(false);
 const form = reactive({
     id: '',
@@ -164,11 +172,13 @@ const form = reactive({
     content: '',
 });
 
-// 打开编辑弹窗
-//
-// 列表 VO 不含正文（后端刻意如此：一页十条全文会撑爆响应体），
-// 所以这里先把已知字段填进去让弹窗立刻可交互，再去拉正文——
-// 正文没回来之前保存按钮不可用，避免「半模态数据」被提交。
+/**
+ * 打开编辑弹窗
+ *
+ * 列表 VO 不含正文（后端刻意如此：一页十条全文会撑爆响应体），
+ * 所以这里先把已知字段填进去让弹窗立刻可交互，再去拉正文——
+ * 正文没回来之前保存按钮不可用，避免「半模态数据」被提交。
+ */
 async function openEdit(row: PostAudit) {
     form.id = row.id;
     form.title = row.title;

@@ -2,53 +2,63 @@ package com.bhu.runshistudioweb.common;
 
 import com.bhu.runshistudioweb.exception.ErrorCode;
 
-// 统一响应封装工具类
-//
-// 为什么需要它：如果每个 Controller 都手写 new BaseResponse<>(0, data, "ok")，
-// 既啰嗦又容易写错（比如习惯性地把成功码写成 HTTP 的 200）。集中到工具类后，
-// 业务代码一行静态调用即可完成封装，成功码也只有一个来源。
-//
-// 使用约定：
-// - 成功一律用 #success，成功码固定为 00000；
-// - 失败必须使用 ErrorCode 中定义的号段（A 用户端 / B 当前系统 / C 第三方服务），
-// 不要自己临时编号，否则前端没法按来源归类处理；
-// - 失败响应的 data 固定为 null，前端拿到 code 不为 00000 时无需再看 data。
+/**
+ * 统一响应封装工具类
+ *
+ * 为什么需要它：如果每个 Controller 都手写 new BaseResponse<>(0, data, "ok")，
+ * 既啰嗦又容易写错（比如习惯性地把成功码写成 HTTP 的 200）。集中到工具类后，
+ * 业务代码一行静态调用即可完成封装，成功码也只有一个来源。
+ *
+ * 使用约定：
+ * - 成功一律用 success，成功码固定为 00000；
+ * - 失败必须使用 ErrorCode 中定义的号段（A 用户端 / B 当前系统 / C 第三方服务），
+ * 不要自己临时编号，否则前端没法按来源归类处理；
+ * - 失败响应的 data 固定为 null，前端拿到 code 不为 00000 时无需再看 data。
+ */
 public class ResultUtils {
 
-    // 成功响应
-    //
-    // @param data 业务数据，允许为 null（此时 JSON 里的 data 字段仍然存在，值为 null）
-    // @param <T> 业务数据类型，由调用方推断
-    // @return 响应对象，code 固定为 0、message 固定为 "ok"
+    /**
+     * 成功响应
+     *
+     * @param data 业务数据，允许为 null（此时 JSON 里的 data 字段仍然存在，值为 null）
+     * @param <T> 业务数据类型，由调用方推断
+     * @return 响应对象，code 固定为 0、message 固定为 "ok"
+     */
     public static <T> BaseResponse<T> success(T data) {
         // 成功码取自枚举而不是手写 0：号段只有一处定义，改号段时不会漏改这里
         return new BaseResponse<>(ErrorCode.SUCCESS.getCode(), data, ErrorCode.SUCCESS.getMessage());
     }
 
-    // 失败响应（使用错误码自带的默认提示）
-    //
-    // @param errorCode 错误码枚举
-    // @return 响应对象，data 固定为 null
+    /**
+     * 失败响应（使用错误码自带的默认提示）
+     *
+     * @param errorCode 错误码枚举
+     * @return 响应对象，data 固定为 null
+     */
     public static BaseResponse<?> error(ErrorCode errorCode) {
         return new BaseResponse<>(errorCode);
     }
 
-    // 失败响应（自定义状态码）
-    // 仅当确实没有对应枚举时才使用，否则优先 #error
-    //
-    // @param code 业务状态码
-    // @param message 提示信息，不得包含异常堆栈等内部细节
-    // @return 响应对象，data 固定为 null
+    /**
+     * 失败响应（自定义状态码）
+     * 仅当确实没有对应枚举时才使用，否则优先 error
+     *
+     * @param code 业务状态码
+     * @param message 提示信息，不得包含异常堆栈等内部细节
+     * @return 响应对象，data 固定为 null
+     */
     public static BaseResponse<?> error(String code, String message) {
         return new BaseResponse<>(code, null, message);
     }
 
-    // 失败响应（错误码 + 自定义提示）
-    // 典型场景：同一个错误码需要给用户更具体的说明，例如 NO_AUTH_ERROR + "仅管理员可操作"
-    //
-    // @param errorCode 错误码枚举，决定响应中的 code
-    // @param message 覆盖枚举默认提示的信息
-    // @return 响应对象，data 固定为 null
+    /**
+     * 失败响应（错误码 + 自定义提示）
+     * 典型场景：同一个错误码需要给用户更具体的说明，例如 NO_AUTH_ERROR + "仅管理员可操作"
+     *
+     * @param errorCode 错误码枚举，决定响应中的 code
+     * @param message 覆盖枚举默认提示的信息
+     * @return 响应对象，data 固定为 null
+     */
     public static BaseResponse<?> error(ErrorCode errorCode, String message) {
         return new BaseResponse<>(errorCode.getCode(), null, message);
     }
