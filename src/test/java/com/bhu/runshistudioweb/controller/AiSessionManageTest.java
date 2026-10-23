@@ -36,32 +36,26 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-/**
- * AI 会话管理验收测试
- *
- * author: shaoshing
- *
- * <p>覆盖十条线（与施工图 AC 一一对应）：
- * <ol>
- *     <li><b>鉴权边界</b>：{@code /ai/session/list} 未登录 A0201（不进白名单）；
- *     {@code /ai/session/delete} 匿名放行（白名单精确路径）；既有公开接口回归；</li>
- *     <li><b>列表隔离</b>：只返回本人的会话，看不到别人的；</li>
- *     <li><b>排序与分页</b>：{@code updated_at 倒序 → id 倒序}（同秒活跃的稳定次序），
- *     pageSize 超过 50 收敛；</li>
- *     <li><b>messageCount 批量统计</b>：与 SQL 逐行对齐，空会话补 0；</li>
- *     <li><b>删除=双逻辑删</b>：会话与消息在同一事务内写 {@code deleted_at}，
- *     物理行保留（可追溯），与/19 的物理删关联表形成对照；</li>
- *     <li><b>删除后行为</b>：chat / history / 重复删除 统一 A0402「会话不存在」；</li>
- *     <li><b>归属规则</b>：他人会话 A0402（同码同提示）；匿名会话凭 ID 可删；</li>
- *     <li><b>参数校验</b>：缺参 / 空白 / 脏值 A0401；不存在 A0402；</li>
- *     <li><b>脱敏与序列化</b>：无 userId / 审计字段；id 出字符串、messageCount 出数字；</li>
- *     <li><b>全量基线 120 用例保持全绿。</b></li>
- * </ol>
- *
- * <p>会话数据通过提问接口自然创建（顺带验证「聊过就有会话」的集成路径），
- * 个别边界（空会话、批量计数对齐）用 Mapper 直插；断言一律以 SQL 直查为准，
- * 避免「用同一个 Service 的读方法验证它的写方法」。
- */
+// AI 会话管理验收测试
+//
+// 覆盖十条线（与施工图 AC 一一对应）：
+// - 鉴权边界： /ai/session/list 未登录 A0201（不进白名单）；
+// /ai/session/delete 匿名放行（白名单精确路径）；既有公开接口回归；
+// - 列表隔离：只返回本人的会话，看不到别人的；
+// - 排序与分页： updated_at 倒序 → id 倒序（同秒活跃的稳定次序），
+// pageSize 超过 50 收敛；
+// - messageCount 批量统计：与 SQL 逐行对齐，空会话补 0；
+// - 删除=双逻辑删：会话与消息在同一事务内写 deleted_at，
+// 物理行保留（可追溯），与/19 的物理删关联表形成对照；
+// - 删除后行为：chat / history / 重复删除 统一 A0402「会话不存在」；
+// - 归属规则：他人会话 A0402（同码同提示）；匿名会话凭 ID 可删；
+// - 参数校验：缺参 / 空白 / 脏值 A0401；不存在 A0402；
+// - 脱敏与序列化：无 userId / 审计字段；id 出字符串、messageCount 出数字；
+// - 全量基线 120 用例保持全绿。
+//
+// 会话数据通过提问接口自然创建（顺带验证「聊过就有会话」的集成路径），
+// 个别边界（空会话、批量计数对齐）用 Mapper 直插；断言一律以 SQL 直查为准，
+// 避免「用同一个 Service 的读方法验证它的写方法」。
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -150,7 +144,7 @@ class AiSessionManageTest {
         return body.substring(start, body.indexOf('"', start));
     }
 
-    /** 注册一个普通用户并登录，token 缓存到字段；同时记录其用户 id（供直插空会话用） */
+    // 注册一个普通用户并登录，token 缓存到字段；同时记录其用户 id（供直插空会话用）
     private Long lastUserId;
 
     private String loginUser() throws Exception {
@@ -171,7 +165,7 @@ class AiSessionManageTest {
         return body.substring(start, body.indexOf('"', start));
     }
 
-    /** 提问（sessionId 为 null 表示新建会话），返回响应体 */
+    // 提问（sessionId 为 null 表示新建会话），返回响应体
     private String chat(String token, String sessionId, String messageText) throws Exception {
         String payload = sessionId == null
                 ? "{\"message\":\"" + messageText + "\"}"
@@ -179,7 +173,7 @@ class AiSessionManageTest {
         return postJson("/ai/chat", payload, token);
     }
 
-    /** 通过提问创建会话，返回 sessionId */
+    // 通过提问创建会话，返回 sessionId
     private String newSession(String token, String firstMessage) throws Exception {
         String body = chat(token, null, firstMessage);
         assertEquals("00000", code(body), "创建会话失败：" + body);

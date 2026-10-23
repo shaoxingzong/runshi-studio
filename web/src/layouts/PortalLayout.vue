@@ -6,19 +6,17 @@ import { userApi } from '@/api/user';
 import { notificationApi } from '@/api/notification';
 import { useUserStore } from '@/stores/user';
 
-/** 门户布局：顶部导航 + 内容区 + 页脚（匿名可访问） */
+// 门户布局：顶部导航 + 内容区 + 页脚（匿名可访问）
 const route = useRoute();
 const router = useRouter();
 const user = useUserStore();
 
-/**
- * 导航项
- *
- * ⚠️ **没有「团队成员」**：业务规则「团队成员不对外展示」——
- * 官网成员页与后端三个成员接口（/member/list、/member/detail、/member/certificate/list）
- * 已一并下线（接口直接删除，访问得到 404）。
- * 成员信息唯一还会出现的地方是项目详情里的「参与成员」（产品确认保留）。
- */
+// 导航项
+//
+// ⚠️ 没有「团队成员」：业务规则「团队成员不对外展示」——
+// 官网成员页与后端三个成员接口（/member/list、/member/detail、/member/certificate/list）
+// 已一并下线（接口直接删除，访问得到 404）。
+// 成员信息唯一还会出现的地方是项目详情里的「参与成员」（产品确认保留）。
 const navItems = [
     { path: '/', label: '首页' },
     { path: '/projects', label: '项目案例' },
@@ -32,13 +30,11 @@ const navItems = [
     { path: '/ai', label: 'AI 助手' },
 ];
 
-/**
- * 刷新后主动补一次「我的成员档案」
- *
- * <p>它决定「写文章」这类成员专属入口是否显示。布局只在启动时挂载一次，
- * 路由切换不会再触发，所以刷新页面后必须自己拉一次——
- * 否则刷新完入口就消失了，要等下次登录才恢复。
- */
+// 刷新后主动补一次「我的成员档案」
+//
+// 它决定「写文章」这类成员专属入口是否显示。布局只在启动时挂载一次，
+// 路由切换不会再触发，所以刷新页面后必须自己拉一次——
+// 否则刷新完入口就消失了，要等下次登录才恢复。
 onMounted(() => {
     void user.loadMemberProfile();
     void refreshUnread();
@@ -61,7 +57,7 @@ onBeforeUnmount(() => {
     window.removeEventListener('notification:read', onNotificationRead);
 });
 
-/** 退出登录：先让服务端清会话，再清本地状态 */
+// 退出登录：先让服务端清会话，再清本地状态
 async function logout() {
     try {
         await userApi.logout();
@@ -74,33 +70,27 @@ async function logout() {
     await router.push('/');
 }
 
-/**
- * 自定义高亮判断，<b>不用</b> router-link 自带的 router-link-active。
- *
- * 原因：那是「前缀匹配」——`/` 是所有路径的前缀，于是首页会在每个页面都高亮
- * （实测：进入「项目案例」时首页与项目案例同时亮）。
- * 这里显式区分：首页要精确相等，其余允许 `/projects` 匹配 `/projects/{id}` 这类子路径。
- */
-/**
- * 实际渲染的导航项：带 memberOnly 的项只在确认是成员后才出现
- *
- * <p>为什么不在模板里逐个写 v-if：那样每加一个成员专属入口，就多一处要记得加判断的地方。
- * 集中在这里过滤，「入口定义」和「可见条件」待在一起，不容易漏。
- */
+// 自定义高亮判断，不用 router-link 自带的 router-link-active。
+//
+// 原因：那是「前缀匹配」——`/` 是所有路径的前缀，于是首页会在每个页面都高亮
+// （实测：进入「项目案例」时首页与项目案例同时亮）。
+// 这里显式区分：首页要精确相等，其余允许 `/projects` 匹配 `/projects/{id}` 这类子路径。
+// 实际渲染的导航项：带 memberOnly 的项只在确认是成员后才出现
+//
+// 为什么不在模板里逐个写 v-if：那样每加一个成员专属入口，就多一处要记得加判断的地方。
+// 集中在这里过滤，「入口定义」和「可见条件」待在一起，不容易漏。
 const visibleNavItems = computed(() => navItems.filter((item) => !item.memberOnly || user.isMember));
 
 // ===== 通知铃铛 =====
-/** 未读通知数（0 时 badge 隐藏）；未登录恒 0，不发请求 */
+// 未读通知数（0 时 badge 隐藏）；未登录恒 0，不发请求
 const unreadCount = ref(0);
-/** 轮询定时器句柄（卸载时必须清，否则内存泄漏 + 接口打到已销毁的组件） */
+// 轮询定时器句柄（卸载时必须清，否则内存泄漏 + 接口打到已销毁的组件）
 let unreadTimer: number | null = null;
 
-/**
- * 拉一次未读数
- *
- * <p>失败静默（不弹提示）：铃铛是附属信息，请求失败时保持上次的数字即可，
- * 下次轮询自然会纠正。为它弹全局提示只会打扰阅读。
- */
+// 拉一次未读数
+//
+// 失败静默（不弹提示）：铃铛是附属信息，请求失败时保持上次的数字即可，
+// 下次轮询自然会纠正。为它弹全局提示只会打扰阅读。
 async function refreshUnread() {
     if (!user.isLogin) {
         unreadCount.value = 0;
@@ -113,7 +103,7 @@ async function refreshUnread() {
     }
 }
 
-/** 通知页「已读」广播的处理器：立刻刷新铃铛（与轮询同一方法，无第二套逻辑） */
+// 通知页「已读」广播的处理器：立刻刷新铃铛（与轮询同一方法，无第二套逻辑）
 function onNotificationRead() {
     void refreshUnread();
 }

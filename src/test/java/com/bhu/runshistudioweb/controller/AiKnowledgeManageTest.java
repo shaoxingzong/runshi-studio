@@ -51,52 +51,44 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-/**
- * 知识库管理端操作验收测试
- *
- * author: shaoshing
- *
- * <p>覆盖九条线：
- * <ol>
- *     <li>全量同步（首次）：三类业务数据全部 created、统计等式成立（created+rebuilt+skipped+failed==total）、
- *     每源恰好一次批量 Embedding 请求；</li>
- *     <li>全量同步（复跑）：全部 skipped、Embedding 调用增量 0、updated_at 不变（零写库取证）；</li>
- *     <li>单条失败不中断：成员正文带失败记号 → 该条 failed 且不留 doc 行，项目/证书照常入库；
- *     修复后重跑补齐、其余跳过；</li>
- *     <li>分页契约：过滤（title 模糊 / sourceType 精确 / status 精确）、非法 sourceType → A0401、
- *     docId/sourceId 为字符串、时间为约定格式、<b>响应不含正文</b>、pageSize 上限收敛；</li>
- *     <li>级联删除：doc + chunk 同事务逻辑删（行仍在、deleted_at != 0）、提交后清向量
- *     （向量库直查不再命中）、删除后检索不再命中、重复删除 A0402；</li>
- *     <li>重建分支：manual 拒绝（A0401 且不改动原文档）、文档不存在 A0402、id 非法 A0401；</li>
- *     <li>重建源类：内容变 → rebuilt（块替换、旧块逻辑删）；未变 → skipped；</li>
- *     <li>重建源已删除：A0402 + 已有文档标记 status=2；</li>
- *     <li>权限矩阵：4 个接口匿名 A0201、普通用户 A0301、admin 放行。</li>
- * </ol>
- *
- * <p><b>为什么本类不加 {@code @Transactional}</b>：全量同步与删除内部用
- * {@code TransactionTemplate}（REQUIRED 传播）。若测试也开事务，内层会「加入」测试事务，
- * 一旦某条 sync 失败被 {@code syncBatch} 捕获，内层的 rollback 会把整个测试事务标记为
- * rollback-only，测试结束提交时抛 {@code UnexpectedRollbackException}——而真实运行时
- * 每条 sync 是独立事务、失败只回滚自己。因此本类数据<b>真实提交</b>、{@code @AfterEach}
- * 按 T27 前缀清理（先向量、再子表后父表）。
- *
- * <p><b>Embedding Stub（JDK {@link HttpServer}）</b>：
- * <ul>
- *     <li>平面向量技巧与 {@code AiKnowledgeRetrievalTest} 相同（{@code V{n}-EXACT/NEAR/FAR}），
- *     本类只用 V8 平面隔离「删除后检索」用例；</li>
- *     <li><b>失败记号</b>：请求体包含 {@code FAIL-EMBEDDING} 时返回 500——
- *     用于「单条失败不中断」用例（只有带记号的源会失败，其它源照常成功）。</li>
- * </ul>
- *
- * <p><b>类名以 {@code Ai} 开头是刻意的「排序约束」，改动前先读这段</b>：
- * 本类通过 {@code @DynamicPropertySource} 指向自己的 Stub（端口不同 → 属性集不同），
- * 会新建一个 Spring 测试上下文。Sa-Token 用<b>静态</b> {@code SaManager} 持有 DAO，
- * 它总是绑定「最后创建的上下文」；Boot 4.1 的测试框架在类切换时还会 stop 先前上下文。
- * 因此「新建上下文的测试类」必须全部排在 {@code CertificateCrudTest} 之前——
- * 它是第一个使用默认 MockMvc 上下文的类，该上下文会被其后所有测试类共享，
- * 而静态 DAO 必须始终指向「当前正在使用的上下文」。
- * 本类若排到它之后，后续所有登录类测试都会 B0001 失败。
- */
+// 知识库管理端操作验收测试
+//
+// 覆盖九条线：
+// - 全量同步（首次）：三类业务数据全部 created、统计等式成立（created+rebuilt+skipped+failed==total）、
+// 每源恰好一次批量 Embedding 请求；
+// - 全量同步（复跑）：全部 skipped、Embedding 调用增量 0、updated_at 不变（零写库取证）；
+// - 单条失败不中断：成员正文带失败记号 → 该条 failed 且不留 doc 行，项目/证书照常入库；
+// 修复后重跑补齐、其余跳过；
+// - 分页契约：过滤（title 模糊 / sourceType 精确 / status 精确）、非法 sourceType → A0401、
+// docId/sourceId 为字符串、时间为约定格式、响应不含正文、pageSize 上限收敛；
+// - 级联删除：doc + chunk 同事务逻辑删（行仍在、deleted_at != 0）、提交后清向量
+// （向量库直查不再命中）、删除后检索不再命中、重复删除 A0402；
+// - 重建分支：manual 拒绝（A0401 且不改动原文档）、文档不存在 A0402、id 非法 A0401；
+// - 重建源类：内容变 → rebuilt（块替换、旧块逻辑删）；未变 → skipped；
+// - 重建源已删除：A0402 + 已有文档标记 status=2；
+// - 权限矩阵：4 个接口匿名 A0201、普通用户 A0301、admin 放行。
+//
+// 为什么本类不加 @Transactional：全量同步与删除内部用
+// TransactionTemplate（REQUIRED 传播）。若测试也开事务，内层会「加入」测试事务，
+// 一旦某条 sync 失败被 syncBatch 捕获，内层的 rollback 会把整个测试事务标记为
+// rollback-only，测试结束提交时抛 UnexpectedRollbackException——而真实运行时
+// 每条 sync 是独立事务、失败只回滚自己。因此本类数据真实提交、 @AfterEach
+// 按 T27 前缀清理（先向量、再子表后父表）。
+//
+// Embedding Stub（JDK HttpServer）：
+// - 平面向量技巧与 AiKnowledgeRetrievalTest 相同（ V{n}-EXACT/NEAR/FAR），
+// 本类只用 V8 平面隔离「删除后检索」用例；
+// - 失败记号：请求体包含 FAIL-EMBEDDING 时返回 500——
+// 用于「单条失败不中断」用例（只有带记号的源会失败，其它源照常成功）。
+//
+// 类名以 Ai 开头是刻意的「排序约束」，改动前先读这段：
+// 本类通过 @DynamicPropertySource 指向自己的 Stub（端口不同 → 属性集不同），
+// 会新建一个 Spring 测试上下文。Sa-Token 用静态 SaManager 持有 DAO，
+// 它总是绑定「最后创建的上下文」；Boot 4.1 的测试框架在类切换时还会 stop 先前上下文。
+// 因此「新建上下文的测试类」必须全部排在 CertificateCrudTest 之前——
+// 它是第一个使用默认 MockMvc 上下文的类，该上下文会被其后所有测试类共享，
+// 而静态 DAO 必须始终指向「当前正在使用的上下文」。
+// 本类若排到它之后，后续所有登录类测试都会 B0001 失败。
 @SpringBootTest
 @AutoConfigureMockMvc
 class AiKnowledgeManageTest {
@@ -132,10 +124,10 @@ class AiKnowledgeManageTest {
 
     private static HttpServer stub;
 
-    /** /embeddings 调用次数：用于取证「复跑零调用」「每源一次批量请求」 */
+    // /embeddings 调用次数：用于取证「复跑零调用」「每源一次批量请求」
     private static final AtomicInteger embeddingCalls = new AtomicInteger();
 
-    /** 失败记号：请求体含它 → 该次向量化返回 500（用于「单条失败不中断」） */
+    // 失败记号：请求体含它 → 该次向量化返回 500（用于「单条失败不中断」）
     private static final String FAIL_MARKER = "FAIL-EMBEDDING";
 
     private static final int DIM = 18;
@@ -207,7 +199,7 @@ class AiKnowledgeManageTest {
         stub.stop(0);
     }
 
-    /** 按前缀清理（先向量后库表；非事务类必须显式清理） */
+    // 按前缀清理（先向量后库表；非事务类必须显式清理）
     @AfterEach
     void cleanup() {
         purgeT27Vectors();
@@ -271,14 +263,14 @@ class AiKnowledgeManageTest {
         return jsonMapper.readTree(body).get("data");
     }
 
-    /** MP 的 Page 里 total/size/current 是 long，被全局 JsonConfig 序列化为字符串；两种都兼容读取 */
+    // MP 的 Page 里 total/size/current 是 long，被全局 JsonConfig 序列化为字符串；两种都兼容读取
     private long pageNumber(JsonNode page, String field) {
         JsonNode value = page.get(field);
         assertNotNull(value, "分页字段缺失：" + field + "，响应：" + page);
         return value.isString() ? Long.parseLong(value.asString()) : value.asLong();
     }
 
-    /** 手工录入（管理端接口） */
+    // 手工录入（管理端接口）
     private long ingestManual(String token, String title, String content) throws Exception {
         String body = postJson("/knowledge/doc/manual",
                 "{\"title\":\"" + title + "\",\"content\":\"" + content + "\"}", token);
@@ -286,7 +278,7 @@ class AiKnowledgeManageTest {
         return Long.parseLong(dataOf(body).get("docId").asString());
     }
 
-    /** 同步一条业务数据，返回 docId */
+    // 同步一条业务数据，返回 docId
     private long syncSource(String token, String sourceType, long sourceId) throws Exception {
         String body = postJson("/knowledge/doc/sync",
                 "{\"sourceType\":\"" + sourceType + "\",\"sourceId\":" + sourceId + "}", token);
@@ -333,7 +325,7 @@ class AiKnowledgeManageTest {
         return certificate.getId();
     }
 
-    /** 把清理用的向量先摘出来（必须在物理删 chunk 行之前执行，否则子查询查不到） */
+    // 把清理用的向量先摘出来（必须在物理删 chunk 行之前执行，否则子查询查不到）
     private void purgeT27Vectors() {
         List<String> ids = jdbcTemplate.queryForList(
                 "SELECT embedding_id FROM studio_knowledge_chunk WHERE embedding_id IS NOT NULL AND doc_id IN "
@@ -384,17 +376,15 @@ class AiKnowledgeManageTest {
                 String.class, docId);
     }
 
-    /** 三篇 doc 的 updated_at 快照（复跑幂等用例的零写库取证） */
+    // 三篇 doc 的 updated_at 快照（复跑幂等用例的零写库取证）
     private List<String> docUpdatedAtList() {
         return jdbcTemplate.query(
                 "SELECT updated_at FROM studio_knowledge_doc WHERE deleted_at=0 ORDER BY source_type, id",
                 (rs, rowNum) -> rs.getString(1));
     }
 
-    /**
-     * 平面向量（与 Stub 共用）：V{n}-EXACT 与问题同向（relevance 1.0）；
-     * NEAR 余弦 0.6；FAR 余弦 0.4；无记号则落在保留维（与所有平面正交）
-     */
+    // 平面向量（与 Stub 共用）：V{n}-EXACT 与问题同向（relevance 1.0）；
+    // NEAR 余弦 0.6；FAR 余弦 0.4；无记号则落在保留维（与所有平面正交）
     private static float[] vec(String text) {
         float[] vector = new float[DIM];
         Matcher matcher = PLANE_MARKER.matcher(text);
@@ -417,7 +407,7 @@ class AiKnowledgeManageTest {
         return vector;
     }
 
-    /** 直接查询向量库（绕过数据库过滤）：验证「向量是否真的被清理」的唯一手段 */
+    // 直接查询向量库（绕过数据库过滤）：验证「向量是否真的被清理」的唯一手段
     private List<EmbeddingMatch<TextSegment>> searchByText(String text) {
         return knowledgeBaseManager.getEmbeddingStore().search(
                 EmbeddingSearchRequest.builder()
@@ -426,14 +416,12 @@ class AiKnowledgeManageTest {
                         .build()).matches();
     }
 
-    /**
-     * 当前未删除的**源数据**总条数（project + member + certificate），即 sync-all 的 total 基准
-     *
-     * <p>为什么需要它：直接断言 {@code total == 3} 会隐含假设「库是空的」。
-     * 一旦库里有演示数据（db/demo-data.sql 的 15 条），total 就变成 18 而断言失败——
-     * 那是**测试把环境当成了前提**，不是产品缺陷。断言「基线条数 + 本次新增」才能让
-     * 验收测试与业务数据共存。
-     */
+    // 当前未删除的源数据总条数（project + member + certificate），即 sync-all 的 total 基准
+    //
+    // 为什么需要它：直接断言 total == 3 会隐含假设「库是空的」。
+    // 一旦库里有演示数据（db/demo-data.sql 的 15 条），total 就变成 18 而断言失败——
+    // 那是测试把环境当成了前提，不是产品缺陷。断言「基线条数 + 本次新增」才能让
+    // 验收测试与业务数据共存。
     private int sourceCount() {
         return jdbcTemplate.queryForObject("SELECT COUNT(*) FROM studio_project WHERE deleted_at = 0", Integer.class)
                 + jdbcTemplate.queryForObject("SELECT COUNT(*) FROM studio_member WHERE deleted_at = 0", Integer.class)
@@ -441,12 +429,10 @@ class AiKnowledgeManageTest {
                         "SELECT COUNT(*) FROM studio_certificate WHERE deleted_at = 0", Integer.class);
     }
 
-    /**
-     * 统计等式：{@code created + rebuilt + skipped + failed == total}
-     *
-     * <p>它比任何单个计数都重要——调用方靠这个等式判断「有没有漏」。
-     * 有演示数据时各分项的具体数值会变，但等式必须永远成立。
-     */
+    // 统计等式： created + rebuilt + skipped + failed == total
+    //
+    // 它比任何单个计数都重要——调用方靠这个等式判断「有没有漏」。
+    // 有演示数据时各分项的具体数值会变，但等式必须永远成立。
     private void assertSummaryConsistent(JsonNode data, String body) {
         int total = data.get("total").asInt();
         int sum = data.get("created").asInt() + data.get("rebuilt").asInt()
@@ -460,7 +446,7 @@ class AiKnowledgeManageTest {
     @DisplayName("全量同步首次：三类数据全部 created、统计等式成立、每源恰好一次批量 Embedding")
     void syncAllFirstRunCreatesAllThreeTypes() throws Exception {
         String token = adminToken();
-        // 基线：本用例建数据**之前**库里已有的源数据条数（开发库可能已导入演示数据）
+        // 基线：本用例建数据之前库里已有的源数据条数（开发库可能已导入演示数据）
         int baseline = sourceCount();
         long projectId = createProject("T27-全量项目_" + System.nanoTime(), "T27-全量-项目正文");
         long memberId = createMember("T27-全量成员_" + System.nanoTime());
@@ -591,7 +577,7 @@ class AiKnowledgeManageTest {
         assertNotEquals(projectDocId, manualDocId);
 
         // 默认分页：本用例的 3 篇
-        // ⚠️ 必须带 title 过滤：不带过滤时 total 是**全局**文档数，
+        // ⚠️ 必须带 title 过滤：不带过滤时 total 是全局文档数，
         // 库里若有演示数据会把这个断言顶掉（那是测试把环境当成了前提，不是产品缺陷）。
         String body = postJson("/knowledge/doc/list/page",
                 "{\"current\":1,\"pageSize\":10,\"title\":\"T27-分页\"}", token);
@@ -607,7 +593,7 @@ class AiKnowledgeManageTest {
         assertTrue(body.matches("(?s).*\"createdAt\":\"\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\".*"),
                 "createdAt 应为 yyyy-MM-dd HH:mm:ss：" + body);
         assertTrue(body.contains("\"status\":1"), "status 应是数字（计数/状态不是 ID）：" + body);
-        // <b>不含正文</b>：列表 VO 里没有正文，任何 chunk 文本都不该出现
+        // 不含正文：列表 VO 里没有正文，任何 chunk 文本都不该出现
         assertFalse(body.contains("手册独特正文"), "列表响应不应含正文：" + body);
 
         // title 模糊筛选 → 只回手册一篇（manual 来源、sourceId 为 null）

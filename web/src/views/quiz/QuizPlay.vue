@@ -7,17 +7,15 @@ import QuestionCard from '@/components/quiz/QuestionCard.vue';
 import { useQuizSession } from '@/composables/useQuizSession';
 import { usePageMeta } from '@/composables/usePageMeta';
 
-/**
- * 答题页
- *
- * <p><b>进度来自 sessionStorage</b>：服务端不持久化批次（题目不含答案，整批交给前端即可），
- * 所以刷新页面后靠本地恢复。换设备不能续答是刻意接受的——刷题不是考试，重开成本为 0。
- *
- * <p><b>单选点击即提交、多选显式提交</b>：见 {@link QuestionCard} 的说明。
- *
- * <p><b>键盘快捷键</b>：A–F 选项、Enter 提交/下一题、S 跳过。
- * 桌面端刷题效率的关键——鼠标在选项与「下一题」之间来回移动是最大的时间浪费。
- */
+// 答题页
+//
+// 进度来自 sessionStorage：服务端不持久化批次（题目不含答案，整批交给前端即可），
+// 所以刷新页面后靠本地恢复。换设备不能续答是刻意接受的——刷题不是考试，重开成本为 0。
+//
+// 单选点击即提交、多选显式提交：见 QuestionCard 的说明。
+//
+// 键盘快捷键：A–F 选项、Enter 提交/下一题、S 跳过。
+// 桌面端刷题效率的关键——鼠标在选项与「下一题」之间来回移动是最大的时间浪费。
 const router = useRouter();
 const session = useQuizSession();
 
@@ -25,15 +23,15 @@ usePageMeta({ title: '答题' });
 
 const starting = ref(true);
 
-/** 当前是否已到本轮末尾（进入结果视图） */
+// 当前是否已到本轮末尾（进入结果视图）
 const finished = computed(() => session.isFinished.value);
 
-/** 当前题是否可提交（多选需要至少选一个） */
+// 当前题是否可提交（多选需要至少选一个）
 const canSubmit = computed(
     () => session.phase.value === 'idle' && session.chosen.value.length > 0 && !!session.current.value,
 );
 
-/** 单选点击即提交：这是效率设计，代价是「点了不能改」——与真实考试一致 */
+// 单选点击即提交：这是效率设计，代价是「点了不能改」——与真实考试一致
 async function pick(label: string) {
     session.toggle(label);
     if (!session.isMultiple.value) {
@@ -56,25 +54,25 @@ function next() {
     session.next();
 }
 
-/** 结束本轮：清掉本地进度，回首页（结果视图里有「再来一轮」） */
+// 结束本轮：清掉本地进度，回首页（结果视图里有「再来一轮」）
 async function finish() {
     session.clear();
     await router.push('/quiz');
 }
 
-/** 再来一轮：回首页重新选（保留模式与范围的选择会更贴心，但首页已默认选好第一本教材） */
+// 再来一轮：回首页重新选（保留模式与范围的选择会更贴心，但首页已默认选好第一本教材）
 async function restart() {
     session.clear();
     await router.push('/quiz');
 }
 
-/** 本轮正确率；未答时为 null → 显示 "--" */
+// 本轮正确率；未答时为 null → 显示 "--"
 const accuracyText = computed(() => {
     const value = session.accuracy.value;
     return value === null ? '--' : `${Math.round(value * 100)}%`;
 });
 
-/** 键盘事件 */
+// 键盘事件
 function onKeydown(event: KeyboardEvent) {
     // 输入框里不劫持按键（虽然本页没有输入框，但将来可能加「笔记」）
     const target = event.target as HTMLElement | null;

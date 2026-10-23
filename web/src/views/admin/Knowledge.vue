@@ -5,19 +5,17 @@ import { adminApi } from '@/api/admin';
 import ErrorRetry from '@/components/ErrorRetry.vue';
 import type { KnowledgeDoc, PageResult } from '@/api/types';
 
-/**
- * 知识库（RAG）管理
- *
- * 两个批量按钮的区别必须让使用者一眼看懂：
- *  - **全量同步**：把业务数据灌进知识库，幂等（内容没变就跳过，零成本）；
- *  - **重建向量**：重新嵌入已有 chunk **不读业务源、不重新切分**。
- *    应用重启后向量全部丢失，此时 sync-all 会因为内容哈希未变而全部跳过（救不回来），
- *    只有重建向量能恢复——这是最容易踩的坑。
- */
+// 知识库（RAG）管理
+//
+// 两个批量按钮的区别必须让使用者一眼看懂：
+// - 全量同步：把业务数据灌进知识库，幂等（内容没变就跳过，零成本）；
+// - 重建向量：重新嵌入已有 chunk 不读业务源、不重新切分。
+// 应用重启后向量全部丢失，此时 sync-all 会因为内容哈希未变而全部跳过（救不回来），
+// 只有重建向量能恢复——这是最容易踩的坑。
 const page = reactive({ current: 1, pageSize: 10 });
 const result = ref<PageResult<KnowledgeDoc> | null>(null);
 const loading = ref(false);
-/** 列表加载失败的原因（空 = 正常）。失败时给原因 + 重试，而不是留一张空白表格 */
+// 列表加载失败的原因（空 = 正常）。失败时给原因 + 重试，而不是留一张空白表格
 const error = ref('');
 const syncForm = reactive({ sourceType: 'project', sourceId: '' });
 const lastResult = ref('');
@@ -62,17 +60,15 @@ async function syncOne() {
     await runBatch('同步单条', () => adminApi.docSync(syncForm.sourceType, syncForm.sourceId));
 }
 
-/**
- * 手工录入一篇文档
- *
- * <p>与「同步」的区别：同步是<b>从业务数据</b>（项目 / 成员 / 证书）读内容，
- * 手工录入是管理员<b>直接写</b>标题与正文，用来补充那些不在业务表里的资料
- * （比如团队约定、技术规约）。每次调用都会新建一篇，重复点会产生重复文档。
- *
- * <p>⚠️ <b>耗时要说清楚</b>：后端会真实调用 Embedding，两万字的正文可能超过
- * 请求层 30 秒的超时。所以按钮 loading 期间要在界面上说明「请勿关闭」，
- * 否则用户会以为卡死，甚至关掉页面——那样后端其实还在跑，只是没人看结果了。
- */
+// 手工录入一篇文档
+//
+// 与「同步」的区别：同步是从业务数据（项目 / 成员 / 证书）读内容，
+// 手工录入是管理员直接写标题与正文，用来补充那些不在业务表里的资料
+// （比如团队约定、技术规约）。每次调用都会新建一篇，重复点会产生重复文档。
+//
+// ⚠️ 耗时要说清楚：后端会真实调用 Embedding，两万字的正文可能超过
+// 请求层 30 秒的超时。所以按钮 loading 期间要在界面上说明「请勿关闭」，
+// 否则用户会以为卡死，甚至关掉页面——那样后端其实还在跑，只是没人看结果了。
 async function submitManual() {
     if (!manualForm.title.trim() || !manualForm.content.trim()) {
         ElMessage.warning('标题与正文必填');

@@ -38,32 +38,26 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-/**
- * SSE 流式提问验收测试
- *
- * author: shaoshing
- *
- * <p><b>本类刻意不加 {@code @Transactional}（与其它测试类不同）</b>：
- * 流式主流程运行在虚拟线程上（{@code streamExecutor}），数据库写入是<b>独立事务、真实提交</b>的，
- * 测试事务回滚对它无效。因此本类在 {@code @AfterEach} 里按前缀手动清理，
- * 所有测试数据都用 {@code T23} 前缀命名（见 {@link #cleanup()}）。
- *
- * <p>AI 流式调用用本地 Stub（JDK {@link HttpServer}）模拟 OpenAI 兼容的 SSE 响应：
- * 固定推送三段增量「流式 / - / 回答」（拼起来 = {@code 流式-回答}），
- * 请求体含 {@code TRIGGER_FAIL} 时返回 500，用于验证失败分支。
- *
- * <p>覆盖七条线：
- * <ol>
- *     <li><b>事件序列</b>：{@code meta → delta* → done}，meta 带 19 位字符串 sessionId；</li>
- *     <li><b>增量拼接</b>：delta 事件内容拼接 == 完整回答（多段推送，不是一次性返回）；</li>
- *     <li><b>落库一致性</b>：流结束后 user + assistant 两条消息入库，done 的 messageId 可在库中查到；</li>
- *     <li><b>续聊</b>：带 sessionId 的流式追加进同一会话；</li>
- *     <li><b>配额</b>：登录用户每次成功流式 +1（SQL 对齐）；</li>
- *     <li><b>失败也是事件</b>：参数错误 / 会话不存在或无权 / AI 失败 → {@code error} 事件，
- *     HTTP 恒 200；AI 失败时保留用户消息、无 assistant、不计数；</li>
- *     <li><b>回归</b>：匿名流式被拒 A0201（未登录不可用）与既有接口不受影响。</li>
- * </ol>
- */
+// SSE 流式提问验收测试
+//
+// 本类刻意不加 @Transactional（与其它测试类不同）：
+// 流式主流程运行在虚拟线程上（ streamExecutor），数据库写入是独立事务、真实提交的，
+// 测试事务回滚对它无效。因此本类在 @AfterEach 里按前缀手动清理，
+// 所有测试数据都用 T23 前缀命名（见 #cleanup）。
+//
+// AI 流式调用用本地 Stub（JDK HttpServer）模拟 OpenAI 兼容的 SSE 响应：
+// 固定推送三段增量「流式 / - / 回答」（拼起来 = 流式-回答），
+// 请求体含 TRIGGER_FAIL 时返回 500，用于验证失败分支。
+//
+// 覆盖七条线：
+// - 事件序列： meta → delta* → done，meta 带 19 位字符串 sessionId；
+// - 增量拼接：delta 事件内容拼接 == 完整回答（多段推送，不是一次性返回）；
+// - 落库一致性：流结束后 user + assistant 两条消息入库，done 的 messageId 可在库中查到；
+// - 续聊：带 sessionId 的流式追加进同一会话；
+// - 配额：登录用户每次成功流式 +1（SQL 对齐）；
+// - 失败也是事件：参数错误 / 会话不存在或无权 / AI 失败 → error 事件，
+// HTTP 恒 200；AI 失败时保留用户消息、无 assistant、不计数；
+// - 回归：匿名流式被拒 A0201（未登录不可用）与既有接口不受影响。
 @SpringBootTest
 @AutoConfigureMockMvc
 class AiChatStreamTest {
@@ -77,16 +71,14 @@ class AiChatStreamTest {
     @Resource
     private JdbcTemplate jdbcTemplate;
 
-    /** 起配额计数走 Redis，测试里读「用量」必须取合并值（DB 基准 + Redis 增量） */
+    // 起配额计数走 Redis，测试里读「用量」必须取合并值（DB 基准 + Redis 增量）
     @Resource
     private AiQueryCountManager aiQueryCountManager;
 
-    /**
-     * AI 熔断器：每个用例前重置。
-     *
-     * <p>本类有用例会让流式调用失败（连接断开、服务商 5xx），而熔断器是<b>进程内单例</b>，
-     * 不重置会把失败传染给同一 JVM 里后跑的测试类（2026-10-13 实测踩坑）。
-     */
+    // AI 熔断器：每个用例前重置。
+    //
+    // 本类有用例会让流式调用失败（连接断开、服务商 5xx），而熔断器是进程内单例，
+    // 不重置会把失败传染给同一 JVM 里后跑的测试类（2026-10-13 实测踩坑）。
     @Resource
     private AiCircuitBreaker circuitBreaker;
 
@@ -99,7 +91,7 @@ class AiChatStreamTest {
 
     private static HttpServer stub;
 
-    /** Stub 推送的三段增量，拼起来即完整回答 */
+    // Stub 推送的三段增量，拼起来即完整回答
     private static final String ANSWER_PART_1 = "流式";
     private static final String ANSWER_PART_2 = "-";
     private static final String ANSWER_PART_3 = "回答";
@@ -113,7 +105,7 @@ class AiChatStreamTest {
         stub = HttpServer.create(new InetSocketAddress(0), 0);
         stub.createContext("/chat/completions", exchange -> {
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            // ⚠️ LangChain4j 的请求体是**带空格的美化 JSON**（"stream" : true），
+            // ⚠️ LangChain4j 的请求体是带空格的美化 JSON（"stream" : true），
             // 精确匹配 "stream":true 会失败——必须先压掉空白再判断
             String compact = body.replace(" ", "").replace("\r", "").replace("\n", "");
             if (compact.contains("TRIGGER_FAIL")) {
@@ -164,9 +156,7 @@ class AiChatStreamTest {
         stub.stop(0);
     }
 
-    /**
-     * 按前缀清理本类产生的数据（非事务类必须显式清理；先子后父）
-     */
+    // 按前缀清理本类产生的数据（非事务类必须显式清理；先子后父）
     @AfterEach
     void cleanup() {
         jdbcTemplate.update("DELETE FROM studio_ai_message WHERE session_id IN "
@@ -179,7 +169,7 @@ class AiChatStreamTest {
 
     // ==================== 工具方法 ====================
 
-    /** 发起流式提问并等待流结束，返回原始 SSE 帧文本（轮询到 done/error 帧出现为止） */
+    // 发起流式提问并等待流结束，返回原始 SSE 帧文本（轮询到 done/error 帧出现为止）
     private MvcResult streamRaw(String json, String token) throws Exception {
         var request = post("/ai/chat/stream").contentType(MediaType.APPLICATION_JSON).content(json);
         if (token != null) {
@@ -210,7 +200,7 @@ class AiChatStreamTest {
         return streamRaw(json, token).getResponse().getContentAsString(StandardCharsets.UTF_8);
     }
 
-    /** 取某类事件的全部 data 负载（兼容冒号后空格与 CRLF） */
+    // 取某类事件的全部 data 负载（兼容冒号后空格与 CRLF）
     private List<String> dataFor(String frames, String eventName) {
         List<String> out = new ArrayList<>();
         Matcher m = Pattern.compile("(?m)^event:\\s*" + eventName + "\\s*\\r?\\ndata:\\s*(.*?)\\s*\\r?$")
@@ -227,14 +217,14 @@ class AiChatStreamTest {
         return all.get(0);
     }
 
-    /** 从 JSON 负载里取字符串字段（负载是本项目 JsonMapper 序列化的紧凑 JSON） */
+    // 从 JSON 负载里取字符串字段（负载是本项目 JsonMapper 序列化的紧凑 JSON）
     private String jsonField(String payload, String field) {
         Matcher m = Pattern.compile("\"" + field + "\":\"([^\"]*)\"").matcher(payload);
         assertTrue(m.find(), "负载缺少字段 " + field + "：" + payload);
         return m.group(1);
     }
 
-    /** 最近一次登录的账户（供配额断言与清理使用） */
+    // 最近一次登录的账户（供配额断言与清理使用）
     private String lastAccount;
 
     private int queryCountOf(String account) {
@@ -266,7 +256,7 @@ class AiChatStreamTest {
         return body.substring(start, body.indexOf('"', start));
     }
 
-    /** 注册并登录一个测试用户（账户记录在 lastAccount，供配额断言与清理） */
+    // 注册并登录一个测试用户（账户记录在 lastAccount，供配额断言与清理）
     private String login() throws Exception {
         return loginUserTracked();
     }

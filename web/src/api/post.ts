@@ -11,46 +11,40 @@ import type {
     PostSelfDetail,
 } from './types';
 
-/**
- * 帖子 / 评论接口
- *
- * <p><b>为什么单独建一个文件</b>：帖子有自己的一整套资源（帖子、评论、审核、删除），
- * 与既有 portal（只读展示）/ admin（成员、证书等）都不重合，混进去会让那两个文件越滚越大。
- *
- * <p><b>先审后发对前端的直接影响</b>：`add` 与 `commentAdd` 返回的只是新 ID，
- * 内容此时是「待审」状态，<b>不会出现在公开列表里</b>。
- * 调用方必须给出明确提示（「已提交，审核通过后可见」），否则用户会以为提交失败。
- */
+// 帖子 / 评论接口
+//
+// 为什么单独建一个文件：帖子有自己的一整套资源（帖子、评论、审核、删除），
+// 与既有 portal（只读展示）/ admin（成员、证书等）都不重合，混进去会让那两个文件越滚越大。
+//
+// 先审后发对前端的直接影响：`add` 与 `commentAdd` 返回的只是新 ID，
+// 内容此时是「待审」状态，不会出现在公开列表里。
+// 调用方必须给出明确提示（「已提交，审核通过后可见」），否则用户会以为提交失败。
 export const postApi = {
     // ==================== C 端（列表 / 详情游客可访问） ====================
 
-    /** 公开帖子分页：仅已通过，置顶优先 + 时间倒序 */
+    // 公开帖子分页：仅已通过，置顶优先 + 时间倒序
     list: (params: Record<string, unknown>) => http.get<PageResult<Post>>('/post/list/page', params),
 
-    /** 帖子详情：含 Markdown 正文，后端会原子自增浏览量 */
+    // 帖子详情：含 Markdown 正文，后端会原子自增浏览量
     detail: (id: string) => http.get<PostDetail>('/post/detail', { id }),
 
-    /** 我的发帖：含待审 / 已驳回（带理由），仅作者本人可见 */
+    // 我的发帖：含待审 / 已驳回（带理由），仅作者本人可见
     my: (params: Record<string, unknown>) => http.get<PageResult<PostAudit>>('/post/my', params),
 
-    /**
-     * 读自己「未公开」帖子的正文（改驳回稿的前置步骤）
-     *
-     * <p>公开详情只返回已通过的帖子，驳回稿的正文只能从这里读；
-     * 与公开详情不同，本接口<b>不累加浏览量</b>（自己预览不该算一次访问）。
-     */
+    // 读自己「未公开」帖子的正文（改驳回稿的前置步骤）
+    //
+    // 公开详情只返回已通过的帖子，驳回稿的正文只能从这里读；
+    // 与公开详情不同，本接口不累加浏览量（自己预览不该算一次访问）。
     myDetail: (id: string) => http.get<PostSelfDetail>('/post/my/detail', { id }),
 
-    /** 发帖（仅工作室成员） */
+    // 发帖（仅工作室成员）
     add: (body: { title: string; content: string; summary?: string; coverImage?: string }) =>
         http.post<string>('/post/add', body),
 
-    /**
-     * 作者修改自己被驳回的帖子（改完重新送审）
-     *
-     * <p>仅<b>本人 + 已驳回</b>可调：其余情况后端按「帖子不存在」返回，
-     * 不暴露存在性。保存后帖子回到待审——前端必须提示「已重新提交审核」。
-     */
+    // 作者修改自己被驳回的帖子（改完重新送审）
+    //
+    // 仅本人 + 已驳回可调：其余情况后端按「帖子不存在」返回，
+    // 不暴露存在性。保存后帖子回到待审——前端必须提示「已重新提交审核」。
     updateMine: (body: {
         id: string;
         title: string;
@@ -59,61 +53,53 @@ export const postApi = {
         coverImage?: string;
     }) => http.post<boolean>('/post/update-mine', body),
 
-    /**
-     * 点赞帖子（需登录）
-     *
-     * <p><b>只能赞、不能取消</b>：后端幂等，重复点击不会重复计数。
-     * 返回值就是点赞后的最新点赞数——前端直接用它刷新界面，
-     * <b>不要自己做 +1</b>（否则重复点击会让数字跳两次）。
-     */
+    // 点赞帖子（需登录）
+    //
+    // 只能赞、不能取消：后端幂等，重复点击不会重复计数。
+    // 返回值就是点赞后的最新点赞数——前端直接用它刷新界面，
+    // 不要自己做 +1（否则重复点击会让数字跳两次）。
     like: (postId: string) => http.post<number>('/post/like', { postId }),
 
-    /** 某帖子的公开评论：已通过，楼中楼已由后端组装好 */
+    // 某帖子的公开评论：已通过，楼中楼已由后端组装好
     commentList: (postId: string) => http.get<PostComment[]>('/post/comment/list', { postId }),
 
-    /** 发表评论 / 回复某条顶层评论（登录用户） */
+    // 发表评论 / 回复某条顶层评论（登录用户）
     commentAdd: (body: { postId: string; content: string; parentId?: string | null }) =>
         http.post<string>('/post/comment/add', body),
 
     // ==================== 管理端（全部要求 admin） ====================
 
-    /** 帖子待审队列：仅待审，按提交时间先进先出 */
+    // 帖子待审队列：仅待审，按提交时间先进先出
     pending: (params: Record<string, unknown>) =>
         http.get<PageResult<PostAudit>>('/admin/post/pending', params),
 
-    /**
-     * 批量审核帖子
-     *
-     * @param body.ids 待处置的帖子 ID 列表
-     * @param body.action approve（通过）/ reject（驳回）
-     * @param body.rejectReason 驳回理由，**驳回时后端强校验必填**
-     */
+    // 批量审核帖子
+    //
+    // @param body.ids 待处置的帖子 ID 列表
+    // @param body.action approve（通过）/ reject（驳回）
+    // @param body.rejectReason 驳回理由，驳回时后端强校验必填
     audit: (body: { ids: string[]; action: 'approve' | 'reject'; rejectReason?: string }) =>
         http.post<number>('/admin/post/audit', body),
 
-    /** 评论待审队列 */
+    // 评论待审队列
     commentPending: (params: Record<string, unknown>) =>
         http.get<PageResult<PostCommentAudit>>('/admin/post/comment/pending', params),
 
-    /** 批量审核评论（通过时后端会累加所属帖子的评论数） */
+    // 批量审核评论（通过时后端会累加所属帖子的评论数）
     commentAudit: (body: { ids: string[]; action: 'approve' | 'reject'; rejectReason?: string }) =>
         http.post<number>('/admin/post/comment/audit', body),
 
-    /**
-     * 删除评论（连带删除它的所有回复）
-     *
-     * @returns 实际删除的条数（含回复）
-     */
+    // 删除评论（连带删除它的所有回复）
+    //
+    // @returns 实际删除的条数（含回复）
     commentDelete: (id: string) => http.post<number>('/admin/post/comment/delete', { id }),
 
     // ==================== 管理端：帖子管理（全部要求 admin） ====================
 
-    /**
-     * 帖子全量列表（三种状态均可查）
-     *
-     * <p>GET + 查询参数。筛选条件不传即「不按该条件过滤」：
-     * {@code status} 不传 = 查全部状态（与待审队列的关键区别）。
-     */
+    // 帖子全量列表（三种状态均可查）
+    //
+    // GET + 查询参数。筛选条件不传即「不按该条件过滤」：
+    // status 不传 = 查全部状态（与待审队列的关键区别）。
     adminList: (params: {
         current?: number;
         pageSize?: number;
@@ -122,29 +108,23 @@ export const postApi = {
         authorKeyword?: string;
     }) => http.get<PageResult<PostAudit>>('/admin/post/list/page', params),
 
-    /**
-     * 删除帖子（级联删除该帖全部评论与点赞关系）
-     *
-     * @returns 实际删除的内容行数（帖子 1 + 其下评论数）
-     */
+    // 删除帖子（级联删除该帖全部评论与点赞关系）
+    //
+    // @returns 实际删除的内容行数（帖子 1 + 其下评论数）
     delete: (id: string) => http.post<number>('/admin/post/delete', { id }),
 
-    /**
-     * 置顶 / 取消置顶
-     *
-     * <p>后端只允许置顶「已通过」的帖子（置顶待审帖在公开列表无意义），
-     * 前端也应把其它状态的开关置灰，别让用户点了才收到报错。
-     */
+    // 置顶 / 取消置顶
+    //
+    // 后端只允许置顶「已通过」的帖子（置顶待审帖在公开列表无意义），
+    // 前端也应把其它状态的开关置灰，别让用户点了才收到报错。
     pin: (id: string, pinned: number) =>
         http.post<boolean>('/admin/post/pin', { id, pinned }),
 
-    /**
-     * 编辑帖子
-     *
-     * <p>⚠️ 保存后后端会把非待审的帖子**重置为待审**重新送审，
-     * 前端必须提示「已保存，修改内容将重新送审」——否则管理员会以为
-     * 改完立刻生效，跑去门户发现文章「消失」了。
-     */
+    // 编辑帖子
+    //
+    // ⚠️ 保存后后端会把非待审的帖子重置为待审重新送审，
+    // 前端必须提示「已保存，修改内容将重新送审」——否则管理员会以为
+    // 改完立刻生效，跑去门户发现文章「消失」了。
     update: (body: {
         id: string;
         title: string;
@@ -153,29 +133,25 @@ export const postApi = {
         coverImage?: string;
     }) => http.post<boolean>('/admin/post/update', body),
 
-    /**
-     * 管理端帖子详情（含 Markdown 正文）
-     *
-     * <p>编辑弹窗回填正文专用。为什么不能调公开的 {@link detail}：
-     * 它只返回「已通过」的帖子（待审 / 已驳回取不到），
-     * 而且会**自增浏览量**——管理员每点开一次编辑，热度计数就被污染一次。
-     */
+    // 管理端帖子详情（含 Markdown 正文）
+    //
+    // 编辑弹窗回填正文专用。为什么不能调公开的 detail：
+    // 它只返回「已通过」的帖子（待审 / 已驳回取不到），
+    // 而且会自增浏览量——管理员每点开一次编辑，热度计数就被污染一次。
     adminDetail: (id: string) => http.get<PostAdminDetail>('/admin/post/detail', { id }),
 };
 
-/**
- * 上传图片（发帖时往正文里插图用）
- *
- * <p><b>为什么必须传到站内</b>：后端校验正文里的图片路径必须以 `/uploads/` 开头，
- * 外链图会被拒绝——所以绝不能图省事把图片转成 base64 内嵌（正文会膨胀），
- * 也不能上传到第三方图床。
- *
- * <p>实现统一收在 {@link fileApi}.upload（后台表单上传共用同一份 multipart 逻辑），
- * 这里只做转发，避免两处各写一遍。
- *
- * @param file 图片文件（后端只接受 PNG / JPEG，真实类型由魔数判定）
- * @returns 相对访问路径，如 `/uploads/2026/10/xxxx.png`
- */
+// 上传图片（发帖时往正文里插图用）
+//
+// 为什么必须传到站内：后端校验正文里的图片路径必须以 `/uploads/` 开头，
+// 外链图会被拒绝——所以绝不能图省事把图片转成 base64 内嵌（正文会膨胀），
+// 也不能上传到第三方图床。
+//
+// 实现统一收在 fileApi.upload（后台表单上传共用同一份 multipart 逻辑），
+// 这里只做转发，避免两处各写一遍。
+//
+// @param file 图片文件（后端只接受 PNG / JPEG，真实类型由魔数判定）
+// @returns 相对访问路径，如 `/uploads/2026/10/xxxx.png`
 export function uploadPostImage(file: File): Promise<string> {
     return fileApi.upload(file);
 }

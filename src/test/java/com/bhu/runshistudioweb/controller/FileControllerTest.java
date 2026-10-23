@@ -22,28 +22,22 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-/**
- * 文件上传接口验收测试
- *
- * author: shaoshing
- *
- * <p>验证的是「接口层面的边界」，而不是文件本身怎么写：
- * <ol>
- *     <li><b>上传必须登录</b>：/file/upload 不在白名单里，匿名调用要拿到 A0201，
- *     否则等于开放了一个免费图床；</li>
- *     <li><b>上传后的图片必须匿名可访问</b>：/uploads/** 在白名单里，
- *     而且 WebMvcConfig 的磁盘映射要真的生效——这条不测就很容易出现「存进去了但网页上全是裂图」。</li>
- * </ol>
- *
- * <p>存储目录同样指向系统临时目录，避免污染真实上传目录。
- */
+// 文件上传接口验收测试
+//
+// 验证的是「接口层面的边界」，而不是文件本身怎么写：
+// - 上传必须登录：/file/upload 不在白名单里，匿名调用要拿到 A0201，
+// 否则等于开放了一个免费图床；
+// - 上传后的图片必须匿名可访问：/uploads/** 在白名单里，
+// 而且 WebMvcConfig 的磁盘映射要真的生效——这条不测就很容易出现「存进去了但网页上全是裂图」。
+//
+// 存储目录同样指向系统临时目录，避免污染真实上传目录。
 // 上传根目录由 surefire 的 FILE_ROOT_DIR 统一注入（见 pom.xml），这里保持默认配置以便与其它测试共用同一个容器
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
 class FileControllerTest {
 
-    /** 合法 PNG 的头部字节 + 填充（校验只读前 12 字节） */
+    // 合法 PNG 的头部字节 + 填充（校验只读前 12 字节）
     private static final byte[] PNG_BYTES = {
             (byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
             0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 1, 2, 3, 4
@@ -56,7 +50,7 @@ class FileControllerTest {
         return result.getResponse().getContentAsString();
     }
 
-    /** 上传根目录：surefire 注入的 FILE_ROOT_DIR（见 pom.xml），与被测代码读的是同一个值 */
+    // 上传根目录：surefire 注入的 FILE_ROOT_DIR（见 pom.xml），与被测代码读的是同一个值
     private String testUploadRoot() {
         return System.getProperty("FILE_ROOT_DIR");
     }

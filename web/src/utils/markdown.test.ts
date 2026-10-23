@@ -1,19 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { renderMarkdown } from './markdown';
 
-/**
- * Markdown 渲染增强工具单测（纯字符串进、字符串出，不依赖 DOM）
- *
- * author: shaoshing
- *
- * <p>锁四类输出契约——它们任何一处回归，用户侧的表现都是「增强静默消失」：
- * <ol>
- *     <li>目录只收 h2/h3（h1 是文章标题，收进来等于目录重复一项）；</li>
- *     <li>标题 {@code id} 与目录 {@code id} 必须一致（锚点跳转的命门）；</li>
- *     <li>代码块外包复制按钮、按钮在 {@code pre} 外面（否则全选复制会抄走按钮）；</li>
- *     <li>图片带懒加载属性。</li>
- * </ol>
- */
+// Markdown 渲染增强工具单测（纯字符串进、字符串出，不依赖 DOM）
+//
+// 锁四类输出契约——它们任何一处回归，用户侧的表现都是「增强静默消失」：
+// - 目录只收 h2/h3（h1 是文章标题，收进来等于目录重复一项）；
+// - 标题 id 与目录 id 必须一致（锚点跳转的命门）；
+// - 代码块外包复制按钮、按钮在 pre 外面（否则全选复制会抄走按钮）；
+// - 图片带懒加载属性。
 describe('renderMarkdown：目录抽取', () => {
     it('只收 h2/h3，按文档顺序，带纯文本与层级', () => {
         const { toc } = renderMarkdown(

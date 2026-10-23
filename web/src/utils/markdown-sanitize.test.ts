@@ -2,22 +2,18 @@ import DOMPurify from 'dompurify';
 import { describe, expect, it } from 'vitest';
 import { MARKDOWN_ALLOWED_ATTR, MARKDOWN_ALLOWED_TAGS, renderMarkdown } from './markdown';
 
-/**
- * 渲染 + 清洗全链路测试（jsdom 环境，DOMPurify 需要真实 DOM）
- *
- * author: shaoshing
- *
- * <p><b>这个测试补的是页面接线的盲区</b>：{@link renderMarkdown} 的单测只验证
- * 「renderer 输出了什么」，而页面在它之后还有一道 DOMPurify 白名单清洗。
- * 两边任何一处没对齐（renderer 输出了 div/button/id，白名单没放行），
- * 增强就会被**静默洗掉**——复制按钮不见了、目录锚点失效了，但没有任何报错。
- * 这类回归单测 renderer 或单测 sanitize 都发现不了，必须测链路。
- *
- * <p>同时反向守住安全底线：白名单为增强放行了 div/button/id 等，
- * 不能顺手把 `<script>`、`onerror=` 也放进来。
- */
+// 渲染 + 清洗全链路测试（jsdom 环境，DOMPurify 需要真实 DOM）
+//
+// 这个测试补的是页面接线的盲区： renderMarkdown 的单测只验证
+// 「renderer 输出了什么」，而页面在它之后还有一道 DOMPurify 白名单清洗。
+// 两边任何一处没对齐（renderer 输出了 div/button/id，白名单没放行），
+// 增强就会被静默洗掉——复制按钮不见了、目录锚点失效了，但没有任何报错。
+// 这类回归单测 renderer 或单测 sanitize 都发现不了，必须测链路。
+//
+// 同时反向守住安全底线：白名单为增强放行了 div/button/id 等，
+// 不能顺手把 ``、`onerror=` 也放进来。
 
-/** 复刻两个详情页的清洗调用（白名单与工具同源，差异只在帖子页的 img 钩子） */
+// 复刻两个详情页的清洗调用（白名单与工具同源，差异只在帖子页的 img 钩子）
 function sanitize(html: string, restrictImages = false): string {
     if (restrictImages) {
         DOMPurify.addHook('afterSanitizeAttributes', (node) => {

@@ -33,45 +33,39 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/**
- * 刷题错题本服务实现
- *
- * author: shaoshing
- *
- * <p><b>本类的核心是 {@link #applyOutcome}，它是错题本状态机的唯一写入口</b>。
- * 所有「什么时候入本、什么时候消解、消解后再错怎么办」的规则都在那一个方法里，
- * 别处不允许直接改 {@code status} / {@code correct_streak}——
- * 规则一旦分散，就会出现「答题页说已消解、错题本页还显示待复习」的不一致，
- * 而这种不一致不报错，只能靠用户投诉发现。
- *
- * <p><b>为什么过滤停用题用子查询而不是清理条目</b>：
- * 停用是<b>可逆</b>的（管理员随时可能重新启用），如果停用时把条目删掉，
- * 重新启用后用户的错题记录就永久消失了。用 {@code inSql} 在查询侧过滤，
- * 重新启用后条目自动回来。代价是每条查询多一个子查询——但它走
- * {@code studio_quiz_question} 的主键索引，代价可以忽略。
- *
- * <p><b>列表与计数必须用同一个过滤条件</b>，否则会出现
- * 「概览显示 9 条待复习、列表只有 7 条」这种自相矛盾的界面。
- */
+// 刷题错题本服务实现
+//
+// 本类的核心是 #applyOutcome，它是错题本状态机的唯一写入口。
+// 所有「什么时候入本、什么时候消解、消解后再错怎么办」的规则都在那一个方法里，
+// 别处不允许直接改 status / correct_streak——
+// 规则一旦分散，就会出现「答题页说已消解、错题本页还显示待复习」的不一致，
+// 而这种不一致不报错，只能靠用户投诉发现。
+//
+// 为什么过滤停用题用子查询而不是清理条目：
+// 停用是可逆的（管理员随时可能重新启用），如果停用时把条目删掉，
+// 重新启用后用户的错题记录就永久消失了。用 inSql 在查询侧过滤，
+// 重新启用后条目自动回来。代价是每条查询多一个子查询——但它走
+// studio_quiz_question 的主键索引，代价可以忽略。
+//
+// 列表与计数必须用同一个过滤条件，否则会出现
+// 「概览显示 9 条待复习、列表只有 7 条」这种自相矛盾的界面。
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class QuizWrongServiceImpl extends ServiceImpl<StudioQuizWrongMapper, StudioQuizWrong>
         implements QuizWrongService {
 
-    /** 错题本条目状态：待复习 */
+    // 错题本条目状态：待复习
     private static final int STATUS_PENDING = QuizWrongStatusEnum.PENDING.getValue();
 
-    /** 错题本条目状态：已消解 */
+    // 错题本条目状态：已消解
     private static final int STATUS_RESOLVED = QuizWrongStatusEnum.RESOLVED.getValue();
 
-    /**
-     * 「题目可见」的子查询条件
-     *
-     * <p>停用（{@code status=1}）与删除（{@code deleted_at≠0}）的题都不出现在错题本里。
-     * 抽成常量是为了让<b>列表与计数用同一个字符串</b>——
-     * 两处各写一份，改一处漏一处就会出现「计数 9、列表 7」。
-     */
+    // 「题目可见」的子查询条件
+    //
+    // 停用（ status=1）与删除（ deleted_at≠0）的题都不出现在错题本里。
+    // 抽成常量是为了让列表与计数用同一个字符串——
+    // 两处各写一份，改一处漏一处就会出现「计数 9、列表 7」。
     private static final String VISIBLE_QUESTION_SQL =
             "SELECT id FROM studio_quiz_question WHERE deleted_at = 0 AND status = 0";
 
@@ -94,14 +88,12 @@ public class QuizWrongServiceImpl extends ServiceImpl<StudioQuizWrongMapper, Stu
         return handleCorrect(existing, resolveStreak);
     }
 
-    /**
-     * 答错：入本或累加
-     *
-     * <p>「首次入本」与「再错」的区别只影响前端提示文案（added / reopened），
-     * 落库规则完全一致——都是「回到待复习、次数 +1、连对归零」。
-     * 已消解的条目再错会清空 {@code resolvedAt / resolveType}，
-     * 于是「已消解 → 待复习」这个迁移不需要任何额外代码。
-     */
+    // 答错：入本或累加
+    //
+    // 「首次入本」与「再错」的区别只影响前端提示文案（added / reopened），
+    // 落库规则完全一致——都是「回到待复习、次数 +1、连对归零」。
+    // 已消解的条目再错会清空 resolvedAt / resolveType，
+    // 于是「已消解 → 待复习」这个迁移不需要任何额外代码。
     private Outcome handleWrong(long userId, long questionId, StudioQuizWrong existing) {
         LocalDateTime now = LocalDateTime.now();
 
@@ -135,13 +127,11 @@ public class QuizWrongServiceImpl extends ServiceImpl<StudioQuizWrongMapper, Stu
         return new Outcome(wasResolved ? "reopened" : "added", null);
     }
 
-    /**
-     * 答对：推进连对进度，达阈值即消解
-     *
-     * <p><b>不在错题本里就什么都不做</b>：一道从来没做错过的题答对了，
-     * 没有任何「状态」需要更新。给它建一条已消解的条目是错的——
-     * 那会让「已消解」变成「做对过的题数」，与它的语义（曾经错过、现在掌握了）不符。
-     */
+    // 答对：推进连对进度，达阈值即消解
+    //
+    // 不在错题本里就什么都不做：一道从来没做错过的题答对了，
+    // 没有任何「状态」需要更新。给它建一条已消解的条目是错的——
+    // 那会让「已消解」变成「做对过的题数」，与它的语义（曾经错过、现在掌握了）不符。
     private Outcome handleCorrect(StudioQuizWrong existing, int resolveStreak) {
         if (existing == null) {
             return new Outcome("none", null);
@@ -293,22 +283,18 @@ public class QuizWrongServiceImpl extends ServiceImpl<StudioQuizWrongMapper, Stu
 
     // ==================== 私有 ====================
 
-    /**
-     * 按用户 + 题目查错题条目
-     *
-     * @return 条目；不存在时返回 null
-     */
+    // 按用户 + 题目查错题条目
+    //
+    // @return 条目；不存在时返回 null
     private StudioQuizWrong findByUserAndQuestion(long userId, long questionId) {
         return this.getOne(new LambdaQueryWrapper<StudioQuizWrong>()
                 .eq(StudioQuizWrong::getUserId, userId)
                 .eq(StudioQuizWrong::getQuestionId, questionId));
     }
 
-    /**
-     * 取范围内（教材/章节，均可空）的题目 ID
-     *
-     * @return 题目 ID 列表；无条件时返回空列表（调用方需先判断「是否真的需要过滤」）
-     */
+    // 取范围内（教材/章节，均可空）的题目 ID
+    //
+    // @return 题目 ID 列表；无条件时返回空列表（调用方需先判断「是否真的需要过滤」）
     private List<Long> questionIdsOf(String textbookName, String chapterName) {
         LambdaQueryWrapper<StudioQuizQuestion> wrapper = new LambdaQueryWrapper<>();
         wrapper.select(StudioQuizQuestion::getId)
@@ -319,14 +305,12 @@ public class QuizWrongServiceImpl extends ServiceImpl<StudioQuizWrongMapper, Stu
                 .collect(Collectors.toList());
     }
 
-    /**
-     * 该用户对某题最近一次答错时所选的标签
-     *
-     * <p>用于错题回顾时对照「你上次选了什么」——只显示正确答案的话，
-     * 用户不知道自己当时错在哪。
-     *
-     * @return 所选标签；没有答错记录时返回 null
-     */
+    // 该用户对某题最近一次答错时所选的标签
+    //
+    // 用于错题回顾时对照「你上次选了什么」——只显示正确答案的话，
+    // 用户不知道自己当时错在哪。
+    //
+    // @return 所选标签；没有答错记录时返回 null
     private String lastWrongChosen(long userId, long questionId) {
         List<StudioQuizAnswer> answers = studioQuizAnswerMapper.selectList(
                 new LambdaQueryWrapper<StudioQuizAnswer>()
@@ -341,9 +325,7 @@ public class QuizWrongServiceImpl extends ServiceImpl<StudioQuizWrongMapper, Stu
         return answers.get(0).getChosenLabels();
     }
 
-    /**
-     * 错题条目批量转 VO（题目信息一次查完，避免 N+1）
-     */
+    // 错题条目批量转 VO（题目信息一次查完，避免 N+1）
     private List<QuizWrongItemVO> toItemVOs(List<StudioQuizWrong> entries) {
         List<QuizWrongItemVO> result = new ArrayList<>();
         if (entries == null || entries.isEmpty()) {
@@ -366,9 +348,7 @@ public class QuizWrongServiceImpl extends ServiceImpl<StudioQuizWrongMapper, Stu
         return result;
     }
 
-    /**
-     * 填充错题条目与题目的公共字段（列表与详情共用）
-     */
+    // 填充错题条目与题目的公共字段（列表与详情共用）
     private void fillItem(QuizWrongItemVO vo, StudioQuizWrong entry, StudioQuizQuestion question) {
         vo.setId(entry.getId());
         vo.setQuestionId(entry.getQuestionId());
@@ -384,26 +364,22 @@ public class QuizWrongServiceImpl extends ServiceImpl<StudioQuizWrongMapper, Stu
         vo.setResolveType(entry.getResolveType());
     }
 
-    /**
-     * 分页参数兜底纠正（不抛异常，与其它模块一致）
-     */
+    // 分页参数兜底纠正（不抛异常，与其它模块一致）
     private Page<StudioQuizWrong> newPageWithDefaults(Long current, Long pageSize) {
         long page = current == null || current < 1 ? 1L : current;
         long size = pageSize == null || pageSize < 1 ? QuizConstant.DEFAULT_PAGE_SIZE : pageSize;
         return new Page<>(page, Math.min(size, QuizConstant.MAX_PAGE_SIZE));
     }
 
-    /** 计数为 null 时按 0 处理（老数据在加列之前可能没有值） */
+    // 计数为 null 时按 0 处理（老数据在加列之前可能没有值）
     private static int safeInt(Integer value) {
         return value == null ? 0 : value;
     }
 
-    /**
-     * 「清空消解信息」的小工具
-     *
-     * <p>抽成内部类只是为了避免在 {@link #handleWrong} 里塞一段
-     * 与本方法职责无关的 wrapper 构造代码；它不做任何业务判断。
-     */
+    // 「清空消解信息」的小工具
+    //
+    // 抽成内部类只是为了避免在 #handleWrong 里塞一段
+    // 与本方法职责无关的 wrapper 构造代码；它不做任何业务判断。
     private static final class LambdaUpdateWrapperHolder {
 
         private static void clearResolved(QuizWrongServiceImpl service, Long id) {

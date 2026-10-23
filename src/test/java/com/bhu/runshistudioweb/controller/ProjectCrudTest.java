@@ -27,21 +27,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-/**
- * 项目案例模块验收测试
- *
- * author: shaoshing
- *
- * <p>覆盖五条线：
- * <ol>
- *     <li><b>鉴权边界</b>：C 端列表/详情匿名可用；后台接口 A0201 / A0301；</li>
- *     <li><b>队长不变量（本任务核心）</b>：新增即同步进关联表、换队长幂等、旧队长保留、
- *     当前队长不可解绑；</li>
- *     <li><b>关联管理</b>：显式绑定冲突报错、解绑物理删除、重复解绑 A0402；</li>
- *     <li><b>级联清理</b>：删项目清项目关联；删成员清「成员-项目 + 成员-证书」两张表；</li>
- *     <li><b>tech_stack 的 JSON 边界</b>：List ↔ JSON 往返、超长拦截、脏数据不炸接口。</li>
- * </ol>
- */
+// 项目案例模块验收测试
+//
+// 覆盖五条线：
+// - 鉴权边界：C 端列表/详情匿名可用；后台接口 A0201 / A0301；
+// - 队长不变量（本任务核心）：新增即同步进关联表、换队长幂等、旧队长保留、
+// 当前队长不可解绑；
+// - 关联管理：显式绑定冲突报错、解绑物理删除、重复解绑 A0402；
+// - 级联清理：删项目清项目关联；删成员清「成员-项目 + 成员-证书」两张表；
+// - tech_stack 的 JSON 边界：List ↔ JSON 往返、超长拦截、脏数据不炸接口。
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -59,7 +53,7 @@ class ProjectCrudTest {
     @Resource
     private StudioMemberProjectMapper memberProjectMapper;
 
-    /** 用来模拟「手工改库改坏 JSON」的脏数据 */
+    // 用来模拟「手工改库改坏 JSON」的脏数据
     @Resource
     private JdbcTemplate jdbcTemplate;
 
@@ -138,7 +132,7 @@ class ProjectCrudTest {
                 .eq(StudioMemberProject::getProjectId, projectId));
     }
 
-    /** 每个用例内部先取一次管理员 token（用字段缓存，避免每个方法都传参） */
+    // 每个用例内部先取一次管理员 token（用字段缓存，避免每个方法都传参）
     private String token;
 
     private String token() throws Exception {

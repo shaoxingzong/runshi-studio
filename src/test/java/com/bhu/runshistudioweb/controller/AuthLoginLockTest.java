@@ -19,26 +19,22 @@ import org.springframework.transaction.annotation.Transactional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-/**
- * 账号级登录失败锁定 · 端到端验收
- *
- * author: shaoshing
- *
- * <p><b>为什么需要端到端而不仅是纯单测</b>：锁定逻辑的正确性一半在 {@code AuthLockManager}，
- * 另一半在 {@code UserServiceImpl.userLogin} 的<b>接线</b>——assertNotLocked 有没有在查库前调用、
- * recordFailure 有没有只在「账号存在」时触发、clear 有没有在成功时调用。
- * 这些纯单测覆盖不到，必须走真实登录链路。
- *
- * <p><b>类名必须是 {@code Auth} 开头</b>（排序约束，见 {@code AiKnowledgeIngestTest} 类注释）：
- * 本类用 {@code @DynamicPropertySource} 开锁，会新建 Spring 上下文；
- * 而 Sa-Token 用<b>静态</b> {@code SaManager} 持有 Redis DAO，永远绑定「最后创建的上下文」。
- * 新建上下文的类必须全部排在 {@code CertificateCrudTest}（第一个用默认上下文的类）之前，
- * 否则后续登录类测试会集体 B0001 / A0201。{@code Auth} < {@code Certificate}，排位正确。
- *
- * <p><b>为什么关掉 IP 限流</b>：本类每个用例要连续登录 6 次以上，
- * 不关的话会先撞 IP 限流（10 次/分钟），锁定的断言就失去意义了。
- * 限流本身由 {@code IpRateLimitManagerTest} 覆盖，两者不互相干扰。
- */
+// 账号级登录失败锁定 · 端到端验收
+//
+// 为什么需要端到端而不仅是纯单测：锁定逻辑的正确性一半在 AuthLockManager，
+// 另一半在 UserServiceImpl.userLogin 的接线——assertNotLocked 有没有在查库前调用、
+// recordFailure 有没有只在「账号存在」时触发、clear 有没有在成功时调用。
+// 这些纯单测覆盖不到，必须走真实登录链路。
+//
+// 类名必须是 Auth 开头（排序约束，见 AiKnowledgeIngestTest 类注释）：
+// 本类用 @DynamicPropertySource 开锁，会新建 Spring 上下文；
+// 而 Sa-Token 用静态 SaManager 持有 Redis DAO，永远绑定「最后创建的上下文」。
+// 新建上下文的类必须全部排在 CertificateCrudTest（第一个用默认上下文的类）之前，
+// 否则后续登录类测试会集体 B0001 / A0201。 Auth < Certificate，排位正确。
+//
+// 为什么关掉 IP 限流：本类每个用例要连续登录 6 次以上，
+// 不关的话会先撞 IP 限流（10 次/分钟），锁定的断言就失去意义了。
+// 限流本身由 IpRateLimitManagerTest 覆盖，两者不互相干扰。
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -46,7 +42,7 @@ class AuthLoginLockTest {
 
     private static final String PASSWORD = "Studio@2026";
 
-    /** 锁定计数键前缀，与 AuthLockManager 内部保持一致（清理用） */
+    // 锁定计数键前缀，与 AuthLockManager 内部保持一致（清理用）
     private static final String LOCK_KEY_PREFIX = "studio:auth:lock:";
 
     @Resource
@@ -55,7 +51,7 @@ class AuthLoginLockTest {
     @Resource
     private SysUserMapper sysUserMapper;
 
-    /** 直接操作 Redis 清理锁定键：@Transactional 回滚不了外部系统 */
+    // 直接操作 Redis 清理锁定键：@Transactional 回滚不了外部系统
     @Resource
     private StringRedisTemplate stringRedisTemplate;
 
@@ -67,7 +63,7 @@ class AuthLoginLockTest {
         registry.add("studio.auth.rate-limit.enabled", () -> false);
     }
 
-    /** 每个用例造一个全新账号：锁键按账号计数，账号唯一即互不污染 */
+    // 每个用例造一个全新账号：锁键按账号计数，账号唯一即互不污染
     private void freshUser() {
         account = "lock" + (System.nanoTime() % 100000000);
         SysUser user = new SysUser();

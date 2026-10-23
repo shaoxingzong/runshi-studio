@@ -12,48 +12,40 @@ import org.springframework.stereotype.Component;
 import javax.sql.DataSource;
 import jakarta.annotation.PostConstruct;
 
-/**
- * 启动自检：把「配置坏了但服务照样起」堵死在启动期
- *
- * author: shaoshing
- *
- * <p><b>为什么需要它</b>（2026-10-18 上线前验证实测发现）：{@code application-prod.yml}
- * 的设计意图是「密钥类环境变量不给默认值，缺了就启动失败」。但实测三条全部落空——
- * <ul>
- *     <li>缺 {@code MYSQL_PASSWORD}：应用**正常启动**，Hikari 的连接失败没有冒泡到启动流程
- *     （Boot 4 数据源懒建连），第一个请求才 {@code B0001}；</li>
- *     <li>缺 {@code REDIS_PASSWORD}：同理，登录 / 限流 / 配额在运行时才炸；</li>
- *     <li>缺 AI 四项：{@code @ConfigurationProperties} 绑定路径把无法解析的占位符
- *     <b>传字面量</b>（{@code "${AI_API_KEY}"} 原文），AiManager 的 isBlank 检查被绕过，
- *     AI 客户端「初始化完成」但调用必然失败。</li>
- * </ul>
- * 后果是同一类事故：运维看「启动成功」就以为配置齐全，实际带着坏配置上线，
- * 故障在第一个真实用户请求时才暴露——那时排查成本是启动期的十倍。
- *
- * <p><b>自检什么、不自检什么</b>：
- * <ul>
- *     <li><b>数据库连通</b>：{@code SELECT 1}。Hikari 是懒连接，这里主动触发一次建连，
- *     失败即启动失败——把 Hikari 的 fail-fast 从「第一次请求时」提前到「启动时」；</li>
- *     <li><b>Redis 连通</b>：{@code PING}。同理，Lettuce 也是懒连接；</li>
- *     <li><b>AI 配置形态</b>：占位符字面量检测（值以 {@code "${} 开头即未被解析）。
- *     只查形态不查连通——AI 服务商临时不可用是运行时问题（熔断器的职责），
- *     配置没注入是启动期问题，两者不能混为一谈；</li>
- * </ul>
- *
- * <p><b>为什么失败要抛异常而不是 warn</b>：本类的全部价值就在于「让错误配置无法启动」。
- * 降级为 warn 就等于没做—— warn 会被淹没在启动日志里，而服务带着坏配置照常服务。
- * 本地开发同样受益：忘配数据库口令时立刻知道缺什么，而不是登录时看到 B0001 才反应过来。
- *
- * <p><b>与测试环境的兼容</b>：MockMvc 上下文启动同样会执行本自检，而既有上下文测试
- * 本来就要求 MySQL / Redis 可达（否则业务断言全挂），不会新增约束；
- * AI 配置在测试里留空是刻意允许的本地态（空串不是字面量，不触发检测）。
- */
+// 启动自检：把「配置坏了但服务照样起」堵死在启动期
+//
+// 为什么需要它（2026-10-18 上线前验证实测发现）： application-prod.yml
+// 的设计意图是「密钥类环境变量不给默认值，缺了就启动失败」。但实测三条全部落空——
+// - 缺 MYSQL_PASSWORD：应用正常启动，Hikari 的连接失败没有冒泡到启动流程
+// （Boot 4 数据源懒建连），第一个请求才 B0001；
+// - 缺 REDIS_PASSWORD：同理，登录 / 限流 / 配额在运行时才炸；
+// - 缺 AI 四项： @ConfigurationProperties 绑定路径把无法解析的占位符
+// 传字面量（ "${AI_API_KEY}" 原文），AiManager 的 isBlank 检查被绕过，
+// AI 客户端「初始化完成」但调用必然失败。
+// 后果是同一类事故：运维看「启动成功」就以为配置齐全，实际带着坏配置上线，
+// 故障在第一个真实用户请求时才暴露——那时排查成本是启动期的十倍。
+//
+// 自检什么、不自检什么：
+// - 数据库连通： SELECT 1。Hikari 是懒连接，这里主动触发一次建连，
+// 失败即启动失败——把 Hikari 的 fail-fast 从「第一次请求时」提前到「启动时」；
+// - Redis 连通： PING。同理，Lettuce 也是懒连接；
+// AI 配置形态：占位符字面量检测（值以  "${} 开头即未被解析）。
+// 只查形态不查连通——AI 服务商临时不可用是运行时问题（熔断器的职责），
+// 配置没注入是启动期问题，两者不能混为一谈；
+//
+// 为什么失败要抛异常而不是 warn：本类的全部价值就在于「让错误配置无法启动」。
+// 降级为 warn 就等于没做—— warn 会被淹没在启动日志里，而服务带着坏配置照常服务。
+// 本地开发同样受益：忘配数据库口令时立刻知道缺什么，而不是登录时看到 B0001 才反应过来。
+//
+// 与测试环境的兼容：MockMvc 上下文启动同样会执行本自检，而既有上下文测试
+// 本来就要求 MySQL / Redis 可达（否则业务断言全挂），不会新增约束；
+// AI 配置在测试里留空是刻意允许的本地态（空串不是字面量，不触发检测）。
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class StartupSelfCheck {
 
-    /** AI 相关配置项名：错误提示里列出，运维知道该注入哪几个变量 */
+    // AI 相关配置项名：错误提示里列出，运维知道该注入哪几个变量
     private static final String[] AI_CONFIG_NAMES = { "AI_BASE_URL", "AI_API_KEY", "AI_MODEL", "AI_EMBEDDING_MODEL" };
 
     private final JdbcTemplate jdbcTemplate;
@@ -72,12 +64,10 @@ public class StartupSelfCheck {
         log.info("启动自检通过：数据库 / Redis 连通正常，AI 配置形态合法");
     }
 
-    /**
-     * 数据库连通检查
-     *
-     * <p>拿 {@link DataSource} 的元数据只是为了失败时报出真实地址（排障时不用猜连的是哪个库），
-     * 真正的连通判定是 {@code SELECT 1}——元数据能拿到不代表连接可用。
-     */
+    // 数据库连通检查
+    //
+    // 拿 DataSource 的元数据只是为了失败时报出真实地址（排障时不用猜连的是哪个库），
+    // 真正的连通判定是 SELECT 1——元数据能拿到不代表连接可用。
     private void checkDatabase() {
         try {
             jdbcTemplate.queryForObject("SELECT 1", Integer.class);
@@ -96,7 +86,7 @@ public class StartupSelfCheck {
         }
     }
 
-    /** Redis 连通检查：Sa-Token 会话、限流、AI 配额全部依赖它，连不上时这些功能会在运行时成片失败 */
+    // Redis 连通检查：Sa-Token 会话、限流、AI 配额全部依赖它，连不上时这些功能会在运行时成片失败
     private void checkRedis() {
         try {
             // RedisCallback 形式对所有 Redis 驱动通用（Lettuce / Jedis 都支持 ping）
@@ -114,14 +104,12 @@ public class StartupSelfCheck {
         }
     }
 
-    /**
-     * AI 配置形态检查：占位符字面量检测
-     *
-     * <p>Boot 4 的 {@code @ConfigurationProperties} 绑定路径对无法解析的 {@code ${VAR}}
-     * 会**原样传入字面量**（这是本类存在的直接原因，见类注释）。字面量以 {@code "${} 开头，
-     * 是明确的配置错误信号；而本地开发的合法形态是<b>空串</b>（不配 AI 也能起，调用时才报错），
-     * 所以只拦字面量、不拦空值——本地容错语义不受影响。
-     */
+    // AI 配置形态检查：占位符字面量检测
+    //
+    // Boot 4 的 @ConfigurationProperties 绑定路径对无法解析的 ${VAR}
+    // 会原样传入字面量（这是本类存在的直接原因，见类注释）。字面量以  "${} 开头，
+    // 是明确的配置错误信号；而本地开发的合法形态是空串（不配 AI 也能起，调用时才报错），
+    // 所以只拦字面量、不拦空值——本地容错语义不受影响。
     private void checkAiConfigShape() {
         requireNotPlaceholderLiteral(aiProperties.getBaseUrl(), "studio.ai.base-url", "AI_BASE_URL");
         requireNotPlaceholderLiteral(aiProperties.getApiKey(), "studio.ai.api-key", "AI_API_KEY");

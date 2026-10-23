@@ -23,27 +23,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-/**
- * 成员模块验收测试
- *
- * author: shaoshing
- *
- * <p>这组用例守四条线，对应本模块的四个考点：
- * <ol>
- *     <li><b>鉴权边界</b>：C 端 {@code /member/list} 匿名可用；
- *     管理端接口匿名 A0201、普通用户 A0301——「多放行一个路径」和「少放行一个路径」
- *     都会出问题，两个方向都要断言；</li>
- *     <li><b>user_id 绑定规则</b>：账号必须存在、不能被两个成员同时绑定、
- *     改绑要排除自己、删除后账号可被重新绑定；</li>
- *     <li><b>输入校验</b>：入学年份区间（smallint 语义）、职务/状态枚举、
- *     「2026级」这类字符串在 JSON 解析阶段就被拒绝；</li>
- *     <li><b>排序与脱敏</b>：默认按 sort_order 倒序（不是 id 倒序）；
- *     C 端 VO 不出现 userId / sortOrder 等内部字段。</li>
- * </ol>
- *
- * <p>测试直接插库造账号（不走注册接口，因为注册只会创建普通用户），
- * 再用真实登录接口换 token，权限链路上的每一环都是真的。
- */
+// 成员模块验收测试
+//
+// 这组用例守四条线，对应本模块的四个考点：
+// - 鉴权边界：C 端 /member/list 匿名可用；
+// 管理端接口匿名 A0201、普通用户 A0301——「多放行一个路径」和「少放行一个路径」
+// 都会出问题，两个方向都要断言；
+// - user_id 绑定规则：账号必须存在、不能被两个成员同时绑定、
+// 改绑要排除自己、删除后账号可被重新绑定；
+// - 输入校验：入学年份区间（smallint 语义）、职务/状态枚举、
+// 「2026级」这类字符串在 JSON 解析阶段就被拒绝；
+// - 排序与脱敏：默认按 sort_order 倒序（不是 id 倒序）；
+// C 端 VO 不出现 userId / sortOrder 等内部字段。
+//
+// 测试直接插库造账号（不走注册接口，因为注册只会创建普通用户），
+// 再用真实登录接口换 token，权限链路上的每一环都是真的。
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -58,13 +52,13 @@ class StudioMemberCrudTest {
     @Resource
     private StudioMemberMapper studioMemberMapper;
 
-    /** 绕过 ORM 直查数据库，用来验证「逻辑删除」的真实落库值 */
+    // 绕过 ORM 直查数据库，用来验证「逻辑删除」的真实落库值
     @Resource
     private JdbcTemplate jdbcTemplate;
 
     // ==================== 工具方法 ====================
 
-    /** 插库造账号，返回其 id */
+    // 插库造账号，返回其 id
     private long insertUser(String account, String role) {
         SysUser user = new SysUser();
         user.setUserAccount(account);
@@ -76,14 +70,14 @@ class StudioMemberCrudTest {
         return user.getId();
     }
 
-    /** 插库造管理员并登录，返回 token */
+    // 插库造管理员并登录，返回 token
     private String adminToken() throws Exception {
         String account = "mAdmin" + (System.nanoTime() % 100000);
         insertUser(account, UserRoleConstant.ADMIN);
         return login(account);
     }
 
-    /** 走真实登录接口换 token */
+    // 走真实登录接口换 token
     private String login(String account) throws Exception {
         String body = postJson("/user/login",
                 "{\"userAccount\":\"" + account + "\",\"userPassword\":\"Studio@2026\"}", null);
@@ -106,23 +100,21 @@ class StudioMemberCrudTest {
         return mockMvc.perform(request).andReturn().getResponse().getContentAsString();
     }
 
-    /**
-     * 取 HTTP 状态码
-     *
-     * <p>用途：被删除的接口返回 404 且<b>响应体为空</b>（不存在 handler 时，
-     * MVC 拦截器不执行，也就没有统一的 A0201 响应体），此时 code(body) 无法判读。
-     */
+    // 取 HTTP 状态码
+    //
+    // 用途：被删除的接口返回 404 且响应体为空（不存在 handler 时，
+    // MVC 拦截器不执行，也就没有统一的 A0201 响应体），此时 code(body) 无法判读。
     private int statusOf(String path) throws Exception {
         return mockMvc.perform(get(path)).andReturn().getResponse().getStatus();
     }
 
-    /** 从响应 JSON 中取出 data.code */
+    // 从响应 JSON 中取出 data.code
     private String code(String body) {
         int start = body.indexOf("\"code\":\"") + 8;
         return body.substring(start, body.indexOf('"', start));
     }
 
-    /** 从响应 JSON 中取出 "key":"value" 形式的字符串值 */
+    // 从响应 JSON 中取出 "key":"value" 形式的字符串值
     private String data(String body, String key) {
         int start = body.indexOf("\"" + key + "\":\"");
         if (start < 0) {
@@ -132,12 +124,12 @@ class StudioMemberCrudTest {
         return body.substring(from, body.indexOf('"', from));
     }
 
-    /** 从响应 JSON 中取出 data 本身的字符串值（新增接口返回的是 data:"雪花ID"） */
+    // 从响应 JSON 中取出 data 本身的字符串值（新增接口返回的是 data:"雪花ID"）
     private String dataValue(String body) {
         return data(body, "data");
     }
 
-    /** 拼一个不重复的测试姓名 */
+    // 拼一个不重复的测试姓名
     private String uniqueName(String prefix) {
         return prefix + (System.nanoTime() % 100000);
     }
@@ -156,8 +148,8 @@ class StudioMemberCrudTest {
         //「团队成员不对外展示」：对外的成员接口不存在（下面断言 404）。
         //
         // ⚠️ 断言方式很关键（这是本次改动最容易踩的坑）：
-        // **Sa-Token 的 MVC 拦截器只在「匹配到 handler」时才执行**，
-        // 接口被删掉后请求根本进不了拦截器链，于是拿到的是 404 且**响应体为空**。
+        // Sa-Token 的 MVC 拦截器只在「匹配到 handler」时才执行，
+        // 接口被删掉后请求根本进不了拦截器链，于是拿到的是 404 且响应体为空。
         // 因此不能用 code(body) 判读（body 为空会 StringIndexOutOfBounds），
         // 只能看 HTTP 状态码；同时也说明「A0201」这个预期在这里是错的。
         assertEquals(404, statusOf("/member/list"), "成员对外列表不应存在");
@@ -347,7 +339,7 @@ class StudioMemberCrudTest {
 
     // ==================== 私有小工具 ====================
 
-    /** 由用户 id 反查账号（仅在测试里用，避免把账号名传来传去） */
+    // 由用户 id 反查账号（仅在测试里用，避免把账号名传来传去）
     private String findAccount(long id) {
         SysUser user = sysUserMapper.selectById(id);
         return user == null ? null : user.getUserAccount();

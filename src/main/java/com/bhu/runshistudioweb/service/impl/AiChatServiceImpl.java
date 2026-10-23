@@ -50,73 +50,61 @@ import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-/**
- * AI 咨询服务实现
- *
- * author: shaoshing
- *
- * <p><b>本类的四道关键约束（改代码前先读）</b>：
- * <ol>
- *     <li><b>会话归属</b>：绑定用户的会话仅本人可续；匿名会话凭不可枚举雪花 ID 可续。
- *     不存在与无权<b>统一返回 A0402 同一句提示</b>，不暴露存在性；</li>
- *     <li><b>配额自增必须原子</b>：{@code SET ai_query_count = ai_query_count + 1}，
- *     绝不「读出来 +1 再写回去」（并发下互相覆盖，计数偏小＝白送额度）；</li>
- *     <li><b>HTTP 在事务之外</b>：AI 调用可能几十秒，包进事务会长时间占用数据库连接。
- *     失败时保留用户消息，返回 C0200；成功后才用 {@code TransactionTemplate}
- *     把「assistant 消息 + 会话 updated_at + 计数」包成一步写；</li>
- *     <li><b>排序必须带 id</b>：{@code created_at} 只有秒级精度，同一秒的
- *     user / assistant 两条消息时间相同，只按时间排序会出现对话记录偶发颠倒。</li>
- * </ol>
- *
- * <p><b>为什么 TransactionTemplate 是「自己 new 的」</b>：Boot 4 的
- * {@code TransactionAutoConfiguration} 只提供 {@code TransactionalOperator}（响应式事务），
- * 容器里<b>没有</b> {@code TransactionTemplate} bean（Boot 3 时代有）。直接
- * {@code @Resource TransactionTemplate} 会启动失败——这里注入
- * {@code PlatformTransactionManager}（DataSource 事务管理器一定存在）再自行构造。
- *
- * <p><b>为什么用 TransactionTemplate 而不是 @Transactional</b>：需要包进事务的
- * 只有「调用 AI 成功之后」那一小段。若把整个 chat 方法标上 {@code @Transactional}，
- * 那条外部 HTTP 请求就落进了事务里——这正是本任务要避免的事。
- */
+// AI 咨询服务实现
+//
+// 本类的四道关键约束（改代码前先读）：
+// - 会话归属：绑定用户的会话仅本人可续；匿名会话凭不可枚举雪花 ID 可续。
+// 不存在与无权统一返回 A0402 同一句提示，不暴露存在性；
+// - 配额自增必须原子： SET ai_query_count = ai_query_count + 1，
+// 绝不「读出来 +1 再写回去」（并发下互相覆盖，计数偏小＝白送额度）；
+// - HTTP 在事务之外：AI 调用可能几十秒，包进事务会长时间占用数据库连接。
+// 失败时保留用户消息，返回 C0200；成功后才用 TransactionTemplate
+// 把「assistant 消息 + 会话 updated_at + 计数」包成一步写；
+// - 排序必须带 id： created_at 只有秒级精度，同一秒的
+// user / assistant 两条消息时间相同，只按时间排序会出现对话记录偶发颠倒。
+//
+// 为什么 TransactionTemplate 是「自己 new 的」：Boot 4 的
+// TransactionAutoConfiguration 只提供 TransactionalOperator（响应式事务），
+// 容器里没有 TransactionTemplate bean（Boot 3 时代有）。直接
+// @Resource TransactionTemplate 会启动失败——这里注入
+// PlatformTransactionManager（DataSource 事务管理器一定存在）再自行构造。
+//
+// 为什么用 TransactionTemplate 而不是 @Transactional：需要包进事务的
+// 只有「调用 AI 成功之后」那一小段。若把整个 chat 方法标上 @Transactional，
+// 那条外部 HTTP 请求就落进了事务里——这正是本任务要避免的事。
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class AiChatServiceImpl implements AiChatService {
 
-    /** 会话不存在 / 无权访问的统一提示：两种情况共用一句，不暴露存在性 */
+    // 会话不存在 / 无权访问的统一提示：两种情况共用一句，不暴露存在性
     private static final String SESSION_NOT_FOUND_MESSAGE = "会话不存在";
 
-    /** 会话列表的分页默认值与上限（上限防「一次拉全表」） */
+    // 会话列表的分页默认值与上限（上限防「一次拉全表」）
     private static final long DEFAULT_PAGE_SIZE = 10L;
     private static final long MAX_PAGE_SIZE = 50L;
 
-    /**
-     * 批量统计里的列名与别名（硬编码常量，不是用户输入）
-     *
-     * <p>统一用常量：避免「这里写 session_id、那里写 sessionId」这种拼写漂移导致
-     * 取值恒为 null、再被兜底成 0——表现为「消息数永远是 0」且不报任何错。
-     */
+    // 批量统计里的列名与别名（硬编码常量，不是用户输入）
+    //
+    // 统一用常量：避免「这里写 session_id、那里写 sessionId」这种拼写漂移导致
+    // 取值恒为 null、再被兜底成 0——表现为「消息数永远是 0」且不报任何错。
     private static final String SESSION_ID_COLUMN = "session_id";
     private static final String COUNT_ALIAS = "cnt";
 
-    /**
-     * SSE 连接超时：模型自身超时 60s + 余量
-     *
-     * <p>必须大于模型的读超时：Spring 的 {@code SseEmitter} 默认只有 30s，
-     * 比模型的 60s 还短——那会让长回答在服务端被提前掐断，前端看到的是「流突然没了」，
-     * 而日志里没有任何错误。
-     */
+    // SSE 连接超时：模型自身超时 60s + 余量
+    //
+    // 必须大于模型的读超时：Spring 的 SseEmitter 默认只有 30s，
+    // 比模型的 60s 还短——那会让长回答在服务端被提前掐断，前端看到的是「流突然没了」，
+    // 而日志里没有任何错误。
     private static final Duration STREAM_TIMEOUT = Duration.ofSeconds(120);
 
-    /**
-     * SSE 事件名（前端按 name 分派，改名等于契约变更）
-     *
-     * <p>序列固定为：{@code meta} → {@code sources} → {@code delta}* → {@code done} / {@code error}
-     *
-     * <p><b>{@code sources} 恒发</b>：即使没有命中资料也发一个空数组。
-     * 前端因此可以无分支地写 {@code on('sources', s => setSources(s))}；
-     * 若只在命中时发，前端就得靠「等一段时间没收到」来判断没有资料——那是竞态。
-     */
+    // SSE 事件名（前端按 name 分派，改名等于契约变更）
+    //
+    // 序列固定为： meta → sources → delta* → done / error
+    //
+    // sources 恒发：即使没有命中资料也发一个空数组。
+    // 前端因此可以无分支地写 on('sources', s => setSources(s))；
+    // 若只在命中时发，前端就得靠「等一段时间没收到」来判断没有资料——那是竞态。
     private static final String EVENT_META = "meta";
     private static final String EVENT_SOURCES = "sources";
     private static final String EVENT_DELTA = "delta";
@@ -131,59 +119,49 @@ public class AiChatServiceImpl implements AiChatService {
 
     private final AiManager aiManager;
 
-    /**
-     * 提问配额计数（Redis INCR + 定时回刷，）
-     *
-     * <p>它替代了原来的 {@code UPDATE sys_user SET ai_query_count = ai_query_count + 1}：
-     * 计数从「每次提问一次 DB 写」变成「Redis 内存自增 + 批量回刷」。
-     */
+    // 提问配额计数（Redis INCR + 定时回刷，）
+    //
+    // 它替代了原来的 UPDATE sys_user SET ai_query_count = ai_query_count + 1：
+    // 计数从「每次提问一次 DB 写」变成「Redis 内存自增 + 批量回刷」。
     private final AiQueryCountManager aiQueryCountManager;
 
     private final AiProperties aiProperties;
 
-    /**
-     * 知识库检索：提问前先检索资料注入模型（RAG，）
-     *
-     * <p>依赖方向是单向的：{@code KnowledgeDocServiceImpl} 只注入 Mapper 与配置，
-     * 不依赖本类，因此不构成循环。
-     */
+    // 知识库检索：提问前先检索资料注入模型（RAG，）
+    //
+    // 依赖方向是单向的： KnowledgeDocServiceImpl 只注入 Mapper 与配置，
+    // 不依赖本类，因此不构成循环。
     private final KnowledgeDocService knowledgeDocService;
 
-    /**
-     * AI 熔断器
-     *
-     * <p>只用于「提前绕开注定失败的检索」这类<b>只读判断</b>（见 {@link #retrieveSafely}）；
-     * 真正的失败计数在 {@link AiManager} 内部完成——那里才是外部调用的发生地。
-     */
+    // AI 熔断器
+    //
+    // 只用于「提前绕开注定失败的检索」这类只读判断（见 #retrieveSafely）；
+    // 真正的失败计数在 AiManager 内部完成——那里才是外部调用的发生地。
     private final AiCircuitBreaker circuitBreaker;
 
-    /** SSE 事件负载的 JSON 序列化：复用容器里被 JsonConfig 定制过的那个 JsonMapper */
+    // SSE 事件负载的 JSON 序列化：复用容器里被 JsonConfig 定制过的那个 JsonMapper
     private final JsonMapper jsonMapper;
 
-    /** 事务管理器：容器里没有 TransactionTemplate bean，靠它自行构造（见类注释） */
+    // 事务管理器：容器里没有 TransactionTemplate bean，靠它自行构造（见类注释）
     private final PlatformTransactionManager transactionManager;
 
-    /**
-     * 事务模板：由 {@code transactionManager} 在依赖注入完成后构造
-     *
-     * <p>它<b>不能</b>声明成 final：Lombok 生成的构造器只做「参数 → 字段」的直接赋值，
-     * 表达不了「由另一个参数二次构造」；写成 final 会让它被当成构造器参数，
-     * 而容器里并不存在 TransactionTemplate 这个 bean，启动即失败。
-     * 放到 {@code @PostConstruct} 里赋值，此时构造器注入已完成，取值安全。
-     */
+    // 事务模板：由 transactionManager 在依赖注入完成后构造
+    //
+    // 它不能声明成 final：Lombok 生成的构造器只做「参数 → 字段」的直接赋值，
+    // 表达不了「由另一个参数二次构造」；写成 final 会让它被当成构造器参数，
+    // 而容器里并不存在 TransactionTemplate 这个 bean，启动即失败。
+    // 放到 @PostConstruct 里赋值，此时构造器注入已完成，取值安全。
     private TransactionTemplate transactionTemplate;
 
-    /**
-     * SSE 专用线程池：<b>虚拟线程</b>（Java 21）
-     *
-     * <p>为什么必须换线程：SSE 要求控制器立刻返回 emitter 让 Tomcat 释放请求线程，
-     * 而 LangChain4j 的流式调用是<b>阻塞式回调</b>——调用线程会被占用到流结束（最长 60s）。
-     * 留在请求线程上会钉死工作线程；换成平台线程池的话，并发的流会把池吃满并排队；
-     * 虚拟线程正好匹配「大量线程都在等 I/O」的场景，代价也最低。
-     *
-     * <p>没有额外限流：登录用户受 {@code studio.ai.query-limit} 约束；
-     * 游客的 IP 级限流是后续工程化任务（DESIGN 第 7 节 R4）。
-     */
+    // SSE 专用线程池：虚拟线程（Java 21）
+    //
+    // 为什么必须换线程：SSE 要求控制器立刻返回 emitter 让 Tomcat 释放请求线程，
+    // 而 LangChain4j 的流式调用是阻塞式回调——调用线程会被占用到流结束（最长 60s）。
+    // 留在请求线程上会钉死工作线程；换成平台线程池的话，并发的流会把池吃满并排队；
+    // 虚拟线程正好匹配「大量线程都在等 I/O」的场景，代价也最低。
+    //
+    // 没有额外限流：登录用户受 studio.ai.query-limit 约束；
+    // 游客的 IP 级限流是后续工程化任务（DESIGN 第 7 节 R4）。
     private final ExecutorService streamExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     @PostConstruct
@@ -191,12 +169,10 @@ public class AiChatServiceImpl implements AiChatService {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    /**
-     * 应用关闭时收掉流式线程池
-     *
-     * <p>用 {@code shutdownNow} 而不是优雅关闭：未完成的流此刻多半卡在模型超时上，
-     * 等它们没有意义（应用都要停了），直接中断更快。
-     */
+    // 应用关闭时收掉流式线程池
+    //
+    // 用 shutdownNow 而不是优雅关闭：未完成的流此刻多半卡在模型超时上，
+    // 等它们没有意义（应用都要停了），直接中断更快。
     @PreDestroy
     void shutdownStreamExecutor() {
         streamExecutor.shutdownNow();
@@ -209,7 +185,7 @@ public class AiChatServiceImpl implements AiChatService {
         // （见 chatStream 里的说明）
         Long userId = currentUserIdOrNull();
 
-        // ① 校验 / 会话 / 配额 / 上下文：与流式接口走**同一个**私有方法，
+        // ① 校验 / 会话 / 配额 / 上下文：与流式接口走同一个私有方法，
         // 保证「鉴权与归属规则完全一致」是靠同一份代码，而不是靠两处人肉同步
         PreparedChat prepared = prepareChat(request, userId);
 
@@ -222,7 +198,7 @@ public class AiChatServiceImpl implements AiChatService {
         // 检索失败不扣额度（扣额度发生在 persistAnswer），也不影响用户消息已落库
         KnowledgeDocService.RetrievalResult retrieval = retrieveSafely(prepared.message());
 
-        // ⑥ 调 AI：注意这里**没有** @Transactional，HTTP 请求不在数据库事务内
+        // ⑥ 调 AI：注意这里没有 @Transactional，HTTP 请求不在数据库事务内
         String answer = aiManager.chat(prepared.history(), buildUserMessage(prepared.message(), retrieval));
 
         // ⑦ 成功：三处写必须原子（assistant 消息 + 会话 updated_at + 配额计数）
@@ -236,22 +212,20 @@ public class AiChatServiceImpl implements AiChatService {
         return responseVO;
     }
 
-    /**
-     * SSE 流式提问
-     *
-     * <p><b>契约例外（必须知道）</b>：本接口的响应<b>不经过 {@code BaseResponse} 包装</b>——
-     * SSE 的响应体是「事件流」而不是一次性 JSON，套上 {@code {code,data,message}} 反而会让
-     * 前端无法边收边渲染。代价是<b>所有失败也走事件流</b>（{@code error} 事件），
-     * 连参数错误、会话不存在、配额超限也不例外：它们的 HTTP 状态码都是 200，
-     * 业务码放在 {@code error} 事件的 data 里（见类注释的「事件契约」）。
-     *
-     * <p><b>线程模型</b>：方法立刻返回 {@link SseEmitter}（让 Tomcat 释放请求线程），
-     * 真正的取数与推流交给虚拟线程执行——LangChain4j 的流式调用是<b>阻塞式回调</b>，
-     * 若留在请求线程上会把工作线程钉死几十秒。
-     *
-     * @param request 提问请求（message 必填；sessionId 可空表示新建会话）
-     * @return SSE 发射器：先 {@code meta}，再若干 {@code delta}，最后 {@code done} 或 {@code error}
-     */
+    // SSE 流式提问
+    //
+    // 契约例外（必须知道）：本接口的响应不经过 BaseResponse 包装——
+    // SSE 的响应体是「事件流」而不是一次性 JSON，套上 {code,data,message} 反而会让
+    // 前端无法边收边渲染。代价是所有失败也走事件流（ error 事件），
+    // 连参数错误、会话不存在、配额超限也不例外：它们的 HTTP 状态码都是 200，
+    // 业务码放在 error 事件的 data 里（见类注释的「事件契约」）。
+    //
+    // 线程模型：方法立刻返回 SseEmitter（让 Tomcat 释放请求线程），
+    // 真正的取数与推流交给虚拟线程执行——LangChain4j 的流式调用是阻塞式回调，
+    // 若留在请求线程上会把工作线程钉死几十秒。
+    //
+    // @param request 提问请求（message 必填；sessionId 可空表示新建会话）
+    // @return SSE 发射器：先 meta，再若干 delta，最后 done 或 error
     @Override
     public SseEmitter chatStream(AiChatRequest request) {
         // 超时要给足「模型超时 + 余量」：Spring 的 SseEmitter 默认 30s，
@@ -260,14 +234,14 @@ public class AiChatServiceImpl implements AiChatService {
 
         StreamState state = new StreamState();
         // 客户端断开 / 超时 / 写入报错：标记中止。
-        // 标记之后：不再推送 delta，**不再落 assistant 消息、不再计数**
+        // 标记之后：不再推送 delta，不再落 assistant 消息、不再计数
         // （语义与「失败」一致：用户没拿到回答，就不该扣额度、也不该留下半截回答）
         emitter.onCompletion(state::markAborted);
         emitter.onTimeout(state::markAborted);
         emitter.onError(throwable -> state.markAborted());
 
         // ⚠️ 登录身份必须在这里（请求线程）取好再传进去。
-        // 原因：Sa-Token 的登录态与 Spring 的 RequestContextHolder 都存在 **ThreadLocal** 里，
+        // 原因：Sa-Token 的登录态与 Spring 的 RequestContextHolder 都存在 ThreadLocal 里，
         // 虚拟线程拿不到（实测表现为 StpUtil.isLogin() 直接抛异常，
         // 于是流里只剩一个 error 事件、连 meta 都发不出来）。
         // 这一行是本类唯一依赖「请求线程」的地方，改动时务必保留。
@@ -327,8 +301,8 @@ public class AiChatServiceImpl implements AiChatService {
         assertSessionAccessible(parsedSessionId, userId);
 
         // 双逻辑删：父表（会话）与子表（消息）各自 UPDATE deleted_at，必须在同一事务内。
-        // 与/19 的关联表清理对比：那两张关联表是**物理删除**（关系解除即无业务意义），
-        // 而对话属于「用户资产」，误删需要可追溯，所以父子两张表都用**逻辑删除**——
+        // 与/19 的关联表清理对比：那两张关联表是物理删除（关系解除即无业务意义），
+        // 而对话属于「用户资产」，误删需要可追溯，所以父子两张表都用逻辑删除——
         // 两种机制的取舍见 db/DESIGN.md 2.2
         transactionTemplate.executeWithoutResult(status -> {
             // 先子后父：与「先清关联、再删主表」的既有约定一致。
@@ -343,19 +317,17 @@ public class AiChatServiceImpl implements AiChatService {
 
     // ==================== 同步与流式共用的「准备」与「落库」 ====================
 
-    /**
-     * 提问前的公共准备：参数校验 → 会话定位/新建 → 配额预检 → 上下文窗口
-     *
-     * <p><b>为什么抽成公共方法</b>：同步（{@code /ai/chat}）与流式（{@code /ai/chat/stream}）
-     * 的鉴权与归属规则必须「完全一致」——唯一可靠的做法是走同一份代码。
-     * 复制一份出来早晚会漂移（改了一处忘了另一处，就是越权漏洞）。
-     *
-     * @param request 提问请求
-     * @param userId  当前登录用户 ID（<b>不得为 null</b>，游客在本方法内被拒）。
-     *                <b>由调用方在请求线程上取好传进来</b>——流式路径的调用方在虚拟线程里，
-     *                而 Sa-Token 的登录态存在 ThreadLocal 中，跨线程取不到
-     * @return 准备结果（用户、会话、提问、上下文、是否不限额）
-     */
+    // 提问前的公共准备：参数校验 → 会话定位/新建 → 配额预检 → 上下文窗口
+    //
+    // 为什么抽成公共方法：同步（ /ai/chat）与流式（ /ai/chat/stream）
+    // 的鉴权与归属规则必须「完全一致」——唯一可靠的做法是走同一份代码。
+    // 复制一份出来早晚会漂移（改了一处忘了另一处，就是越权漏洞）。
+    //
+    // @param request 提问请求
+    // @param userId 当前登录用户 ID（不得为 null，游客在本方法内被拒）。
+    // 由调用方在请求线程上取好传进来——流式路径的调用方在虚拟线程里，
+    // 而 Sa-Token 的登录态存在 ThreadLocal 中，跨线程取不到
+    // @return 准备结果（用户、会话、提问、上下文、是否不限额）
     private PreparedChat prepareChat(AiChatRequest request, Long userId) {
         // ⓪ AI 服务不向游客开放：必须登录。同步与流式共用本方法，门槛只此一处
         ThrowUtils.throwIf(userId == null, ErrorCode.NOT_LOGIN_ERROR, "请先登录后再使用 AI 助手");
@@ -381,23 +353,21 @@ public class AiChatServiceImpl implements AiChatService {
         return new PreparedChat(userId, sessionId, message, history, unlimited);
     }
 
-    /**
-     * 回答落库：assistant 消息 + 会话 updated_at + 配额计数，三处写在<b>同一事务</b>内
-     *
-     * <p>同步与流式共用：这样「流后落库与计数 SQL 与同步接口对齐」是结构上成立的，
-     * 而不是靠两边各写一遍再比对。
-     *
-     * @param prepared 提问准备结果
-     * @param answer   回答正文
-     * @return 落库后的 assistant 消息 ID（流式接口要放进 done 事件）
-     */
+    // 回答落库：assistant 消息 + 会话 updated_at + 配额计数，三处写在同一事务内
+    //
+    // 同步与流式共用：这样「流后落库与计数 SQL 与同步接口对齐」是结构上成立的，
+    // 而不是靠两边各写一遍再比对。
+    //
+    // @param prepared 提问准备结果
+    // @param answer 回答正文
+    // @return 落库后的 assistant 消息 ID（流式接口要放进 done 事件）
     private long persistAnswer(PreparedChat prepared, String answer) {
         // 事务 lambda 不能直接写局部变量，用一个一元素数组当容器（比 AtomicLong 轻）
         long[] messageIdHolder = new long[1];
         transactionTemplate.executeWithoutResult(status -> {
             messageIdHolder[0] = insertMessage(prepared.sessionId(), AiMessageRoleEnum.ASSISTANT, answer);
             touchSession(prepared.sessionId());
-            // ⚠️ 配额计数**刻意不在这里**：
+            // ⚠️ 配额计数刻意不在这里：
             // 计数已改为 Redis INCR，Redis 是外部系统——写它不属于数据库事务。
             // 若放在事务内，一旦事务回滚，Redis 里的 +1 却撤不回来，就变成了「没回答成功也扣了额度」
         });
@@ -413,24 +383,22 @@ public class AiChatServiceImpl implements AiChatService {
 
     // ==================== RAG 检索 ====================
 
-    /**
-     * 检索资料，<b>失败即降级为「无资料」</b>
-     *
-     * <p>降级纪律（AC ⑥）：RAG 是<b>增强</b>不是依赖——向量服务不可用、或重启后
-     * 内存向量库还没重建，都不该让用户问不出话。<b>不新增错误码</b>，
-     * 只在日志里留痕，用户侧表现为「这次回答没有溯源」。
-     *
-     * <p><b>熔断时直接跳过检索</b>：AI 整体不可用（token 被冻结等）时，
-     * embedding 调用必然同样失败，还要白等一次外部往返/超时。
-     * 此时返回空结果，把等待留给随后的模型调用——而它会被熔断挡在毫秒级。
-     *
-     * <p>这里用<b>只读</b>的 {@code isOpen()} 而不是 {@code allowRequest()}：
-     * 后者会消耗半开状态下唯一一次试探机会，而本方法无论检索成功失败
-     * 都不会回报结果，用了它熔断将永远无法自愈。
-     *
-     * @param question 用户提问
-     * @return 检索结果；任何失败都返回空结果
-     */
+    // 检索资料，失败即降级为「无资料」
+    //
+    // 降级纪律（AC ⑥）：RAG 是增强不是依赖——向量服务不可用、或重启后
+    // 内存向量库还没重建，都不该让用户问不出话。不新增错误码，
+    // 只在日志里留痕，用户侧表现为「这次回答没有溯源」。
+    //
+    // 熔断时直接跳过检索：AI 整体不可用（token 被冻结等）时，
+    // embedding 调用必然同样失败，还要白等一次外部往返/超时。
+    // 此时返回空结果，把等待留给随后的模型调用——而它会被熔断挡在毫秒级。
+    //
+    // 这里用只读的 isOpen() 而不是 allowRequest()：
+    // 后者会消耗半开状态下唯一一次试探机会，而本方法无论检索成功失败
+    // 都不会回报结果，用了它熔断将永远无法自愈。
+    //
+    // @param question 用户提问
+    // @return 检索结果；任何失败都返回空结果
     private KnowledgeDocService.RetrievalResult retrieveSafely(String question) {
         if (circuitBreaker.isOpen()) {
             log.warn("AI 服务熔断中，跳过知识库检索（embedding 调用必然失败，不再白等外部往返）");
@@ -444,23 +412,19 @@ public class AiChatServiceImpl implements AiChatService {
         }
     }
 
-    /**
-     * 把检索到的资料拼进本次提问
-     *
-     * <p><b>资料放 user 消息，不放 system 消息</b>（这是刻意的）：
-     * <ul>
-     *     <li>system 消息应当<b>稳定</b>——它是「你是谁、怎么答」的行为约束，
-     *     每次提问内容都不同，塞进去会让 system 随问题漂移；</li>
-     *     <li>把资料贴着问题放，模型更容易把它们当成<b>当前问题的上下文</b>，
-     *     而不是通用指令（实测对引用准确率有帮助）；</li>
-     *     <li>历史消息里存的仍是用户原话（见 {@code insertMessage}），
-     *     资料只是临时拼给本次调用的，不会污染上下文窗口。</li>
-     * </ul>
-     *
-     * @param message   用户原始提问
-     * @param retrieval 检索结果
-     * @return 送进模型的 user 消息（无命中时原样返回）
-     */
+    // 把检索到的资料拼进本次提问
+    //
+    // 资料放 user 消息，不放 system 消息（这是刻意的）：
+    // - system 消息应当稳定——它是「你是谁、怎么答」的行为约束，
+    // 每次提问内容都不同，塞进去会让 system 随问题漂移；
+    // - 把资料贴着问题放，模型更容易把它们当成当前问题的上下文，
+    // 而不是通用指令（实测对引用准确率有帮助）；
+    // - 历史消息里存的仍是用户原话（见 insertMessage），
+    // 资料只是临时拼给本次调用的，不会污染上下文窗口。
+    //
+    // @param message 用户原始提问
+    // @param retrieval 检索结果
+    // @return 送进模型的 user 消息（无命中时原样返回）
     private String buildUserMessage(String message, KnowledgeDocService.RetrievalResult retrieval) {
         if (!retrieval.hit()) {
             return message;
@@ -470,17 +434,15 @@ public class AiChatServiceImpl implements AiChatService {
 
     // ==================== SSE 流式 ====================
 
-    /**
-     * 流式主流程（在虚拟线程里执行）
-     *
-     * <p>事件序列：{@code meta} → {@code sources} → {@code delta}* → {@code done} / {@code error}
-     * （{@code sources} 恒发，无命中时是空数组）。
-     *
-     * @param request 提问请求
-     * @param userId  当前登录用户 ID（由请求线程取好传进来，见 chatStream 的说明）
-     * @param emitter SSE 发射器
-     * @param state   中止标记（客户端断开时会被置位）
-     */
+    // 流式主流程（在虚拟线程里执行）
+    //
+    // 事件序列： meta → sources → delta* → done / error
+    // （ sources 恒发，无命中时是空数组）。
+    //
+    // @param request 提问请求
+    // @param userId 当前登录用户 ID（由请求线程取好传进来，见 chatStream 的说明）
+    // @param emitter SSE 发射器
+    // @param state 中止标记（客户端断开时会被置位）
     private void streamChat(AiChatRequest request, Long userId,
                             SseEmitter emitter, StreamState state) {
         try {
@@ -526,18 +488,16 @@ public class AiChatServiceImpl implements AiChatService {
         }
     }
 
-    /**
-     * 发送一个 SSE 事件
-     *
-     * <p>负载必须序列化成 JSON 字符串：SSE 的 {@code data} 是纯文本，
-     * 而 delta 里可能含换行、引号与中文——手拼字符串会把换行当成新的事件字段，
-     * 直接破坏事件帧（前端收到的事件会被拆错）。
-     *
-     * @param emitter   SSE 发射器
-     * @param eventName 事件名
-     * @param payload   负载（会被序列化成 JSON）
-     * @param state     中止标记
-     */
+    // 发送一个 SSE 事件
+    //
+    // 负载必须序列化成 JSON 字符串：SSE 的 data 是纯文本，
+    // 而 delta 里可能含换行、引号与中文——手拼字符串会把换行当成新的事件字段，
+    // 直接破坏事件帧（前端收到的事件会被拆错）。
+    //
+    // @param emitter SSE 发射器
+    // @param eventName 事件名
+    // @param payload 负载（会被序列化成 JSON）
+    // @param state 中止标记
     private void sendEvent(SseEmitter emitter, String eventName, Map<String, Object> payload,
                            StreamState state) {
         if (state.isAborted()) {
@@ -556,14 +516,12 @@ public class AiChatServiceImpl implements AiChatService {
 
     // ==================== 会话定位与归属 ====================
 
-    /**
-     * 定位会话：sessionId 为空则新建，否则校验存在性与归属
-     *
-     * @param sessionIdText 请求里的会话 ID（可为空）
-     * @param userId        当前登录用户 ID（null 表示游客）
-     * @param message       本次提问（新建会话时用于生成标题）
-     * @return 会话实体
-     */
+    // 定位会话：sessionId 为空则新建，否则校验存在性与归属
+    //
+    // @param sessionIdText 请求里的会话 ID（可为空）
+    // @param userId 当前登录用户 ID（null 表示游客）
+    // @param message 本次提问（新建会话时用于生成标题）
+    // @return 会话实体
     private StudioAiSession resolveSession(String sessionIdText, Long userId, String message) {
         if (StrUtil.isBlank(sessionIdText)) {
             StudioAiSession session = new StudioAiSession();
@@ -583,45 +541,39 @@ public class AiChatServiceImpl implements AiChatService {
         return session;
     }
 
-    /**
-     * 校验会话可访问（存在 + 归属），供历史接口使用
-     *
-     * @param sessionId 会话 ID
-     * @param userId    当前登录用户 ID（null 表示游客）
-     */
+    // 校验会话可访问（存在 + 归属），供历史接口使用
+    //
+    // @param sessionId 会话 ID
+    // @param userId 当前登录用户 ID（null 表示游客）
     private void assertSessionAccessible(long sessionId, Long userId) {
         StudioAiSession session = studioAiSessionMapper.selectById(sessionId);
         ThrowUtils.throwIf(session == null, ErrorCode.NOT_FOUND_ERROR, SESSION_NOT_FOUND_MESSAGE);
         assertSessionOwner(session, userId);
     }
 
-    /**
-     * 会话归属校验
-     *
-     * <p>规则：匿名会话（user_id 为 null）任何人都可凭 ID 访问；
-     * 绑定用户的会话只有本人可访问，其他人（含游客）一律按「不存在」处理。
-     *
-     * @param session 会话实体
-     * @param userId  当前登录用户 ID（null 表示游客）
-     */
+    // 会话归属校验
+    //
+    // 规则：匿名会话（user_id 为 null）任何人都可凭 ID 访问；
+    // 绑定用户的会话只有本人可访问，其他人（含游客）一律按「不存在」处理。
+    //
+    // @param session 会话实体
+    // @param userId 当前登录用户 ID（null 表示游客）
     private void assertSessionOwner(StudioAiSession session, Long userId) {
         if (session.getUserId() == null) {
             // 匿名会话：19 位雪花 ID 无法被枚举，「知道 ID」即等价于持有凭据
             return;
         }
-        // 越权与不存在返回**完全相同**的 A0402 与提示：
+        // 越权与不存在返回完全相同的 A0402 与提示：
         // 否则攻击者可以用「A0402 提示是否有差异」来判断会话是否存在
         ThrowUtils.throwIf(!Objects.equals(session.getUserId(), userId),
                 ErrorCode.NOT_FOUND_ERROR, SESSION_NOT_FOUND_MESSAGE);
     }
 
-    /**
-     * 解析会话 ID 文本
-     *
-     * @param sessionIdText 会话 ID 文本
-     * @param blankMessage  文本为空时的提示（提问与历史接口的提示不同，故作为参数传入）
-     * @return 会话 ID
-     */
+    // 解析会话 ID 文本
+    //
+    // @param sessionIdText 会话 ID 文本
+    // @param blankMessage 文本为空时的提示（提问与历史接口的提示不同，故作为参数传入）
+    // @return 会话 ID
     private long parseSessionId(String sessionIdText, String blankMessage) {
         ThrowUtils.throwIf(StrUtil.isBlank(sessionIdText), ErrorCode.PARAMS_ERROR, blankMessage);
         // 用 Convert 而不是 Long.valueOf：脏值（如 "abc"）会得到 null 走 A0401，
@@ -631,12 +583,10 @@ public class AiChatServiceImpl implements AiChatService {
         return sessionId;
     }
 
-    /**
-     * 生成会话标题：首问的前 30 个字
-     *
-     * @param message 首次提问内容（已 trim 且非空）
-     * @return 会话标题
-     */
+    // 生成会话标题：首问的前 30 个字
+    //
+    // @param message 首次提问内容（已 trim 且非空）
+    // @return 会话标题
     private String titleOf(String message) {
         return message.length() <= AiChatConstant.SESSION_TITLE_MAX_LENGTH
                 ? message
@@ -645,22 +595,20 @@ public class AiChatServiceImpl implements AiChatService {
 
     // ==================== 配额 ====================
 
-    /**
-     * 配额预检
-     *
-     * <p><b>成员与管理员不限额</b>（返回 {@code true}），直接放行、也不计数；
-     * 普通注册用户受 {@code studio.ai.query-limit}（默认 5 次）约束，超限返回 A0501。
-     *
-     * <p>这里读的是「当前值」，并发下两个请求可能同时通过预检，
-     * 最终略微超出上限——这是刻意接受的：配额是「防护性上限」而不是计费依据，
-     * 为此加锁得不偿失。真正不能错的是自增本身必须原子（见 {@link AiQueryCountManager#increment}）。
-     *
-     * <p>角色取自 {@code sys_user.user_role} 而<b>不是</b> {@code StpUtil.hasRole}：
-     * 流式提问的预检跑在虚拟线程上，Sa-Token 的登录态存在 ThreadLocal 里取不到。
-     *
-     * @param userId 登录用户 ID（调用方已保证非 null）
-     * @return {@code true} 表示不限额（成员 / 管理员）；{@code false} 表示按次数上限计
-     */
+    // 配额预检
+    //
+    // 成员与管理员不限额（返回 true），直接放行、也不计数；
+    // 普通注册用户受 studio.ai.query-limit（默认 5 次）约束，超限返回 A0501。
+    //
+    // 这里读的是「当前值」，并发下两个请求可能同时通过预检，
+    // 最终略微超出上限——这是刻意接受的：配额是「防护性上限」而不是计费依据，
+    // 为此加锁得不偿失。真正不能错的是自增本身必须原子（见 AiQueryCountManager#increment）。
+    //
+    // 角色取自 sys_user.user_role 而不是 StpUtil.hasRole：
+    // 流式提问的预检跑在虚拟线程上，Sa-Token 的登录态存在 ThreadLocal 里取不到。
+    //
+    // @param userId 登录用户 ID（调用方已保证非 null）
+    // @return true 表示不限额（成员 / 管理员）； false 表示按次数上限计
     private boolean assertQuotaAvailable(long userId) {
         SysUser user = sysUserMapper.selectById(userId);
         ThrowUtils.throwIf(user == null, ErrorCode.NOT_LOGIN_ERROR, "登录用户不存在");
@@ -673,19 +621,17 @@ public class AiChatServiceImpl implements AiChatService {
         int limit = aiProperties.getQueryLimit() == null ? Integer.MAX_VALUE : aiProperties.getQueryLimit();
         // 必须是「DB 基准 + Redis 未落库增量」的合并值：
         // 只看 DB 的话，回刷前的那些提问都不算数（表现为「问了好几次还没到上限」），
-        // 配额就成了摆设。合并读取也让预检**不依赖回刷是否发生**
+        // 配额就成了摆设。合并读取也让预检不依赖回刷是否发生
         int used = aiQueryCountManager.merge(userId, user.getAiQueryCount());
         ThrowUtils.throwIf(used >= limit, ErrorCode.TOO_MANY_REQUESTS_ERROR,
                 "登录用户的 AI 提问次数已用完（共 " + limit + " 次），成员与管理员可不限次使用");
         return false;
     }
 
-    /**
-     * 是否为「不限额」角色（成员 / 管理员）
-     *
-     * @param role 用户角色原始值（取自 {@code sys_user.user_role}）
-     * @return true 表示不受提问次数限制
-     */
+    // 是否为「不限额」角色（成员 / 管理员）
+    //
+    // @param role 用户角色原始值（取自 sys_user.user_role）
+    // @return true 表示不受提问次数限制
     private static boolean isUnlimitedRole(String role) {
         return UserRoleConstant.MEMBER.equals(role) || UserRoleConstant.ADMIN.equals(role);
     }
@@ -695,13 +641,11 @@ public class AiChatServiceImpl implements AiChatService {
 
     // ==================== 消息读写 ====================
 
-    /**
-     * 取会话的最近 N 条消息（返回时已翻正为时间正序）
-     *
-     * @param sessionId 会话 ID
-     * @param limit     取多少条
-     * @return 消息 VO 列表（旧 → 新）
-     */
+    // 取会话的最近 N 条消息（返回时已翻正为时间正序）
+    //
+    // @param sessionId 会话 ID
+    // @param limit 取多少条
+    // @return 消息 VO 列表（旧 → 新）
     private List<AiMessageVO> recentMessages(long sessionId, int limit) {
         LambdaQueryWrapper<StudioAiMessage> wrapper = new LambdaQueryWrapper<>();
         // 排序键用 id 而不是 created_at：created_at 秒级精度，
@@ -719,14 +663,12 @@ public class AiChatServiceImpl implements AiChatService {
         return records.stream().map(this::toMessageVO).toList();
     }
 
-    /**
-     * 落一条消息
-     *
-     * @param sessionId 会话 ID
-     * @param role      消息角色
-     * @param content   消息正文
-     * @return 新消息 ID（雪花 ID 由 MyBatis-Plus 回填到实体上，流式接口要把它放进 done 事件）
-     */
+    // 落一条消息
+    //
+    // @param sessionId 会话 ID
+    // @param role 消息角色
+    // @param content 消息正文
+    // @return 新消息 ID（雪花 ID 由 MyBatis-Plus 回填到实体上，流式接口要把它放进 done 事件）
     private long insertMessage(long sessionId, AiMessageRoleEnum role, String content) {
         StudioAiMessage entity = new StudioAiMessage();
         entity.setSessionId(sessionId);
@@ -737,29 +679,25 @@ public class AiChatServiceImpl implements AiChatService {
         return entity.getId();
     }
 
-    /**
-     * 刷新会话的 updated_at（用于「最近活跃会话」排序）
-     *
-     * <p>用「只带 id 的实体」调 updateById：MP 会跳过 null 字段，
-     * 再加上 MetaObjectHandler 的 updateFill，等价于只更新 updated_at / updated_by。
-     *
-     * @param sessionId 会话 ID
-     */
+    // 刷新会话的 updated_at（用于「最近活跃会话」排序）
+    //
+    // 用「只带 id 的实体」调 updateById：MP 会跳过 null 字段，
+    // 再加上 MetaObjectHandler 的 updateFill，等价于只更新 updated_at / updated_by。
+    //
+    // @param sessionId 会话 ID
     private void touchSession(long sessionId) {
         StudioAiSession touch = new StudioAiSession();
         touch.setId(sessionId);
         studioAiSessionMapper.updateById(touch);
     }
 
-    /**
-     * 实体转消息 VO
-     *
-     * <p>字段名与类型一一对应（id / role / content / createdAt），可整体拷贝；
-     * VO 里没有 sessionId 与审计字段，所以脱敏是「结构上不可能泄露」。
-     *
-     * @param message 消息实体
-     * @return 消息 VO
-     */
+    // 实体转消息 VO
+    //
+    // 字段名与类型一一对应（id / role / content / createdAt），可整体拷贝；
+    // VO 里没有 sessionId 与审计字段，所以脱敏是「结构上不可能泄露」。
+    //
+    // @param message 消息实体
+    // @return 消息 VO
     private AiMessageVO toMessageVO(StudioAiMessage message) {
         AiMessageVO messageVO = new AiMessageVO();
         BeanUtils.copyProperties(message, messageVO);
@@ -768,12 +706,10 @@ public class AiChatServiceImpl implements AiChatService {
 
     // ==================== 会话列表 ====================
 
-    /**
-     * 会话实体列表转 VO 列表，并批量补齐 {@code messageCount}
-     *
-     * @param sessions 本页会话实体
-     * @return 会话 VO 列表
-     */
+    // 会话实体列表转 VO 列表，并批量补齐 messageCount
+    //
+    // @param sessions 本页会话实体
+    // @return 会话 VO 列表
     private List<AiSessionVO> toSessionVOs(List<StudioAiSession> sessions) {
         if (sessions == null || sessions.isEmpty()) {
             // 空页必须提前返回：拿空集合去 IN () 是语法错误
@@ -794,24 +730,22 @@ public class AiChatServiceImpl implements AiChatService {
         }).toList();
     }
 
-    /**
-     * 批量统计多个会话的消息条数（<b>一次查询解决整页</b>）
-     *
-     * <p>SQL 形如
-     * {@code SELECT session_id, COUNT(*) AS cnt FROM studio_ai_message
-     * WHERE session_id IN (...) AND deleted_at = 0 GROUP BY session_id}。
-     *
-     * <p><b>这是本任务最关键的一条</b>：绝不能写成
-     * {@code for (会话 s : 本页) { count(s.id) }} —— 那是最典型的 N+1，
-     * 一页 20 条会变成 21 次查询。验收时会数日志里的 SQL 条数，就是为了钉住这一点。
-     * 
-     *
-     * <p>{@code deleted_at = 0} 由 MyBatis-Plus 依 {@code @TableLogic} 自动追加，
-     * 因此「已被删除的消息」不会计入条数——与列表接口的可见性保持一致。
-     *
-     * @param sessionIds 本页会话 ID 列表（非空）
-     * @return 会话 ID → 消息条数
-     */
+    // 批量统计多个会话的消息条数（一次查询解决整页）
+    //
+    // SQL 形如
+    //  SELECT session_id, COUNT(*) AS cnt FROM studio_ai_message
+    // WHERE session_id IN (...) AND deleted_at = 0 GROUP BY session_id
+    // 。
+    //
+    // 这是本任务最关键的一条：绝不能写成
+    // for (会话 s : 本页) { count(s.id) } —— 那是最典型的 N+1，
+    // 一页 20 条会变成 21 次查询。验收时会数日志里的 SQL 条数，就是为了钉住这一点。
+    //
+    // deleted_at = 0 由 MyBatis-Plus 依 @TableLogic 自动追加，
+    // 因此「已被删除的消息」不会计入条数——与列表接口的可见性保持一致。
+    //
+    // @param sessionIds 本页会话 ID 列表（非空）
+    // @return 会话 ID → 消息条数
     private Map<Long, Integer> countMessagesBySessionIds(List<Long> sessionIds) {
         // LambdaQueryWrapper 表达不了 COUNT(*)：聚合与 GROUP BY 只能用字符串列名的 QueryWrapper。
         // 列名是硬编码常量、不来自用户输入，因此不存在注入问题
@@ -835,11 +769,9 @@ public class AiChatServiceImpl implements AiChatService {
         return result;
     }
 
-    /**
-     * 取当前登录用户 ID
-     *
-     * @return 用户 ID；未登录（游客）或 loginId 非数字时返回 null
-     */
+    // 取当前登录用户 ID
+    //
+    // @return 用户 ID；未登录（游客）或 loginId 非数字时返回 null
     private Long currentUserIdOrNull() {
         if (!StpUtil.isLogin()) {
             return null;
@@ -849,14 +781,12 @@ public class AiChatServiceImpl implements AiChatService {
         return Convert.toLong(StpUtil.getLoginId(), null);
     }
 
-    /**
-     * 取当前登录用户 ID，未登录直接拒绝（A0201）
-     *
-     * <p>AI 服务不向游客开放，历史 / 删除会话等接口统一用它取用户，
-     * 避免每处各写一遍「取 id + 判空」。
-     *
-     * @return 登录用户 ID（保证非 null）
-     */
+    // 取当前登录用户 ID，未登录直接拒绝（A0201）
+    //
+    // AI 服务不向游客开放，历史 / 删除会话等接口统一用它取用户，
+    // 避免每处各写一遍「取 id + 判空」。
+    //
+    // @return 登录用户 ID（保证非 null）
     private long requireLoginUserId() {
         Long userId = currentUserIdOrNull();
         ThrowUtils.throwIf(userId == null, ErrorCode.NOT_LOGIN_ERROR, "请先登录后再使用 AI 助手");
@@ -865,32 +795,28 @@ public class AiChatServiceImpl implements AiChatService {
 
     // ==================== 内部类型 ====================
 
-    /**
-     * 提问准备结果（同步与流式共用）
-     *
-     * <p>用 {@code record} 而不是普通类：它是纯粹的「方法返回多个值」的载体，
-     * 不可变、不需要 setter，也不需要进 Spring 容器。
-     *
-     * @param userId    当前登录用户 ID（已保证非 null）
-     * @param sessionId 会话 ID（可能是本次新建的）
-     * @param message   已 trim 的提问内容
-     * @param history   上下文窗口（时间正序）
-     * @param unlimited 是否不限额（成员 / 管理员为 true，落库时不计数）
-     */
+    // 提问准备结果（同步与流式共用）
+    //
+    // 用 record 而不是普通类：它是纯粹的「方法返回多个值」的载体，
+    // 不可变、不需要 setter，也不需要进 Spring 容器。
+    //
+    // @param userId 当前登录用户 ID（已保证非 null）
+    // @param sessionId 会话 ID（可能是本次新建的）
+    // @param message 已 trim 的提问内容
+    // @param history 上下文窗口（时间正序）
+    // @param unlimited 是否不限额（成员 / 管理员为 true，落库时不计数）
     private record PreparedChat(Long userId, long sessionId, String message, List<AiMessageVO> history,
                                 boolean unlimited) {
     }
 
-    /**
-     * 流式过程的中止标记（客户端断开 / 超时 / 写事件失败时置位）
-     *
-     * <p>用 {@code volatile} 而不是 {@code AtomicBoolean}：这里只有「写一个 boolean、读一个 boolean」，
-     * 没有复合操作，volatile 的可见性保证已经足够。
-     *
-     * <p>之所以需要它：SSE 的断开是**异步**通知的（onCompletion/onError 回调），
-     * 而我们的流式线程可能正跑在回调里的中间——标记位让两边能安全会合，
-     * 避免把「用户已经关掉页面」的回答写进库、还算进配额。
-     */
+    // 流式过程的中止标记（客户端断开 / 超时 / 写事件失败时置位）
+    //
+    // 用 volatile 而不是 AtomicBoolean：这里只有「写一个 boolean、读一个 boolean」，
+    // 没有复合操作，volatile 的可见性保证已经足够。
+    //
+    // 之所以需要它：SSE 的断开是异步通知的（onCompletion/onError 回调），
+    // 而我们的流式线程可能正跑在回调里的中间——标记位让两边能安全会合，
+    // 避免把「用户已经关掉页面」的回答写进库、还算进配额。
     private static final class StreamState {
 
         private volatile boolean aborted;

@@ -39,30 +39,26 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-/**
- * 帖子评论服务实现（楼中楼）
- *
- * author: shaoshing
- *
- * <p><b>列表组装是这个类最需要理解的地方</b>：
- * {@code WHERE post_id = ? AND status = 1} 一次把整个帖子的评论查回来，
- * 再在内存里按 {@code parentId} 挂成树。
- * <b>绝不能</b>写成「先查顶层，再对每条顶层查它的回复」——那是标准 N+1，
- * 一个热门帖子有 50 条顶层评论就是 50 次查询。
- */
+// 帖子评论服务实现（楼中楼）
+//
+// 列表组装是这个类最需要理解的地方：
+// WHERE post_id = ? AND status = 1 一次把整个帖子的评论查回来，
+// 再在内存里按 parentId 挂成树。
+// 绝不能写成「先查顶层，再对每条顶层查它的回复」——那是标准 N+1，
+// 一个热门帖子有 50 条顶层评论就是 50 次查询。
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper, StudioPostComment>
         implements PostCommentService {
 
-    /** 审核动作：通过 */
+    // 审核动作：通过
     private static final String ACTION_APPROVE = "approve";
 
-    /** 审核动作：驳回 */
+    // 审核动作：驳回
     private static final String ACTION_REJECT = "reject";
 
-    /** 分页每页条数的默认值与上限 */
+    // 分页每页条数的默认值与上限
     private static final long DEFAULT_PAGE_SIZE = 10L;
     private static final long MAX_PAGE_SIZE = 50L;
 
@@ -70,19 +66,15 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
 
     private final StudioMemberMapper studioMemberMapper;
 
-    /**
-     * 内容审核（AI 三分法）
-     *
-     * <p>与帖子共用同一个 Manager：判定逻辑不区分内容类型，
-     * 差别只在「结论落到哪张表、要不要顺带维护帖子的评论数」，那是本类的事。
-     */
+    // 内容审核（AI 三分法）
+    //
+    // 与帖子共用同一个 Manager：判定逻辑不区分内容类型，
+    // 差别只在「结论落到哪张表、要不要顺带维护帖子的评论数」，那是本类的事。
     private final ContentAuditManager contentAuditManager;
 
-    /**
-     * 站内通知（评论通过后告知被回复者）
-     *
-     * <p>依赖方向单向：通知服务不认识评论，「标题正文怎么写」由本类决定。
-     */
+    // 站内通知（评论通过后告知被回复者）
+    //
+    // 依赖方向单向：通知服务不认识评论，「标题正文怎么写」由本类决定。
     private final NotificationService notificationService;
 
     @Override
@@ -101,7 +93,7 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
 
         String content = StrUtil.trim(request.getContent());
 
-        // ② 回复的合法性：父评论必须是同一帖子下的**顶层**评论（只支持两层楼中楼）
+        // ② 回复的合法性：父评论必须是同一帖子下的顶层评论（只支持两层楼中楼）
         Long parentId = request.getParentId();
         if (parentId != null) {
             StudioPostComment parent = this.getById(parentId);
@@ -123,7 +115,7 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
         boolean saved = this.save(comment);
         ThrowUtils.throwIf(!saved, ErrorCode.SYSTEM_ERROR, "评论失败，数据库异常");
 
-        // 注意：这里**不**累加 post.comment_count。
+        // 注意：这里不累加 post.comment_count。
         // 评论是待审状态，此时计数会让用户看到"有 1 条评论"却点开什么都没有；
         // 计数只在「真正公开」这一刻累加——人工通过走审核接口，AI 判安全走 applyAiVerdict。
         log.info("评论已提交待审 | commentId={} | postId={} | authorId={}",
@@ -136,16 +128,14 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
         return comment.getId();
     }
 
-    /**
-     * 把 AI 的结论写回评论（三分法处置）
-     *
-     * <p>与帖子那一版是同一套规则：<b>只更新「待审且未判」的记录</b>，
-     * 既保证幂等（重复送审不覆盖已有结论），
-     * 也保证管理员的手动处置不会被后到的机器结论改写。
-     *
-     * @param commentId 评论 ID
-     * @param result    AI 结论
-     */
+    // 把 AI 的结论写回评论（三分法处置）
+    //
+    // 与帖子那一版是同一套规则：只更新「待审且未判」的记录，
+    // 既保证幂等（重复送审不覆盖已有结论），
+    // 也保证管理员的手动处置不会被后到的机器结论改写。
+    //
+    // @param commentId 评论 ID
+    // @param result AI 结论
     private void applyAiVerdict(long commentId, AuditResult result) {
         // 先取评论：通过后要拿 postId 去维护帖子的评论数，这是 update 拿不到的
         StudioPostComment comment = this.getById(commentId);
@@ -195,21 +185,19 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
         log.info("AI 审核完成 | commentId={} | 结论={}", commentId, aiStatus.getDesc());
     }
 
-    /**
-     * 评论通过后，通知被回复者（父评论作者）
-     *
-     * <p><b>为什么挂在「通过」而不是「提交」</b>：评论先审后发，提交那一刻
-     * 内容对世界还不可见——提前通知，被回复者点开帖子却找不到那条回复，
-     * 是一次断裂的体验。人工通过与 AI 判安全<b>共用本方法</b>，保证两条路径行为一致。
-     *
-     * <p><b>biz 用 postId 而非 commentId</b>：同一帖子下的多次回复按话题
-     * 聚合成一条通知——既避免「一屏十条回复通知」的轰炸，
-     * 也让 {@code uk_receiver_biz} 的幂等语义与产品语义天然一致。
-     *
-     * <p>批量审核时逐条调用会有少量额外查询（父评论 + 帖子标题各一次）：
-     * 批量审核频率低、量级小，而「单一实现防止两条路径逻辑漂移」比省几次查询重要——
-     * 这是本项目一贯的取舍（策略集中一处）。
-     */
+    // 评论通过后，通知被回复者（父评论作者）
+    //
+    // 为什么挂在「通过」而不是「提交」：评论先审后发，提交那一刻
+    // 内容对世界还不可见——提前通知，被回复者点开帖子却找不到那条回复，
+    // 是一次断裂的体验。人工通过与 AI 判安全共用本方法，保证两条路径行为一致。
+    //
+    // biz 用 postId 而非 commentId：同一帖子下的多次回复按话题
+    // 聚合成一条通知——既避免「一屏十条回复通知」的轰炸，
+    // 也让 uk_receiver_biz 的幂等语义与产品语义天然一致。
+    //
+    // 批量审核时逐条调用会有少量额外查询（父评论 + 帖子标题各一次）：
+    // 批量审核频率低、量级小，而「单一实现防止两条路径逻辑漂移」比省几次查询重要——
+    // 这是本项目一贯的取舍（策略集中一处）。
     private void notifyReplyIfParent(StudioPostComment comment) {
         if (comment.getParentId() == null) {
             return;
@@ -364,7 +352,7 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
 
         long postId = target.getPostId();
 
-        // 审计：管理员删的是**别人的**内容，光有 deleted_at 只知道时间、不知道人，
+        // 审计：管理员删的是别人的内容，光有 deleted_at 只知道时间、不知道人，
         // 出争议时必须能查到操作人
         this.update(new LambdaUpdateWrapper<StudioPostComment>()
                 .eq(StudioPostComment::getId, id)
@@ -389,14 +377,12 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
 
     // ==================== 私有工具 ====================
 
-    /**
-     * 取下一个楼层号：当前帖子最大楼层 + 1
-     *
-     * <p><b>并发下可能重复</b>：两个顶层评论同时提交，都会读到同一个最大值而算出相同楼层。
-     * 这是刻意接受的——楼层号只是展示用的序号，重复不影响任何功能，
-     * 而要为它加唯一索引 + 冲突重试，对当前量级是过度设计。
-     * 若将来确实需要严格递增，再给 {@code (post_id, floor)} 加唯一索引并 catch 重试即可。
-     */
+    // 取下一个楼层号：当前帖子最大楼层 + 1
+    //
+    // 并发下可能重复：两个顶层评论同时提交，都会读到同一个最大值而算出相同楼层。
+    // 这是刻意接受的——楼层号只是展示用的序号，重复不影响任何功能，
+    // 而要为它加唯一索引 + 冲突重试，对当前量级是过度设计。
+    // 若将来确实需要严格递增，再给 (post_id, floor) 加唯一索引并 catch 重试即可。
     private int nextFloor(Long postId) {
         QueryWrapper<StudioPostComment> wrapper = new QueryWrapper<>();
         wrapper.select("MAX(floor) AS max_floor").eq("post_id", postId);
@@ -406,12 +392,10 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
         return maxFloor + 1;
     }
 
-    /**
-     * 批量查评论人姓名（一次查询，避免 N+1）
-     *
-     * @param userIds 用户 ID 集合
-     * @return userId → 成员姓名
-     */
+    // 批量查评论人姓名（一次查询，避免 N+1）
+    //
+    // @param userIds 用户 ID 集合
+    // @return userId → 成员姓名
     private Map<Long, String> authorNames(List<Long> userIds) {
         if (userIds == null || userIds.isEmpty()) {
             return Map.of();

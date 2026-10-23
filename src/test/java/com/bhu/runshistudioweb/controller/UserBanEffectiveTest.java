@@ -17,25 +17,19 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-/**
- * 封禁 / 删除的即时生效验收测试
- *
- * author: shaoshing
- *
- * <p><b>这组用例守的是一个真实安全窗口</b>：token 在 Redis 里的有效期最长 7 天
- * （{@code sa-token.timeout}）。若封禁只挡登录入口，被封禁的用户在 token 过期前
- * 仍可用全部登录态接口（发帖、评论、点赞……）——「封禁」在用户侧看起来毫无效果。
- *
- * <p>因此这里断言两层：
- * <ol>
- *     <li><b>踢会话</b>（主机制）：封禁 / 删除后，原 token 立即失效（A0201）；</li>
- *     <li><b>状态兜底</b>：即使 token 因故未失效，{@code getLoginUser} 的封禁校验也会拦住；</li>
- *     <li><b>可恢复</b>：解封后能重新登录——封禁不是永久封号，别把恢复路径堵死。</li>
- * </ol>
- *
- * <p>登录用真实接口换 token（与 {@link UserAdminCrudTest} 同一模式），
- * 保证权限链路上的每一环都是真的，而不是 mock 的。
- */
+// 封禁 / 删除的即时生效验收测试
+//
+// 这组用例守的是一个真实安全窗口：token 在 Redis 里的有效期最长 7 天
+// （ sa-token.timeout）。若封禁只挡登录入口，被封禁的用户在 token 过期前
+// 仍可用全部登录态接口（发帖、评论、点赞……）——「封禁」在用户侧看起来毫无效果。
+//
+// 因此这里断言两层：
+// - 踢会话（主机制）：封禁 / 删除后，原 token 立即失效（A0201）；
+// - 状态兜底：即使 token 因故未失效， getLoginUser 的封禁校验也会拦住；
+// - 可恢复：解封后能重新登录——封禁不是永久封号，别把恢复路径堵死。
+//
+// 登录用真实接口换 token（与 UserAdminCrudTest 同一模式），
+// 保证权限链路上的每一环都是真的，而不是 mock 的。
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -96,7 +90,7 @@ class UserBanEffectiveTest {
         return body.substring(from, body.indexOf('"', from));
     }
 
-    /** 取响应里的 message 字段（断言封禁提示用） */
+    // 取响应里的 message 字段（断言封禁提示用）
     private String message(String body) {
         int start = body.indexOf("\"message\":\"") + 11;
         if (start < 10) {
@@ -105,7 +99,7 @@ class UserBanEffectiveTest {
         return body.substring(start, body.indexOf('"', start));
     }
 
-    /** 唯一账号名：测试可重复执行，且与其它用例造的数据互不干扰 */
+    // 唯一账号名：测试可重复执行，且与其它用例造的数据互不干扰
     private String uniqueAccount(String prefix) {
         return prefix + (System.nanoTime() % 100000000);
     }

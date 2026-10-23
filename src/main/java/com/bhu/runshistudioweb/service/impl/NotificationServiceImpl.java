@@ -24,32 +24,28 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
 
-/**
- * 站内通知服务实现
- *
- * author: shaoshing
- *
- * <p><b>{@link #notify} 的三条约束（幂等 / 不给自己发 / 失败不拖垮主业务）
- * 全部实现在这一个方法里</b>——触发点只管「出了什么事」，投递策略只有一份。
- * 这是本项目一贯的分工：策略集中一处，调用方各管各的业务语义。
- *
- * <p><b>为什么 notify 不加 @Transactional</b>：它必须活在调用方的事务里
- * （与主业务同生共死），自己开事务反而破坏这一点。Spring 的事务是线程绑定的，
- * 调用方开着事务时，本方法的写自动加入同一事务，不需要任何注解。
- */
+// 站内通知服务实现
+//
+// #notify 的三条约束（幂等 / 不给自己发 / 失败不拖垮主业务）
+// 全部实现在这一个方法里——触发点只管「出了什么事」，投递策略只有一份。
+// 这是本项目一贯的分工：策略集中一处，调用方各管各的业务语义。
+//
+// 为什么 notify 不加 @Transactional：它必须活在调用方的事务里
+// （与主业务同生共死），自己开事务反而破坏这一点。Spring 的事务是线程绑定的，
+// 调用方开着事务时，本方法的写自动加入同一事务，不需要任何注解。
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class NotificationServiceImpl extends ServiceImpl<StudioNotificationMapper, StudioNotification>
         implements NotificationService {
 
-    /** 未读 */
+    // 未读
     private static final int READ_STATUS_UNREAD = 0;
 
-    /** 已读 */
+    // 已读
     private static final int READ_STATUS_READ = 1;
 
-    /** 分页每页条数的默认值（与其它 C 端列表一致） */
+    // 分页每页条数的默认值（与其它 C 端列表一致）
     private static final long DEFAULT_PAGE_SIZE = 10L;
 
     // ==================== 投递（内部能力） ====================
@@ -165,17 +161,15 @@ public class NotificationServiceImpl extends ServiceImpl<StudioNotificationMappe
 
     // ==================== 私有工具 ====================
 
-    /**
-     * 取当前登录用户 ID
-     *
-     * <p>消费侧全部方法都挂 {@code @SaCheckLogin}，能走到这里必然已登录，
-     * 与 {@code UserServiceImpl} 取 loginId 同一方式。
-     */
+    // 取当前登录用户 ID
+    //
+    // 消费侧全部方法都挂 @SaCheckLogin，能走到这里必然已登录，
+    // 与 UserServiceImpl 取 loginId 同一方式。
     private long currentUserId() {
         return StpUtil.getLoginIdAsLong();
     }
 
-    /** 实体分页转 VO 分页 */
+    // 实体分页转 VO 分页
     private Page<NotificationVO> toVOPage(Page<StudioNotification> entityPage) {
         List<NotificationVO> records = entityPage.getRecords().stream()
                 .map(this::toVO)
@@ -185,7 +179,7 @@ public class NotificationServiceImpl extends ServiceImpl<StudioNotificationMappe
         return voPage;
     }
 
-    /** 实体转 VO：typeDesc 按枚举填充（前端不维护类型值 → 中文的映射） */
+    // 实体转 VO：typeDesc 按枚举填充（前端不维护类型值 → 中文的映射）
     private NotificationVO toVO(StudioNotification entity) {
         NotificationVO vo = new NotificationVO();
         BeanUtils.copyProperties(entity, vo);

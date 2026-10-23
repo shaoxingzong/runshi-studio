@@ -11,29 +11,25 @@ import type {
     QuizOption,
 } from '@/api/types';
 
-/**
- * 题库管理（管理端）
- *
- * <p><b>三个刻意的设计</b>：
- * <ol>
- *     <li><b>章节不是独立实体</b>：它是题目上的两个名字列，因此没有「新增章节」，
- *     只有改名 / 移章 / 整章删除。UI 上把章节呈现成「可编辑的分组行」，
- *     而不是一张独立表的 CRUD——数据上本来就不是一张表，UI 应该诚实地反映这一点；</li>
- *     <li><b>停用与删除分开</b>：停用是可逆的下线（错题条目保留），
- *     删除会清理错题条目。列表上两个操作都要有，且删除要二次确认；</li>
- *     <li><b>导入先预览</b>：`dryRun` 校验通过后再落库，避免「导入了一半」。</li>
- * </ol>
- *
- * <p><b>改题的两个提示</b>：有作答记录时提示「修改答案不会重算历史判定」；
- * 判定相关变更（改答案 / 改题型 / 增删选项）时提示「将重置错题连对进度」。
- * 这两句必须让管理员看到——它们是后端真实行为的说明书。
- */
+// 题库管理（管理端）
+//
+// 三个刻意的设计：
+// - 章节不是独立实体：它是题目上的两个名字列，因此没有「新增章节」，
+// 只有改名 / 移章 / 整章删除。UI 上把章节呈现成「可编辑的分组行」，
+// 而不是一张独立表的 CRUD——数据上本来就不是一张表，UI 应该诚实地反映这一点；
+// - 停用与删除分开：停用是可逆的下线（错题条目保留），
+// 删除会清理错题条目。列表上两个操作都要有，且删除要二次确认；
+// - 导入先预览：`dryRun` 校验通过后再落库，避免「导入了一半」。
+//
+// 改题的两个提示：有作答记录时提示「修改答案不会重算历史判定」；
+// 判定相关变更（改答案 / 改题型 / 增删选项）时提示「将重置错题连对进度」。
+// 这两句必须让管理员看到——它们是后端真实行为的说明书。
 const page = reactive({ current: 1, pageSize: 10 });
 const result = ref<PageResult<AdminQuizQuestion> | null>(null);
 const loading = ref(false);
 const error = ref('');
 
-/** 筛选条件 */
+// 筛选条件
 const filter = reactive<{
     textbookName: string;
     chapterName: string;
@@ -42,24 +38,24 @@ const filter = reactive<{
     status: '' | 0 | 1;
 }>({ textbookName: '', chapterName: '', type: '', keyword: '', status: '' });
 
-/** 章节列表（用于筛选下拉与统计条） */
+// 章节列表（用于筛选下拉与统计条）
 const chapters = ref<AdminQuizChapter[]>([]);
-/** 已选中的行（批量删除） */
+// 已选中的行（批量删除）
 const selected = ref<AdminQuizQuestion[]>([]);
 
-/** 教材名候选（来自章节列表，去重） */
+// 教材名候选（来自章节列表，去重）
 const textbookOptions = computed(() => {
     const names = new Set<string>();
     chapters.value.forEach((item) => names.add(item.textbookName));
     return Array.from(names);
 });
 
-/** 当前教材下的章节候选 */
+// 当前教材下的章节候选
 const chapterOptions = computed(() =>
     chapters.value.filter((item) => !filter.textbookName || item.textbookName === filter.textbookName),
 );
 
-/** 统计条 */
+// 统计条
 const stats = computed(() => {
     const list = result.value?.records ?? [];
     return {
@@ -130,7 +126,7 @@ const dialogVisible = ref(false);
 const saving = ref(false);
 const editing = ref<AdminQuizQuestion | null>(null);
 
-/** 表单：选项用固定 4 行，可增到 6 行（与后端上限一致） */
+// 表单：选项用固定 4 行，可增到 6 行（与后端上限一致）
 interface FormState {
     textbookName: string;
     chapterName: string;
@@ -166,7 +162,7 @@ function blankForm(): FormState {
     };
 }
 
-/** 单选题的正确项是单选的：勾一个自动取消其他 */
+// 单选题的正确项是单选的：勾一个自动取消其他
 function toggleCorrect(label: string) {
     if (form.type === 0) {
         form.correctLabels = form.correctLabels === label ? '' : label;
@@ -224,15 +220,13 @@ function openEdit(row: AdminQuizQuestion) {
     dialogVisible.value = true;
 }
 
-/**
- * 判定相关变更检测（前端侧的提示用）
- *
- * <p>与后端 `isVerdictChanged` 保持同一口径：改答案、改题型、改选项标签集合
- * 都算。只改选项文字不算——「你当时选了 C」仍指向同一个选项。
- *
- * <p>前端做这个判断只是为了<b>提前提示</b>，真正的处理在后端。
- * 两边不一致的后果只是提示多一句或少一句，不会影响数据。
- */
+// 判定相关变更检测（前端侧的提示用）
+//
+// 与后端 `isVerdictChanged` 保持同一口径：改答案、改题型、改选项标签集合
+// 都算。只改选项文字不算——「你当时选了 C」仍指向同一个选项。
+//
+// 前端做这个判断只是为了提前提示，真正的处理在后端。
+// 两边不一致的后果只是提示多一句或少一句，不会影响数据。
 function isVerdictChanged(): boolean {
     const old = editing.value;
     if (!old) {
@@ -402,7 +396,7 @@ function openImport() {
   importVisible.value = true;
 }
 
-/** 先校验（dryRun）：拿到解析数量与逐行错误 */
+// 先校验（dryRun）：拿到解析数量与逐行错误
 async function checkImport() {
     if (!importTarget.textbookName || !importTarget.chapterName) {
         ElMessage.warning('请填写教材与章节');
@@ -428,7 +422,7 @@ async function checkImport() {
     }
 }
 
-/** 确认导入：只有校验通过（无错误）才允许 */
+// 确认导入：只有校验通过（无错误）才允许
 async function confirmImport() {
     if (!importPreview.value || importPreview.value.errors.length > 0) {
         return;

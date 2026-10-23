@@ -15,30 +15,22 @@ import tools.jackson.databind.ser.std.ToStringSerializer;
 
 import java.time.LocalDateTime;
 
-/**
- * Redis 配置
- *
- * author: shaoshing
- *
- * <p>核心是四点序列化器的选择：
- * <ul>
- *     <li>key / hashKey 必须用 {@link StringRedisSerializer}：默认的 JdkSerializationRedisSerializer 会把 key
- *     写成 {@code \xac\xed\x00\x05t\x00\x04user} 这种带二进制前缀的内容，redis-cli 里读不懂，其他语言的客户端也无法对接；</li>
- *     <li>value / hashValue 用 JSON 序列化器：可读、跨语言，且体积明显小于 JDK 序列化。</li>
- * </ul>
- *
- * <p>注意：Spring Boot 4 内置 Jackson 3，序列化器要选 {@link GenericJacksonJsonRedisSerializer}
- * （Jackson 3 版），而不是 Jackson 2 的 GenericJackson2JsonRedisSerializer。
- */
+// Redis 配置
+//
+// 核心是四点序列化器的选择：
+// - key / hashKey 必须用 StringRedisSerializer：默认的 JdkSerializationRedisSerializer 会把 key
+// 写成 \xac\xed\x00\x05t\x00\x04user 这种带二进制前缀的内容，redis-cli 里读不懂，其他语言的客户端也无法对接；
+// - value / hashValue 用 JSON 序列化器：可读、跨语言，且体积明显小于 JDK 序列化。
+//
+// 注意：Spring Boot 4 内置 Jackson 3，序列化器要选 GenericJacksonJsonRedisSerializer
+// （Jackson 3 版），而不是 Jackson 2 的 GenericJackson2JsonRedisSerializer。
 @Configuration
 public class RedisConfig {
 
-    /**
-     * RedisTemplate<String, Object>：key 走 String 序列化，value 走 JSON 序列化
-     *
-     * @param connectionFactory Spring Boot 依据 spring.data.redis 配置自动装配的连接工厂（Lettuce）
-     * @return 可直接注入使用的 RedisTemplate
-     */
+    // RedisTemplate<String, Object>：key 走 String 序列化，value 走 JSON 序列化
+    //
+    // @param connectionFactory Spring Boot 依据 spring.data.redis 配置自动装配的连接工厂（Lettuce）
+    // @return 可直接注入使用的 RedisTemplate
     @Bean
     public RedisTemplate<String, Object> redisTemplate(RedisConnectionFactory connectionFactory) {
         RedisTemplate<String, Object> redisTemplate = new RedisTemplate<>();
@@ -59,9 +51,7 @@ public class RedisConfig {
         return redisTemplate;
     }
 
-    /**
-     * value 用的 JSON 序列化器
-     */
+    // value 用的 JSON 序列化器
     private GenericJacksonJsonRedisSerializer valueSerializer() {
         return GenericJacksonJsonRedisSerializer.builder()
                 // 必须开启「默认类型信息」（序列化时写入 @class 字段），否则值类型是 Object，
@@ -75,9 +65,7 @@ public class RedisConfig {
                 .build();
     }
 
-    /**
-     * 反序列化类型白名单：只允许项目自身类型与常见容器 / 基础类型
-     */
+    // 反序列化类型白名单：只允许项目自身类型与常见容器 / 基础类型
     private PolymorphicTypeValidator typeValidator() {
         return BasicPolymorphicTypeValidator.builder()
                 .allowIfSubType("com.bhu.runshistudioweb.") // 项目自己的实体、DTO、VO
@@ -88,11 +76,9 @@ public class RedisConfig {
                 .build();
     }
 
-    /**
-     * 缓存内的 JSON 规则：与接口返回（JsonConfig）保持完全一致
-     * 1. Long 转字符串
-     * 2. 时间格式复用 JsonConfig 的定义
-     */
+    // 缓存内的 JSON 规则：与接口返回（JsonConfig）保持完全一致
+    // 1. Long 转字符串
+    // 2. 时间格式复用 JsonConfig 的定义
     private SimpleModule redisJsonModule() {
         SimpleModule module = new SimpleModule("runshi-redis-json-module");
 

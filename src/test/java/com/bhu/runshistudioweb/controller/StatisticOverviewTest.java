@@ -19,25 +19,19 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
-/**
- * 首页大盘统计验收测试
- *
- * author: shaoshing
- *
- * <p>覆盖四条线：
- * <ol>
- *     <li><b>匿名可访问 + 类型正确</b>：C 端白名单生效，且计数字段是 JSON <b>数字</b>而不是字符串
- *     （VO 用 Integer 避开全局的 Long → 字符串规则，这条断言就是那个决策的守门人）；
- *     同时断言<b>成员计数不得出现</b>——这是「团队成员不对外展示」的守门人；</li>
- *     <li><b>口径正确</b>：统计结果与「直查数据库（MP 自动排除逻辑删除）」一致，
- *     且逻辑删除后计数立刻减少——这是"排除已删除"这条口径的硬证据；</li>
- *     <li><b>分布完整性</b>：枚举里的 key 一个不少（缺位补 0），且各分布求和等于总数；</li>
- *     <li><b>回归</b>：管理端接口仍然要求管理员（白名单只放行了这一个公开统计路径）。</li>
- * </ol>
- *
- * <p>数据直接用 Mapper 插入：本测试考的是"统计"而不是"增删改"（那两块的接口另有测试守着），
- * 用 Mapper 插入才能构造出"任意状态组合"的确定场景。
- */
+// 首页大盘统计验收测试
+//
+// 覆盖四条线：
+// - 匿名可访问 + 类型正确：C 端白名单生效，且计数字段是 JSON 数字而不是字符串
+// （VO 用 Integer 避开全局的 Long → 字符串规则，这条断言就是那个决策的守门人）；
+// 同时断言成员计数不得出现——这是「团队成员不对外展示」的守门人；
+// - 口径正确：统计结果与「直查数据库（MP 自动排除逻辑删除）」一致，
+// 且逻辑删除后计数立刻减少——这是"排除已删除"这条口径的硬证据；
+// - 分布完整性：枚举里的 key 一个不少（缺位补 0），且各分布求和等于总数；
+// - 回归：管理端接口仍然要求管理员（白名单只放行了这一个公开统计路径）。
+//
+// 数据直接用 Mapper 插入：本测试考的是"统计"而不是"增删改"（那两块的接口另有测试守着），
+// 用 Mapper 插入才能构造出"任意状态组合"的确定场景。
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -51,7 +45,7 @@ class StatisticOverviewTest {
 
     // ==================== 工具方法 ====================
 
-    /** 匿名请求大盘接口，返回原始响应体 */
+    // 匿名请求大盘接口，返回原始响应体
     private String fetchOverview() throws Exception {
         return mockMvc.perform(get("/statistic/overview")).andReturn().getResponse().getContentAsString();
     }
@@ -61,10 +55,8 @@ class StatisticOverviewTest {
         return body.substring(start, body.indexOf('"', start));
     }
 
-    /**
-     * 取出形如 {@code "key":123} 的数值（含嵌套 Map 里的 key）
-     * <p>注意：只适用于数字字段；字符串字段的值前面会有引号，本方法会解析失败
-     */
+    // 取出形如 "key":123 的数值（含嵌套 Map 里的 key）
+    // 注意：只适用于数字字段；字符串字段的值前面会有引号，本方法会解析失败
     private int numData(String body, String key) {
         String marker = "\"" + key + "\":";
         int start = body.indexOf(marker);

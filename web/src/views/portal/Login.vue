@@ -5,14 +5,12 @@ import { ElMessage } from 'element-plus';
 import { userApi } from '@/api/user';
 import { useUserStore } from '@/stores/user';
 
-/**
- * 门户登录（C 端）
- *
- * 与后台登录（`/admin/login`）的关系：**接口是同一个** `/user/login`，区别在页面与后续去向——
- * 这里登录成功后回门户；管理员账号登录后导航会多出「后台管理」入口。
- *
- * 后台刻意**没有注册入口**：管理员账号由管理方分配；普通用户在本站注册。
- */
+// 门户登录（C 端）
+//
+// 与后台登录（`/admin/login`）的关系：接口是同一个 `/user/login`，区别在页面与后续去向——
+// 这里登录成功后回门户；管理员账号登录后导航会多出「后台管理」入口。
+//
+// 后台刻意没有注册入口：管理员账号由管理方分配；普通用户在本站注册。
 const route = useRoute();
 const router = useRouter();
 const user = useUserStore();

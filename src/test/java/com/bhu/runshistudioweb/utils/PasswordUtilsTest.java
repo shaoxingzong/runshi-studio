@@ -11,9 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 密码工具类验收测试
- */
+// 密码工具类验收测试
 class PasswordUtilsTest {
 
     private static final String RAW = "Studio@2026";

@@ -21,24 +21,18 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 站内通知 · 接口契约测试
- *
- * author: shaoshing
- *
- * <p>守三类线：
- * <ol>
- *     <li><b>越权</b>：未登录 A0201；**他人的通知按不存在处理**（A0402，同码同提示，
- *     不暴露「这条其实存在，只是不是你的」）；</li>
- *     <li><b>幂等</b>：重复已读不刷已读时间、重复投递不产生第二条（唯一键兜底）；
- *     「不给自己发」是触发点的共同防线；</li>
- *     <li><b>可用性</b>：未读计数准确、已读/全部已读的返回语义、isRead 过滤生效。</li>
- * </ol>
- *
- * <p>夹具复用 {@link QuizTestSupport}（造账号 + 登录换 token），
- * 通知记录用 Mapper 直插——契约测试关心「接口读到什么」，不关心通知怎么产生的
- * （那部分由 {@link NotificationTriggerTest} 覆盖）。
- */
+// 站内通知 · 接口契约测试
+//
+// 守三类线：
+// - 越权：未登录 A0201；他人的通知按不存在处理（A0402，同码同提示，
+// 不暴露「这条其实存在，只是不是你的」）；
+// - 幂等：重复已读不刷已读时间、重复投递不产生第二条（唯一键兜底）；
+// 「不给自己发」是触发点的共同防线；
+// - 可用性：未读计数准确、已读/全部已读的返回语义、isRead 过滤生效。
+//
+// 夹具复用 QuizTestSupport（造账号 + 登录换 token），
+// 通知记录用 Mapper 直插——契约测试关心「接口读到什么」，不关心通知怎么产生的
+// （那部分由 NotificationTriggerTest 覆盖）。
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -65,14 +59,12 @@ class NotificationCrudTest {
     @Resource
     private StudioNotificationMapper notificationMapper;
 
-    /**
-     * 夹具：刻意**不注入**而自己 new——QuizTestSupport 不是 Spring bean
-     * （它依赖 MockMvc，而 @Component 会被不带 MockMvc 的测试上下文扫到导致启动失败，
-     * 缘由写在那个类的注释里）。依赖从本类的 @Resource 字段传进去
-     */
+    // 夹具：刻意不注入而自己 new——QuizTestSupport 不是 Spring bean
+    // （它依赖 MockMvc，而 @Component 会被不带 MockMvc 的测试上下文扫到导致启动失败，
+    // 缘由写在那个类的注释里）。依赖从本类的 @Resource 字段传进去
     private QuizTestSupport support;
 
-    /** 两名普通用户 + 一名管理员（越权与「只读到自己」需要两个平级账号） */
+    // 两名普通用户 + 一名管理员（越权与「只读到自己」需要两个平级账号）
     private long userIdA;
     private long userIdB;
     private String tokenA;
@@ -87,7 +79,7 @@ class NotificationCrudTest {
         tokenB = support.tokenOf(userIdB);
     }
 
-    /** 直插一条别人的通知（绕过投递逻辑，专注契约） */
+    // 直插一条别人的通知（绕过投递逻辑，专注契约）
     private long insertNotification(long receiverId, String type, boolean read) {
         StudioNotification notification = new StudioNotification();
         notification.setReceiverId(receiverId);

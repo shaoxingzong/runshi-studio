@@ -21,16 +21,12 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * Redis 配置验收测试
- *
- * author: shaoshing
- *
- * <p>这组用例专治「配置看着对、其实没生效」：序列化器是 Redis 接入里最容易被忽略的一环，
- * 配错了程序照常跑，只是 redis-cli 里全是二进制乱码、跨语言客户端读不了、重启后类型丢失。
- *
- * <p>注意：每个用例都自行清理写入的 key，不留垃圾数据（测试用的 Redis 往往和本地开发共用一个库）。
- */
+// Redis 配置验收测试
+//
+// 这组用例专治「配置看着对、其实没生效」：序列化器是 Redis 接入里最容易被忽略的一环，
+// 配错了程序照常跑，只是 redis-cli 里全是二进制乱码、跨语言客户端读不了、重启后类型丢失。
+//
+// 注意：每个用例都自行清理写入的 key，不留垃圾数据（测试用的 Redis 往往和本地开发共用一个库）。
 @SpringBootTest
 class RedisConfigTest {
 

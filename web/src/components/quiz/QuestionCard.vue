@@ -2,29 +2,27 @@
 import type { QuizQuestionType, QuizVerdict } from '@/api/types';
 import OptionList from './OptionList.vue';
 
-/**
- * 题卡：题型标签 + 题干 + 选项
- *
- * <p><b>单选「点击即提交」</b>：这是刷题工具最重要的效率设计——
- * 每道题少一次点击，20 题就少 20 次。代价是「点了就不能改」，
- * 但这与真实考试一致，且判定后本来就要禁用选项。
- *
- * <p><b>多选必须显式提交</b>：多选的选法是「逐个勾选、最后确认」，
- * 点击即提交会让用户永远只能选到一个。
- */
+// 题卡：题型标签 + 题干 + 选项
+//
+// 单选「点击即提交」：这是刷题工具最重要的效率设计——
+// 每道题少一次点击，20 题就少 20 次。代价是「点了就不能改」，
+// 但这与真实考试一致，且判定后本来就要禁用选项。
+//
+// 多选必须显式提交：多选的选法是「逐个勾选、最后确认」，
+// 点击即提交会让用户永远只能选到一个。
 const props = defineProps<{
     stem: string;
     type: QuizQuestionType;
     options: { label: string; content: string }[];
     chosen: string;
     verdict: QuizVerdict | null;
-    /** 是否禁用选项（提交中或已判定） */
+    // 是否禁用选项（提交中或已判定）
     disabled: boolean;
 }>();
 
 const emit = defineEmits<{ pick: [label: string] }>();
 
-/** 题型文案：只有单选与多选 */
+// 题型文案：只有单选与多选
 function typeText(): string {
     return props.type === 1 ? '多选' : '单选';
 }

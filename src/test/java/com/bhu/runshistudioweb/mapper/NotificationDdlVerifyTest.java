@@ -14,24 +14,18 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 验收：站内通知表的建库脚本结构 + 关键索引命中
- *
- * author: shaoshing
- *
- * <p>与 {@code QuizDdlVerifyTest} 同一套路（抽 DDL → 幂等两连跑 → 结构与索引断言）。
- * 除结构本身外，本用例重点守两条**这个表特有的设计**：
- * <ul>
- *     <li>{@code uk_receiver_biz} 必须带 {@code deleted_at}——它一身二职：
- *     既是全项目唯一键铁律的落地，又是「同一事件重复投递」的幂等根基；</li>
- *     <li>{@code idx_receiver_read} 覆盖列表与未读计数——把 {@code created_at}
- *     也编进索引是为了让 ORDER BY 不走 filesort。</li>
- * </ul>
- *
- * <p><b>为什么不用 {@code @Transactional} 回滚</b>：MySQL 的 DDL 会隐式提交，
- * 且本用例的目的正是「确认表能建出来」并**留在库里**供业务测试使用
- * （与刷题三张表同一工作方式），所以刻意不回滚。
- */
+// 验收：站内通知表的建库脚本结构 + 关键索引命中
+//
+// 与 QuizDdlVerifyTest 同一套路（抽 DDL → 幂等两连跑 → 结构与索引断言）。
+// 除结构本身外，本用例重点守两条这个表特有的设计：
+// - uk_receiver_biz 必须带 deleted_at——它一身二职：
+// 既是全项目唯一键铁律的落地，又是「同一事件重复投递」的幂等根基；
+// - idx_receiver_read 覆盖列表与未读计数——把 created_at
+// 也编进索引是为了让 ORDER BY 不走 filesort。
+//
+// 为什么不用 @Transactional 回滚：MySQL 的 DDL 会隐式提交，
+// 且本用例的目的正是「确认表能建出来」并留在库里供业务测试使用
+// （与刷题三张表同一工作方式），所以刻意不回滚。
 @SpringBootTest
 class NotificationDdlVerifyTest {
 
@@ -109,12 +103,10 @@ class NotificationDdlVerifyTest {
 
     // ==================== 工具方法（与 QuizDdlVerifyTest 同一套） ====================
 
-    /**
-     * 从全量建库脚本里取出指定表的建表语句，改写为 IF NOT EXISTS
-     *
-     * <p>必须去注释：JdbcTemplate 把整段当作<b>一条</b>语句发给 MySQL，
-     * 连接串没开 {@code allowMultiQueries}，多余注释会让解析失败。
-     */
+    // 从全量建库脚本里取出指定表的建表语句，改写为 IF NOT EXISTS
+    //
+    // 必须去注释：JdbcTemplate 把整段当作一条语句发给 MySQL，
+    // 连接串没开 allowMultiQueries，多余注释会让解析失败。
     private String readCreateTableDdl(String tableName) throws Exception {
         String raw = Files.readString(Path.of("db/user.sql"));
         StringBuilder sb = new StringBuilder();
@@ -167,13 +159,11 @@ class NotificationDdlVerifyTest {
         assertTrue(count != null && count > 0, table + " 缺少唯一索引 " + indexName);
     }
 
-    /**
-     * 断言 EXPLAIN 的候选索引包含预期索引
-     *
-     * <p>断言 {@code possible_keys} 而不是 {@code key}：前者证明「索引能被这条查询用上」，
-     * 后者是优化器在当前数据量下的选择——表小时它可能合理地选全表扫描。
-     * 条件用 {@code >= 1} 而非常量，避免 MySQL 判成「const 无匹配行」直接返回空 plan。
-     */
+    // 断言 EXPLAIN 的候选索引包含预期索引
+    //
+    // 断言 possible_keys 而不是 key：前者证明「索引能被这条查询用上」，
+    // 后者是优化器在当前数据量下的选择——表小时它可能合理地选全表扫描。
+    // 条件用 >= 1 而非常量，避免 MySQL 判成「const 无匹配行」直接返回空 plan。
     private void assertIndexCandidate(String explainSql, String expectedIndex, String scene) {
         Map<String, Object> row = jdbcTemplate.queryForMap(explainSql);
         String possibleKeys = String.valueOf(row.get("possible_keys"));

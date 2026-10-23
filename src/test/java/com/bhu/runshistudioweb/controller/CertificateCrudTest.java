@@ -29,18 +29,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-/**
- * 证书模块验收测试
- *
- * author: shaoshing
- *
- * <p>覆盖两条线：
- * <ol>
- *     <li><b>越权</b>：匿名访问后台接口 A0201、普通用户 A0301、C 端列表匿名可访问；</li>
- *     <li><b>四个考点</b>：级别与类型正交存储、获奖日期不得晚于今天、图片非空、
- *     默认排序 = 置顶权重倒序 + 获奖日期倒序。</li>
- * </ol>
- */
+// 证书模块验收测试
+//
+// 覆盖两条线：
+// - 越权：匿名访问后台接口 A0201、普通用户 A0301、C 端列表匿名可访问；
+// - 四个考点：级别与类型正交存储、获奖日期不得晚于今天、图片非空、
+// 默认排序 = 置顶权重倒序 + 获奖日期倒序。
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -204,7 +198,7 @@ class CertificateCrudTest {
         List<String> titles = list.stream().map(CertificateFrontVO::getTitle).toList();
         assertTrue(list.size() >= 2, "列表至少应有两条记录，实际：" + list.size());
 
-        // 断言**这两条的相对顺序**，而不是「首条必须是高权重」。
+        // 断言这两条的相对顺序，而不是「首条必须是高权重」。
         // 为什么：库里可能已有演示数据（它们的置顶权重可能更高），
         // 那样 list.get(0) 就不是本用例建的那条——那是把环境当成前提，不是排序有 bug。
         int idxHigh = titles.indexOf("高权重旧日期");

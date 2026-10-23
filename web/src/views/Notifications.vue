@@ -5,17 +5,15 @@ import ErrorRetry from '@/components/ErrorRetry.vue';
 import { notificationApi } from '@/api/notification';
 import type { Notification } from '@/api/types';
 
-/**
- * 通知中心（C 端，要求登录）
- *
- * <p>「已读」在这个页面里是**点击即读**：条目本身就是跳转链接，
- * 点开的瞬间标记已读——单独放一个「标为已读」按钮是多余的交互
- * （用户点通知的目的就是去看内容，不是去管理已读状态）。
- */
+// 通知中心（C 端，要求登录）
+//
+// 「已读」在这个页面里是点击即读：条目本身就是跳转链接，
+// 点开的瞬间标记已读——单独放一个「标为已读」按钮是多余的交互
+// （用户点通知的目的就是去看内容，不是去管理已读状态）。
 const router = useRouter();
 
 const page = reactive({ current: 1, pageSize: 10 });
-/** 已读过滤：null-全部，0-只看未读 */
+// 已读过滤：null-全部，0-只看未读
 const readFilter = ref<number | null>(null);
 const result = ref<{ records: Notification[]; total: number; pages: number } | null>(null);
 const loading = ref(false);
@@ -46,7 +44,7 @@ async function load() {
     }
 }
 
-/** 切换「全部 / 未读」时回到第一页：否则可能停在一个不存在的页码上 */
+// 切换「全部 / 未读」时回到第一页：否则可能停在一个不存在的页码上
 function switchFilter(value: number | null) {
     readFilter.value = value;
     page.current = 1;
@@ -62,14 +60,12 @@ function turn(delta: number) {
     void load();
 }
 
-/**
- * 点击条目：标记已读 + 按类型跳转
- *
- * <p>跳转目标按 type 决定（后端 biz 语义）：
- * 三种帖子/评论类都跳**帖子详情**（COMMENT_REPLIED 的 biz 是帖子——
- * 同一帖子下的多次回复按话题聚合，见 api/types.ts）；成员授予跳工作台
- * （新能力所在处，比跳首页有用）。
- */
+// 点击条目：标记已读 + 按类型跳转
+//
+// 跳转目标按 type 决定（后端 biz 语义）：
+// 三种帖子/评论类都跳帖子详情（COMMENT_REPLIED 的 biz 是帖子——
+// 同一帖子下的多次回复按话题聚合，见 api/types.ts）；成员授予跳工作台
+// （新能力所在处，比跳首页有用）。
 async function open(item: Notification) {
     if (item.isRead !== 1) {
         try {
@@ -87,7 +83,7 @@ async function open(item: Notification) {
     }
 }
 
-/** 全部已读：失败时提示（这是用户主动动作，静默会让人以为没生效） */
+// 全部已读：失败时提示（这是用户主动动作，静默会让人以为没生效）
 async function markAll() {
     try {
         await notificationApi.markAllRead();
@@ -98,7 +94,7 @@ async function markAll() {
     }
 }
 
-/** 相对时间：通知列表里「3 分钟前」比绝对时间好读 */
+// 相对时间：通知列表里「3 分钟前」比绝对时间好读
 function timeAgo(value?: string): string {
     if (!value) {
         return '';

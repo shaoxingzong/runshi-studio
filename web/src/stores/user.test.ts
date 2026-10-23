@@ -3,23 +3,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { tokenStore } from '@/api/request';
 import { useUserStore } from './user';
 
-/**
- * 登录态 store 单测（纯逻辑）
- *
- * author: shaoshing
- *
- * <p><b>为什么值得单测</b>：这个 store 是「刷新页面后登录态不丢」的唯一依靠，
- * 管着三处持久化（token / 账号 / 角色）+ 两个派生判断（isAdmin / isMember）。
- * 它此前的验证方式是「登录一次、刷新看一眼」——而 isMember 的口径
- * （按档案不按角色，见 store 注释）恰恰是最容易在重构中被改成「按角色」的地方，
- * 那样的回归在界面上要等到「成员看到不该看的入口」才被发现。
- */
+// 登录态 store 单测（纯逻辑）
+//
+// 为什么值得单测：这个 store 是「刷新页面后登录态不丢」的唯一依靠，
+// 管着三处持久化（token / 账号 / 角色）+ 两个派生判断（isAdmin / isMember）。
+// 它此前的验证方式是「登录一次、刷新看一眼」——而 isMember 的口径
+// （按档案不按角色，见 store 注释）恰恰是最容易在重构中被改成「按角色」的地方，
+// 那样的回归在界面上要等到「成员看到不该看的入口」才被发现。
 
 const { mineMember } = vi.hoisted(() => ({ mineMember: vi.fn() }));
 
 vi.mock('@/api/user', () => ({ userApi: { mineMember } }));
 
-/** 刷新页面恢复登录态依赖 localStorage，每个用例都从干净状态开始 */
+// 刷新页面恢复登录态依赖 localStorage，每个用例都从干净状态开始
 beforeEach(() => {
     localStorage.clear();
     setActivePinia(createPinia());
@@ -27,7 +23,7 @@ beforeEach(() => {
     mineMember.mockResolvedValue(null);
 });
 
-/** 等掉 setLogin 内部触发的异步档案补拉（不 await 的火里捞栗） */
+// 等掉 setLogin 内部触发的异步档案补拉（不 await 的火里捞栗）
 function flush() {
     return new Promise((resolve) => setTimeout(resolve, 0));
 }

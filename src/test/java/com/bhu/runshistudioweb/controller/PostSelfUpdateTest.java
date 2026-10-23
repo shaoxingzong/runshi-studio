@@ -32,29 +32,23 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-/**
- * 作者自助改稿验收测试（改自己被驳回的帖子）
- *
- * author: shaoshing
- *
- * <p><b>覆盖的规则</b>（与产品口径一一对应）：
- * <ul>
- *     <li><b>准入</b>：未登录 A0201；非本人的帖子按「不存在」A0402（同码同提示，
- *     不暴露存在性）；待审 / 已通过的帖子同样 A0402（作者只能改已驳回的）；</li>
- *     <li><b>改稿效果</b>：标题 / 正文更新、状态重置为待审、上一轮审核痕迹清空
- *     （audit_by / audit_at / reject_reason / ai_audit_status）；</li>
- *     <li><b>正文可读</b>：{@code /post/my/detail} 让作者读到驳回稿的正文，
- *     且<b>不累加浏览量</b>；非本人、已通过的帖子读不到；</li>
- *     <li><b>校验同源</b>：外链图片被拒、空标题 / 空正文被拒，且被拒时不改动任何内容。</li>
- * </ul>
- *
- * <p><b>为什么不担心编辑触发的异步 AI 初判</b>：测试环境没有配置 AI，
- * {@code ContentAuditManager#judge} 立刻失败并转人工，而该结论不改 status；
- * 且它跑在虚拟线程上，会先被本测试事务持有的行锁挡住。因此断言只盯确定性字段。
- *
- * <p><b>类名不能以 {@code Admin} 开头</b>：会排在 {@code Ai*} 测试之前导致
- * Spring 上下文被 stop、后续登录类批量失败（见 {@code PostManageTest} 注释）。
- */
+// 作者自助改稿验收测试（改自己被驳回的帖子）
+//
+// 覆盖的规则（与产品口径一一对应）：
+// - 准入：未登录 A0201；非本人的帖子按「不存在」A0402（同码同提示，
+// 不暴露存在性）；待审 / 已通过的帖子同样 A0402（作者只能改已驳回的）；
+// - 改稿效果：标题 / 正文更新、状态重置为待审、上一轮审核痕迹清空
+// （audit_by / audit_at / reject_reason / ai_audit_status）；
+// - 正文可读： /post/my/detail 让作者读到驳回稿的正文，
+// 且不累加浏览量；非本人、已通过的帖子读不到；
+// - 校验同源：外链图片被拒、空标题 / 空正文被拒，且被拒时不改动任何内容。
+//
+// 为什么不担心编辑触发的异步 AI 初判：测试环境没有配置 AI，
+// ContentAuditManager#judge 立刻失败并转人工，而该结论不改 status；
+// 且它跑在虚拟线程上，会先被本测试事务持有的行锁挡住。因此断言只盯确定性字段。
+//
+// 类名不能以 Admin 开头：会排在 Ai* 测试之前导致
+// Spring 上下文被 stop、后续登录类批量失败（见 PostManageTest 注释）。
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -77,12 +71,10 @@ class PostSelfUpdateTest {
     @Resource
     private JsonMapper jsonMapper;
 
-    /**
-     * AI 熔断器：每个用例前重置。
-     *
-     * <p>改稿会触发「重新送 AI 初判」，而测试环境没有配置 AI，每次都是失败——
-     * 连续几个用例就会把熔断器打开，传染给后跑的测试类。
-     */
+    // AI 熔断器：每个用例前重置。
+    //
+    // 改稿会触发「重新送 AI 初判」，而测试环境没有配置 AI，每次都是失败——
+    // 连续几个用例就会把熔断器打开，传染给后跑的测试类。
     @Resource
     private AiCircuitBreaker circuitBreaker;
 

@@ -12,7 +12,7 @@ import type {
     Project,
 } from './types';
 
-/** 后台接口（除登录外全部要求 admin 角色） */
+// 后台接口（除登录外全部要求 admin 角色）
 export const adminApi = {
     login: (userAccount: string, userPassword: string) =>
         http.post<LoginResult>('/user/login', { userAccount, userPassword }),
@@ -34,22 +34,20 @@ export const adminApi = {
         userName?: string;
         userRole?: string;
     }) => http.post<{ id: string; initialPassword: string }>('/user/add', body),
-    /** 删除账号（后端为逻辑删除） */
+    // 删除账号（后端为逻辑删除）
     userDelete: (id: string) => http.post<boolean>('/user/delete', { id }),
 
     // ===== 成员 =====
     // ⚠️ 注意是 GET + 查询参数（后端的对象绑定），不是 POST。
     // 写成 POST 会得到 405 Method Not Allowed——这类错误在浏览器控制台才看得见。
-    /**
-     * 成员分页
-     *
-     * <p>⚠️ 返回的是 <b>MemberVO</b>（含 userId / sortOrder 等内部字段），
-     * <b>不是</b> C 端脱敏的 {@code Member}。用错类型就看不到
-     * 「这条档案绑定了哪个登录账号」——而绑定关系正是「把注册用户转为成员」的关键信息。
-     */
+    // 成员分页
+    //
+    // ⚠️ 返回的是 MemberVO（含 userId / sortOrder 等内部字段），
+    // 不是 C 端脱敏的 Member。用错类型就看不到
+    // 「这条档案绑定了哪个登录账号」——而绑定关系正是「把注册用户转为成员」的关键信息。
     memberPage: (params: Record<string, unknown>) =>
         http.get<PageResult<AdminMember>>('/member/list/page', params),
-    // userId 可传：新增成员档案时**顺便绑定登录账号**（后端 MemberAddRequest.userId 是可选字段）。
+    // userId 可传：新增成员档案时顺便绑定登录账号（后端 MemberAddRequest.userId 是可选字段）。
     // 「后台把注册用户转为成员」就是靠它——不需要另开接口。
     // 入参同样按 MemberVO 的口径（AdminMember）：新增时可直接带 userId 完成绑定，
     // 编辑时 userId 传 null 表示「不修改绑定」（后端 MemberUpdateRequest 的既有语义）
@@ -78,19 +76,17 @@ export const adminApi = {
     docPage: (body: Record<string, unknown>) => http.post<PageResult<KnowledgeDoc>>('/knowledge/doc/list/page', body),
     docSync: (sourceType: string, sourceId: string) =>
         http.post<IngestResult>('/knowledge/doc/sync', { sourceType, sourceId: Number(sourceId) }),
-    /** 全量同步：幂等，内容未变的会跳过（零 Embedding 调用） */
+    // 全量同步：幂等，内容未变的会跳过（零 Embedding 调用）
     docSyncAll: () => http.post<BatchResult>('/knowledge/doc/sync-all', {}),
-    /** 强制重建向量：应用重启后向量丢失时用它恢复（sync-all 此时会全部跳过，救不回来） */
+    // 强制重建向量：应用重启后向量丢失时用它恢复（sync-all 此时会全部跳过，救不回来）
     docReindexAll: () => http.post<BatchResult>('/knowledge/doc/reindex-all', {}),
     docRebuild: (id: string) => http.post<IngestResult>('/knowledge/doc/rebuild', { id }),
     docDelete: (id: string) => http.post<boolean>('/knowledge/doc/delete', { id }),
-    /**
-     * 手工录入文档
-     *
-     * <p>每次调用都新建一篇（<b>不幂等</b>），title ≤128、content ≤20000（后端 @Size 校验）。
-     * ⚠️ 后端会真实调用 Embedding，长文耗时可能超过请求层的 30 秒超时——
-     * 界面上要提示「录入中请勿关闭」，别让人以为卡死了。
-     */
+    // 手工录入文档
+    //
+    // 每次调用都新建一篇（不幂等），title ≤128、content ≤20000（后端 @Size 校验）。
+    // ⚠️ 后端会真实调用 Embedding，长文耗时可能超过请求层的 30 秒超时——
+    // 界面上要提示「录入中请勿关闭」，别让人以为卡死了。
     docManual: (title: string, content: string) =>
         http.post<IngestResult>('/knowledge/doc/manual', { title, content }),
 };

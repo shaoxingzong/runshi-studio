@@ -40,51 +40,45 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-/**
- * 管理端「帖子管理」验收测试（列表 / 删除 / 置顶 / 编辑）
- *
- * author: shaoshing
- *
- * <p><b>类名不能以 {@code Admin} 开头（排序约束，改动前先读这段）</b>：
- * 本类与其它非 AI 测试共用同一个 Spring 上下文，而 {@code Ai*} 测试类通过
- * {@code @DynamicPropertySource} 各自新建上下文。Boot 4.1 的测试框架在类切换时会
- * <b>stop 紧邻的前一个上下文</b>——若本类排在最前的 AI 类之前（{@code Admin} < {@code Ai}），
- * 默认上下文就会被送到 AI 类面前停掉，后续所有登录类测试复用它时报
- * {@code LettuceConnectionFactory has been STOPPED}，成批 B0001 / A0201 失败
- * （2026-10-12 实测复现：改名 {@code PostManageTest} 后恢复）。
- * 同类约束见 {@code AiKnowledgeManageTest} 的类注释。
- *
- * <p><b>覆盖的规则</b>（与产品口径一一对应）：
- * <ul>
- *     <li><b>鉴权</b>：五个接口匿名一律 A0201、普通用户一律 A0301、admin 放行
- *     （真正的权限判定在后端 Sa-Token，前端那层只是体验）；</li>
- *     <li><b>全量列表</b>：不传 status 三种状态都能查到；status 精确筛选；
- *     标题 / 作者（账号、成员姓名）模糊筛选；作者昵称被回填；
- *     分页参数非法时兜底纠正而不报错；status 取值非法 A0401；</li>
- *     <li><b>删除</b>：同事务级联删评论与点赞；待审帖不可删（引导走驳回）；
- *     删除后公开详情随即 404；操作人写入 {@code updated_by}；</li>
- *     <li><b>置顶</b>：仅已通过可置顶、待审置顶被拒；取消置顶不限状态；
- *     置顶后公开列表排在最前；pinned 取值非法 A0401；</li>
- *     <li><b>编辑</b>：已通过的帖子保存后重置为待审并清空上一轮审核痕迹；
- *     待审帖编辑后仍在待审；外链图片被拒；编辑不累加浏览量。</li>
- * </ul>
- *
- * <p><b>为什么用 {@code @Transactional}</b>：删帖的三处写、置顶与编辑都在事务内，
- * 测试回滚即可撤销，不需要像非事务测试类那样按前缀手工清理。
- * 用例里对其它帖子 {@code pinned} 的清零同样会回滚，不会污染开发库。
- *
- * <p><b>为什么不担心编辑触发的异步 AI 初判</b>：测试环境没有配置 AI，
- * {@code ContentAuditManager#judge} 立刻失败并转人工（{@code ai_audit_status=4}），
- * 而该结论<b>不改 status</b>；且它跑在虚拟线程上，会先被本测试事务持有的行锁挡住，
- * 回滚后作用于一条已不存在的记录。因此断言只盯确定性字段（status / 标题 / 正文 /
- * 审核痕迹），不碰 {@code ai_audit_status}。
- */
+// 管理端「帖子管理」验收测试（列表 / 删除 / 置顶 / 编辑）
+//
+// 类名不能以 Admin 开头（排序约束，改动前先读这段）：
+// 本类与其它非 AI 测试共用同一个 Spring 上下文，而 Ai* 测试类通过
+// @DynamicPropertySource 各自新建上下文。Boot 4.1 的测试框架在类切换时会
+// stop 紧邻的前一个上下文——若本类排在最前的 AI 类之前（ Admin < Ai），
+// 默认上下文就会被送到 AI 类面前停掉，后续所有登录类测试复用它时报
+// LettuceConnectionFactory has been STOPPED，成批 B0001 / A0201 失败
+// （2026-10-12 实测复现：改名 PostManageTest 后恢复）。
+// 同类约束见 AiKnowledgeManageTest 的类注释。
+//
+// 覆盖的规则（与产品口径一一对应）：
+// - 鉴权：五个接口匿名一律 A0201、普通用户一律 A0301、admin 放行
+// （真正的权限判定在后端 Sa-Token，前端那层只是体验）；
+// - 全量列表：不传 status 三种状态都能查到；status 精确筛选；
+// 标题 / 作者（账号、成员姓名）模糊筛选；作者昵称被回填；
+// 分页参数非法时兜底纠正而不报错；status 取值非法 A0401；
+// - 删除：同事务级联删评论与点赞；待审帖不可删（引导走驳回）；
+// 删除后公开详情随即 404；操作人写入 updated_by；
+// - 置顶：仅已通过可置顶、待审置顶被拒；取消置顶不限状态；
+// 置顶后公开列表排在最前；pinned 取值非法 A0401；
+// - 编辑：已通过的帖子保存后重置为待审并清空上一轮审核痕迹；
+// 待审帖编辑后仍在待审；外链图片被拒；编辑不累加浏览量。
+//
+// 为什么用 @Transactional：删帖的三处写、置顶与编辑都在事务内，
+// 测试回滚即可撤销，不需要像非事务测试类那样按前缀手工清理。
+// 用例里对其它帖子 pinned 的清零同样会回滚，不会污染开发库。
+//
+// 为什么不担心编辑触发的异步 AI 初判：测试环境没有配置 AI，
+// ContentAuditManager#judge 立刻失败并转人工（ ai_audit_status=4），
+// 而该结论不改 status；且它跑在虚拟线程上，会先被本测试事务持有的行锁挡住，
+// 回滚后作用于一条已不存在的记录。因此断言只盯确定性字段（status / 标题 / 正文 /
+// 审核痕迹），不碰 ai_audit_status。
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
 class PostManageTest {
 
-    /** 测试账号前缀（便于在数据里认出本类产生的用户） */
+    // 测试账号前缀（便于在数据里认出本类产生的用户）
     private static final String ACCOUNT_PREFIX = "T33pm_";
 
     @Resource
@@ -551,10 +545,10 @@ class PostManageTest {
         return "{\"id\":" + postId + ",\"title\":\"" + title + "\",\"content\":\"" + content + "\"}";
     }
 
-    /** 查询串编码：中文参数（成员姓名）必须先编码，否则 MockMvc 会按字节原样透出 */
+    // 查询串编码：中文参数（成员姓名）必须先编码，否则 MockMvc 会按字节原样透出
     // ---------- 响应解析 ----------
 
-    /** 取列表响应里全部帖子 id */
+    // 取列表响应里全部帖子 id
     private List<Long> idsOf(String listBody) throws Exception {
         JsonNode records = jsonMapper.readTree(listBody).get("data").get("records");
         List<Long> ids = new ArrayList<>();
@@ -564,12 +558,12 @@ class PostManageTest {
         return ids;
     }
 
-    /** 取列表响应里第一条帖子的 id（用于断言置顶排序） */
+    // 取列表响应里第一条帖子的 id（用于断言置顶排序）
     private String firstIdOf(String listBody) throws Exception {
         return jsonMapper.readTree(listBody).get("data").get("records").get(0).get("id").asText();
     }
 
-    /** 取列表响应里某篇帖子的作者昵称 */
+    // 取列表响应里某篇帖子的作者昵称
     private String authorNameOf(String listBody, long postId) throws Exception {
         for (JsonNode node : jsonMapper.readTree(listBody).get("data").get("records")) {
             if (node.get("id").asLong() == postId) {
@@ -580,7 +574,7 @@ class PostManageTest {
         return null;
     }
 
-    /** 公开列表（游客视角，最多 50 条） */
+    // 公开列表（游客视角，最多 50 条）
     private String publicList(String adminToken) throws Exception {
         return getBody("/post/list/page?current=1&pageSize=50", adminToken);
     }
@@ -612,7 +606,7 @@ class PostManageTest {
 
     // ---------- 造数 ----------
 
-    /** 建一个指定角色的测试用户，返回用户 id */
+    // 建一个指定角色的测试用户，返回用户 id
     private long createUser(String role) {
         String account = ACCOUNT_PREFIX + (System.nanoTime() % 100000000);
         return createUser(account, role);
@@ -629,7 +623,7 @@ class PostManageTest {
         return user.getId();
     }
 
-    /** 登录并取 token */
+    // 登录并取 token
     private String tokenOf(long userId) throws Exception {
         String account = jdbcTemplate.queryForObject(
                 "SELECT user_account FROM sys_user WHERE id = ?", String.class, userId);
@@ -640,17 +634,17 @@ class PostManageTest {
         return body.substring(start, body.indexOf('"', start));
     }
 
-    /** 建一个 admin 并登录，返回 token */
+    // 建一个 admin 并登录，返回 token
     private String adminToken() throws Exception {
         return tokenOf(createAdmin());
     }
 
-    /** 建一个 admin 用户，返回用户 id（需要断言操作人身份的用例用它） */
+    // 建一个 admin 用户，返回用户 id（需要断言操作人身份的用例用它）
     private long createAdmin() {
         return createUser(UserRoleConstant.ADMIN);
     }
 
-    /** 直接落一篇指定状态的帖子 */
+    // 直接落一篇指定状态的帖子
     private long createPost(long authorId, AuditStatusEnum status) {
         return createPost(authorId, status, "T33-post-" + (System.nanoTime() % 100000));
     }
@@ -669,14 +663,14 @@ class PostManageTest {
         return post.getId();
     }
 
-    /** 直接改正文（详情 / 校验用例需要，不走编辑接口以免触发送审链路） */
+    // 直接改正文（详情 / 校验用例需要，不走编辑接口以免触发送审链路）
     private void setContent(long postId, String content) {
         studioPostMapper.update(null, new LambdaUpdateWrapper<StudioPost>()
                 .eq(StudioPost::getId, postId)
                 .set(StudioPost::getContent, content));
     }
 
-    /** 直接改创建时间（置顶排序用例需要确定性次序） */
+    // 直接改创建时间（置顶排序用例需要确定性次序）
     private void setCreatedAt(long postId, LocalDateTime time) {
         studioPostMapper.update(null, new LambdaUpdateWrapper<StudioPost>()
                 .eq(StudioPost::getId, postId)

@@ -1,43 +1,35 @@
 import { http, baseUrl, tokenStore } from './request';
 import type { AiSession, ApiResponse, ChatResponse, ChatMessage, KnowledgeSource, PageResult } from './types';
 
-/**
- * AI 咨询
- *
- * ⚠️ 流式接口<b>不能用 EventSource</b>：它无法携带自定义请求头，
- * 而登录态就在 satoken 头里——用 EventSource 会让登录用户的提问退化成匿名（被 IP 限流）。
- * 因此这里用 fetch + ReadableStream 手动解析 SSE 帧。
- */
+// AI 咨询
+//
+// ⚠️ 流式接口不能用 EventSource：它无法携带自定义请求头，
+// 而登录态就在 satoken 头里——用 EventSource 会让登录用户的提问退化成匿名（被 IP 限流）。
+// 因此这里用 fetch + ReadableStream 手动解析 SSE 帧。
 
 export const aiApi = {
-    /**
-     * 非流式提问（⚠️ **当前无调用方**）
-     *
-     * <p>AI 页面统一走 {@link chatStream}（SSE，边收边渲染）；
-     * 本方法保留给脚本化 / 非流式场景复用，新增调用前请先确认是否真的不需要流式。
-     */
+    // 非流式提问（⚠️ 当前无调用方）
+    //
+    // AI 页面统一走 chatStream（SSE，边收边渲染）；
+    // 本方法保留给脚本化 / 非流式场景复用，新增调用前请先确认是否真的不需要流式。
     chat(sessionId: string | null, message: string) {
         return http.post<ChatResponse>('/ai/chat', { sessionId, message });
     },
     history(sessionId: string) {
         return http.get<ChatMessage[]>('/ai/chat/history', { sessionId });
     },
-    /**
-     * 删除会话及其全部消息
-     *
-     * <p>⚠️ 后端 DTO 的字段叫 {@code sessionId}，不是 {@code id}——
-     * 字段名发错时参数绑不上，请求不报错但会话删不掉（「点了没反应」那类 bug）。
-     */
+    // 删除会话及其全部消息
+    //
+    // ⚠️ 后端 DTO 的字段叫 sessionId，不是 id——
+    // 字段名发错时参数绑不上，请求不报错但会话删不掉（「点了没反应」那类 bug）。
     deleteSession(id: string) {
         return http.post<boolean>('/ai/session/delete', { sessionId: id });
     },
 
-    /**
-     * 我的会话列表（按最近活跃倒序，含消息条数）
-     *
-     * <p>接口要求登录（{@code @SaCheckLogin}），而 AI 页对游客开放。
-     * 未登录时<b>不要调它</b>：会拿到 A0201，而请求层遇到 A0201 会顺手清掉本地令牌。
-     */
+    // 我的会话列表（按最近活跃倒序，含消息条数）
+    //
+    // 接口要求登录（ @SaCheckLogin），而 AI 页对游客开放。
+    // 未登录时不要调它：会拿到 A0201，而请求层遇到 A0201 会顺手清掉本地令牌。
     sessionList: (params: Record<string, unknown> = {}) =>
         http.get<PageResult<AiSession>>('/ai/session/list', params),
 };
@@ -50,11 +42,9 @@ export interface StreamHandlers {
     onError?: (payload: { code: string; message: string }) => void;
 }
 
-/**
- * SSE 流式提问
- *
- * 事件序列（后端契约）：meta → sources → delta* → done / error
- */
+// SSE 流式提问
+//
+// 事件序列（后端契约）：meta → sources → delta* → done / error
 export async function chatStream(
     payload: { sessionId?: string | null; message: string },
     handlers: StreamHandlers,

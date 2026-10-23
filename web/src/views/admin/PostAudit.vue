@@ -5,21 +5,19 @@ import { postApi } from '@/api/post';
 import ErrorRetry from '@/components/ErrorRetry.vue';
 import type { PageResult, PostAudit } from '@/api/types';
 
-/**
- * 帖子待审队列（管理员）
- *
- * <p><b>队列里为什么绝大多数是「AI 拿不准」的</b>：三分法下，AI 判「安全」的已自动通过、
- * 判「违规」的已自动驳回，两者都不会出现在这里。
- * 管理员真正要处理的只有「灰色」和「AI 不可用」两类——这正是这套机制减负的地方。
- */
+// 帖子待审队列（管理员）
+//
+// 队列里为什么绝大多数是「AI 拿不准」的：三分法下，AI 判「安全」的已自动通过、
+// 判「违规」的已自动驳回，两者都不会出现在这里。
+// 管理员真正要处理的只有「灰色」和「AI 不可用」两类——这正是这套机制减负的地方。
 const page = reactive({ current: 1, pageSize: 10 });
 const result = ref<PageResult<PostAudit> | null>(null);
 const selected = ref<string[]>([]);
 const loading = ref(false);
-/** 队列加载失败的原因（空 = 正常）。失败时给原因 + 重试，而不是留一张空白表格 */
+// 队列加载失败的原因（空 = 正常）。失败时给原因 + 重试，而不是留一张空白表格
 const error = ref('');
 
-/** AI 初判结论：0-未判, 1-安全, 2-违规, 3-灰色待人工, 4-判定失败 */
+// AI 初判结论：0-未判, 1-安全, 2-违规, 3-灰色待人工, 4-判定失败
 const AI_TAG: Record<number, { text: string; type: 'success' | 'warning' | 'danger' | 'info' }> = {
     0: { text: '待 AI 初判', type: 'info' },
     1: { text: 'AI 判安全', type: 'success' },
@@ -55,12 +53,10 @@ function turn(delta: number) {
     load();
 }
 
-/**
- * 批量处置
- *
- * <p>驳回必须填理由：后端强校验，且理由要给作者看——没理由等于让作者猜。
- * 这里用弹窗收集，比让用户先选再跳到别处填更顺手。
- */
+// 批量处置
+//
+// 驳回必须填理由：后端强校验，且理由要给作者看——没理由等于让作者猜。
+// 这里用弹窗收集，比让用户先选再跳到别处填更顺手。
 async function audit(approved: boolean) {
     if (selected.value.length === 0) {
         ElMessage.warning('请先勾选要处理的帖子');

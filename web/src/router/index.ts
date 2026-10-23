@@ -3,13 +3,11 @@ import { useUserStore } from '@/stores/user';
 import { deviceType, referrerHost, trafficApi, visitorId } from '@/api/traffic';
 import { usePageMeta } from '@/composables/usePageMeta';
 
-/**
- * 路由表
- *
- * 两个布局：门户（PortalLayout，匿名可访问）与后台（AdminLayout，需登录）。
- * 所有视图用**懒加载**：门户首屏只需要首页与布局的代码，
- * 后台管理那一大坨（表格/表单/Element 组件）只有管理员点进去才会下载。
- */
+// 路由表
+//
+// 两个布局：门户（PortalLayout，匿名可访问）与后台（AdminLayout，需登录）。
+// 所有视图用懒加载：门户首屏只需要首页与布局的代码，
+// 后台管理那一大坨（表格/表单/Element 组件）只有管理员点进去才会下载。
 const routes: RouteRecordRaw[] = [
     {
         path: '/',
@@ -17,7 +15,7 @@ const routes: RouteRecordRaw[] = [
         children: [
             // 首页不配 meta.title：标题退回纯站点名（「首页 - 润石工作室」是冗余信息）
             { path: '', name: 'home', component: () => import('@/views/portal/Home.vue') },
-            // ⚠️ 官网**没有**成员页：业务规则「团队成员不对外展示」，
+            // ⚠️ 官网没有成员页：业务规则「团队成员不对外展示」，
             // 这里不注册 /members 路由（后端也没有对外成员接口）。
             // 成员信息对外唯一的出口是项目详情里的「参与成员」。
             {
@@ -115,7 +113,7 @@ const routes: RouteRecordRaw[] = [
         ],
     },
     {
-        // 后台**只有登录，没有注册**：管理员账号由管理方分配，不提供自助注册入口
+        // 后台只有登录，没有注册：管理员账号由管理方分配，不提供自助注册入口
         path: '/admin/login',
         name: 'admin-login',
         component: () => import('@/views/admin/Login.vue'),
@@ -239,26 +237,24 @@ router.beforeEach((to) => {
     return true;
 });
 
-/**
- * 页面访问埋点（门户与后台都记）
- *
- * <p><b>为什么放在 afterEach 而不是 beforeEach</b>：导航被守卫拦截时
- * （未登录跳后台登录页等）不算一次「成功的页面访问」，afterEach 只在真正到达后触发。
- *
- * <p><b>为什么用 to.path 而不是 to.fullPath</b>：query 里可能带 token
- * （分享链接、营销参数），而埋点只该记「哪个页面」。分页参数同理——
- * {@code /posts?current=2} 与 {@code /posts} 是同一个页面。
- *
- * <p><b>刻意不排除后台路径</b>：知道管理员活跃在哪些页面有运维价值，
- * 且热门页面榜里出现 /admin/* 正好说明「内部使用也被统计到了」，口径一致比看似干净更重要。
- * 若将来要区分门户/后台，应按路径前缀在统计侧拆分，而不是在埋点侧静默丢弃。
- *
- * <p><b>失败静默</b>：埋点是旁路，不 await、不抛错、不弹窗——
- * 它不该让任何一次导航变慢或变红。
- *
- * <p><b>标签页标题也在这里更新</b>（{@link usePageMeta}）：一处接线、全部路由生效，
- * 比每个页面各自记得调可靠得多。详情页（项目 / 帖子）会在页面内用真实数据二次覆盖。
- */
+// 页面访问埋点（门户与后台都记）
+//
+// 为什么放在 afterEach 而不是 beforeEach：导航被守卫拦截时
+// （未登录跳后台登录页等）不算一次「成功的页面访问」，afterEach 只在真正到达后触发。
+//
+// 为什么用 to.path 而不是 to.fullPath：query 里可能带 token
+// （分享链接、营销参数），而埋点只该记「哪个页面」。分页参数同理——
+// /posts?current=2 与 /posts 是同一个页面。
+//
+// 刻意不排除后台路径：知道管理员活跃在哪些页面有运维价值，
+// 且热门页面榜里出现 /admin/* 正好说明「内部使用也被统计到了」，口径一致比看似干净更重要。
+// 若将来要区分门户/后台，应按路径前缀在统计侧拆分，而不是在埋点侧静默丢弃。
+//
+// 失败静默：埋点是旁路，不 await、不抛错、不弹窗——
+// 它不该让任何一次导航变慢或变红。
+//
+// 标签页标题也在这里更新（ usePageMeta）：一处接线、全部路由生效，
+// 比每个页面各自记得调可靠得多。详情页（项目 / 帖子）会在页面内用真实数据二次覆盖。
 router.afterEach((to) => {
     usePageMeta({ title: (to.meta.title as string) ?? '' });
 

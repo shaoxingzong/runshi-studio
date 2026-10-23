@@ -51,47 +51,39 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-/**
- * RAG 文档入库管道验收测试
- *
- * author: shaoshing
- *
- * <p>AI 调用用本地 Embedding Stub（JDK {@link HttpServer}）代替真实向量服务：
- * <ul>
- *     <li>只认识 {@code /embeddings}，按 OpenAI 兼容格式返回<b>确定性向量</b>
- *     （由文本 hashCode 派生，测试里可以用同一函数重建某个块的向量去向量库检索）；
- *     同时记录调用次数——用来取证「一次入库只发一次批量请求」；</li>
- *     <li>{@code failEmbeddings=true} 时返回 500，用于验证失败路径
- *     （新文档不留残留且可重试；重建失败时旧块与旧向量原样保留）。</li>
- * </ul>
- *
- * <p>覆盖十二条线：
- * <ol>
- *     <li>手工录入全链路：批量向量化 → doc 行 + N 块（embedding_id 齐全、序号连续、长正文正确多块）；</li>
- *     <li>手工录入参数校验（标题/正文/超长边界）→ A0401；</li>
- *     <li>手工录入不幂等：同内容两次 → 两篇文档；</li>
- *     <li>同步项目（首次）：溯源字段完整、正文含「标题/摘要/正文」拼装；</li>
- *     <li>同步幂等：内容未变 → skipped=true、零 Embedding、零写库（raw SQL 取证）；</li>
- *     <li>重建：旧块逻辑删、新块替换、chunk_count 刷新、旧向量清理（向量库检索取证）；</li>
- *     <li>源已删除：A0402 + 已有文档标 status=2 + 旧块保留（R2 收口）；</li>
- *     <li>同步参数校验：manual 被拒、非法 sourceType、sourceId 非法 → A0401；</li>
- *     <li>权限：匿名 A0201、普通用户 A0301、admin 放行（白名单零改动）；</li>
- *     <li>拼装规则：成员中文标签行；证书级别/类型转中文文案（不是库里的英文值）；</li>
- *     <li>向量化失败（首次）：C0200 + 无残留行，且失败可重试；</li>
- *     <li>向量化失败（重建）：C0200 + 旧块与旧向量原样保留 + status=2，恢复后重建成功。</li>
- * </ol>
- *
- * <p><b>类名以 {@code Ai} 开头是刻意的「排序约束」，改动前先读这段</b>：
- * 本类通过 {@code @DynamicPropertySource} 指向自己的本地 Embedding Stub（端口不同 → 属性集不同），
- * 会新建一个 Spring 测试上下文。而 Sa-Token 用<b>静态</b> {@code SaManager} 持有 DAO，
- * 它总是绑定「最后创建的上下文」；Boot 4.1 的测试框架在类切换时还会 stop 先前上下文
- * （实测日志：{@code DefaultLifecycleProcessor: Stopping beans...}，
- * {@code Bean 'redisConnectionFactory' completed its stop process}）。
- * 因此「新建上下文的测试类」必须全部排在 {@code CertificateCrudTest} 之前——
- * 它是第一个使用默认 MockMvc 上下文的类，该上下文会被其后所有测试类共享，
- * 而静态 DAO 必须始终指向「当前正在使用的上下文」。
- * 本类若排到它之后，后续所有登录类测试都会 B0001 失败（本次验收已实测复现）。</p>
- */
+// RAG 文档入库管道验收测试
+//
+// AI 调用用本地 Embedding Stub（JDK HttpServer）代替真实向量服务：
+// - 只认识 /embeddings，按 OpenAI 兼容格式返回确定性向量
+// （由文本 hashCode 派生，测试里可以用同一函数重建某个块的向量去向量库检索）；
+// 同时记录调用次数——用来取证「一次入库只发一次批量请求」；
+// - failEmbeddings=true 时返回 500，用于验证失败路径
+// （新文档不留残留且可重试；重建失败时旧块与旧向量原样保留）。
+//
+// 覆盖十二条线：
+// - 手工录入全链路：批量向量化 → doc 行 + N 块（embedding_id 齐全、序号连续、长正文正确多块）；
+// - 手工录入参数校验（标题/正文/超长边界）→ A0401；
+// - 手工录入不幂等：同内容两次 → 两篇文档；
+// - 同步项目（首次）：溯源字段完整、正文含「标题/摘要/正文」拼装；
+// - 同步幂等：内容未变 → skipped=true、零 Embedding、零写库（raw SQL 取证）；
+// - 重建：旧块逻辑删、新块替换、chunk_count 刷新、旧向量清理（向量库检索取证）；
+// - 源已删除：A0402 + 已有文档标 status=2 + 旧块保留（R2 收口）；
+// - 同步参数校验：manual 被拒、非法 sourceType、sourceId 非法 → A0401；
+// - 权限：匿名 A0201、普通用户 A0301、admin 放行（白名单零改动）；
+// - 拼装规则：成员中文标签行；证书级别/类型转中文文案（不是库里的英文值）；
+// - 向量化失败（首次）：C0200 + 无残留行，且失败可重试；
+// - 向量化失败（重建）：C0200 + 旧块与旧向量原样保留 + status=2，恢复后重建成功。
+//
+// 类名以 Ai 开头是刻意的「排序约束」，改动前先读这段：
+// 本类通过 @DynamicPropertySource 指向自己的本地 Embedding Stub（端口不同 → 属性集不同），
+// 会新建一个 Spring 测试上下文。而 Sa-Token 用静态 SaManager 持有 DAO，
+// 它总是绑定「最后创建的上下文」；Boot 4.1 的测试框架在类切换时还会 stop 先前上下文
+// （实测日志： DefaultLifecycleProcessor: Stopping beans...，
+// Bean 'redisConnectionFactory' completed its stop process）。
+// 因此「新建上下文的测试类」必须全部排在 CertificateCrudTest 之前——
+// 它是第一个使用默认 MockMvc 上下文的类，该上下文会被其后所有测试类共享，
+// 而静态 DAO 必须始终指向「当前正在使用的上下文」。
+// 本类若排到它之后，后续所有登录类测试都会 B0001 失败（本次验收已实测复现）。
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -125,13 +117,13 @@ class AiKnowledgeIngestTest {
 
     private static HttpServer stub;
 
-    /** /embeddings 被调用次数（批量纪律取证：一次入库应只 +1，而不是每块 +1） */
+    // /embeddings 被调用次数（批量纪律取证：一次入库应只 +1，而不是每块 +1）
     private static final AtomicInteger embeddingCalls = new AtomicInteger();
 
-    /** 故障注入开关：true 时 /embeddings 返回 500 */
+    // 故障注入开关：true 时 /embeddings 返回 500
     private static volatile boolean failEmbeddings = false;
 
-    /** 向量维度：测试自定，与真实模型无关 */
+    // 向量维度：测试自定，与真实模型无关
     private static final int DIM = 8;
 
     private static final JsonMapper STUB_JSON = JsonMapper.builder().build();
@@ -200,10 +192,8 @@ class AiKnowledgeIngestTest {
         failEmbeddings = false;
     }
 
-    /**
-     * 与 Stub 共用的确定性向量函数：测试里用它重建某个块的向量，
-     * 再拿回向量库检索——这是验证「旧向量是否真的被清理/保留」的唯一手段
-     */
+    // 与 Stub 共用的确定性向量函数：测试里用它重建某个块的向量，
+    // 再拿回向量库检索——这是验证「旧向量是否真的被清理/保留」的唯一手段
     private static float[] vec(String text) {
         float[] vector = new float[DIM];
         int hash = text.hashCode();
@@ -264,7 +254,7 @@ class AiKnowledgeIngestTest {
         return jsonMapper.readTree(body).get("data");
     }
 
-    /** 转义出合法 JSON 字符串字面量（正文含换行，不能直接拼） */
+    // 转义出合法 JSON 字符串字面量（正文含换行，不能直接拼）
     private String jsonEscape(String text) {
         return text.replace("\\", "\\\\").replace("\"", "\\\"").replace("\r", "\\r").replace("\n", "\\n");
     }
@@ -277,7 +267,7 @@ class AiKnowledgeIngestTest {
         return "{\"sourceType\":\"" + sourceType + "\",\"sourceId\":" + sourceId + "}";
     }
 
-    /** 长正文（约 1200 字、12 段）：用于验证真实的「多块切分 + 顺序」 */
+    // 长正文（约 1200 字、12 段）：用于验证真实的「多块切分 + 顺序」
     private String longContent(String marker) {
         StringBuilder content = new StringBuilder();
         for (int i = 1; i <= 12; i++) {
@@ -329,7 +319,7 @@ class AiKnowledgeIngestTest {
         return certificate.getId();
     }
 
-    /** 从向量库检索（按重建的向量找最近邻），用于验证旧向量的清理/保留 */
+    // 从向量库检索（按重建的向量找最近邻），用于验证旧向量的清理/保留
     private List<EmbeddingMatch<TextSegment>> searchByText(String text) {
         return knowledgeBaseManager.getEmbeddingStore().search(
                 EmbeddingSearchRequest.builder()

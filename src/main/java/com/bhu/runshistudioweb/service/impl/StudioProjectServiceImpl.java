@@ -30,74 +30,58 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-/**
- * 项目案例服务实现
- *
- * author: shaoshing
- *
- * <p><b>三处必须想清楚的地方（本模块的核心）</b>：
- * <ol>
- *     <li><b>队长同步用 ensure，不用 bind</b>：{@link #addProject} 与 {@link #updateProject}
- *     调的是幂等的 {@code ensureMemberInProject}——「已存在」直接返回、并发撞唯一索引静默成功。
- *     若误用 {@code bindMember}（重复报 A0401），管理员每次重复保存项目都会收到
- *     「该成员已参与此项目」，而这一切看起来像 bug 实则是设计错误；</li>
- *     <li><b>事务边界</b>：新增 / 更新（换队长）/ 删除都是「主表写 + 关联表写」两次写，
- *     统一加 {@code @Transactional(rollbackFor = Exception.class)}。
- *     分属两个事务的话，会出现「有项目没队长」或「项目已删、关联还在」的悬空状态；
- *     {@code rollbackFor} 必须写 Exception：Spring 默认只回滚 RuntimeException；</li>
- *     <li><b>tech_stack 的 JSON 边界</b>：库里是 varchar(256) 快照，接口层是 List。
- *     写：序列化后超长抛 A0401（否则撞数据库截断错误）；
- *     读：解析失败返回空列表（一条脏数据不能让整个列表 500）。</li>
- * </ol>
- *
- * <p><b>依赖方向</b>：本类 → {@code MemberProjectService}（队长同步 + 级联清理）、
- * {@code StudioMemberMapper}（校验队长存在）。反方向不存在依赖
- * （{@code MemberProjectServiceImpl} 只注入 Mapper），因此不会循环依赖。
- */
+// 项目案例服务实现
+//
+// 三处必须想清楚的地方（本模块的核心）：
+// - 队长同步用 ensure，不用 bind： #addProject 与 #updateProject
+// 调的是幂等的 ensureMemberInProject——「已存在」直接返回、并发撞唯一索引静默成功。
+// 若误用 bindMember（重复报 A0401），管理员每次重复保存项目都会收到
+// 「该成员已参与此项目」，而这一切看起来像 bug 实则是设计错误；
+// - 事务边界：新增 / 更新（换队长）/ 删除都是「主表写 + 关联表写」两次写，
+// 统一加 @Transactional(rollbackFor = Exception.class)。
+// 分属两个事务的话，会出现「有项目没队长」或「项目已删、关联还在」的悬空状态；
+// rollbackFor 必须写 Exception：Spring 默认只回滚 RuntimeException；
+// - tech_stack 的 JSON 边界：库里是 varchar(256) 快照，接口层是 List。
+// 写：序列化后超长抛 A0401（否则撞数据库截断错误）；
+// 读：解析失败返回空列表（一条脏数据不能让整个列表 500）。
+//
+// 依赖方向：本类 → MemberProjectService（队长同步 + 级联清理）、
+// StudioMemberMapper（校验队长存在）。反方向不存在依赖
+// （ MemberProjectServiceImpl 只注入 Mapper），因此不会循环依赖。
 @Service
 @RequiredArgsConstructor
 public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, StudioProject>
         implements StudioProjectService {
 
-    /** 分页每页条数的默认值与上限（上限防「一次拉全表」） */
+    // 分页每页条数的默认值与上限（上限防「一次拉全表」）
     private static final long DEFAULT_PAGE_SIZE = 10L;
     private static final long MAX_PAGE_SIZE = 50L;
 
-    /** 置顶权重不传时的默认值（0 表示不置顶，与 DDL 默认值一致） */
+    // 置顶权重不传时的默认值（0 表示不置顶，与 DDL 默认值一致）
     private static final int DEFAULT_SORT_ORDER = 0;
 
-    /**
-     * 首页轮播展示的项目数
-     *
-     * <p>⚠️ 必须与门户 {@code ProjectSpotlight.MAX_COUNT} 保持一致：
-     * 后台按它计算「首页 #N」，门户按它决定渲染几条，两边对不上时
-     * 后台显示的排名就是假的。
-     */
+    // 首页轮播展示的项目数
+    //
+    // ⚠️ 必须与门户 ProjectSpotlight.MAX_COUNT 保持一致：
+    // 后台按它计算「首页 #N」，门户按它决定渲染几条，两边对不上时
+    // 后台显示的排名就是假的。
     private static final long HOME_SPOTLIGHT_COUNT = 6L;
 
-    /**
-     * tech_stack 序列化后的长度上限，与 DDL 的 {@code varchar(256)} 对齐。
-     * 不改数据库类型而是先在这里拦住，是因为「标签太多」是入参问题，
-     * 应该返回 A0401 让前端提示，而不是让数据库抛截断 / 报错
-     */
+    // tech_stack 序列化后的长度上限，与 DDL 的 varchar(256) 对齐。
+    // 不改数据库类型而是先在这里拦住，是因为「标签太多」是入参问题，
+    // 应该返回 A0401 让前端提示，而不是让数据库抛截断 / 报错
     private static final int TECH_STACK_MAX_LENGTH = 256;
 
-    /**
-     * 校验「队长是否存在」需要查 studio_member，故注入它的 Mapper。
-     * 注意查的是成员主表而不是关联表：{@code leader_id} 是权威源
-     */
+    // 校验「队长是否存在」需要查 studio_member，故注入它的 Mapper。
+    // 注意查的是成员主表而不是关联表： leader_id 是权威源
     private final StudioMemberMapper studioMemberMapper;
 
-    /**
-     * 成员-项目关联服务：负责队长同步与级联清理
-     * <p>依赖方向单向（本类 → 关联服务），不构成循环依赖
-     */
+    // 成员-项目关联服务：负责队长同步与级联清理
+    // 依赖方向单向（本类 → 关联服务），不构成循环依赖
     private final MemberProjectService memberProjectService;
 
-    /**
-     * 用于 tech_stack 的 JSON 序列化 / 反序列化。
-     * <p>用容器里的实例（Boot 4 自动配置 + JsonConfig 定制），不自己 new
-     */
+    // 用于 tech_stack 的 JSON 序列化 / 反序列化。
+    // 用容器里的实例（Boot 4 自动配置 + JsonConfig 定制），不自己 new
     private final JsonMapper jsonMapper;
 
     // ==================== 管理端 ====================
@@ -208,7 +192,7 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
         ThrowUtils.throwIf(!updateResult, ErrorCode.SYSTEM_ERROR, "更新项目失败，数据库异常");
 
         // 换队长：同一事务内 ensure 新队长进关联表。
-        // 注意**不**自动移除旧队长——卸任 ≠ 退出项目（他大概率仍在参与），
+        // 注意不自动移除旧队长——卸任 ≠ 退出项目（他大概率仍在参与），
         // 真要移除由管理员调解绑接口，而解绑守卫保证「当前队长不可被移除」
         if (newLeaderId != null) {
             memberProjectService.ensureMemberInProject(id, newLeaderId);
@@ -319,12 +303,10 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
 
     // ==================== 私有工具方法 ====================
 
-    /**
-     * 实体转 C 端详情 VO（列表字段 + content）
-     *
-     * @param project 项目实体
-     * @return 详情 VO
-     */
+    // 实体转 C 端详情 VO（列表字段 + content）
+    //
+    // @param project 项目实体
+    // @return 详情 VO
     private ProjectFrontDetailVO toProjectFrontDetailVO(StudioProject project) {
         ProjectFrontDetailVO detailVO = new ProjectFrontDetailVO();
         BeanUtils.copyProperties(project, detailVO, "techStack");
@@ -332,16 +314,14 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
         return detailVO;
     }
 
-    /**
-     * 构建筛选条件（管理端与 C 端共用，保证两边筛选语义完全一致）
-     *
-     * <p>刻意<b>不支持</b> techStack 筛选：它是 JSON 字符串列，
-     * 按它筛选只能写 {@code LIKE '%Java%'}，既不走索引又会误匹配（命中 JavaScript）。
-     * DESIGN 3.3 的取舍是「不筛、不建索引」；将来要按技术栈筛选应拆标签表。
-     *
-     * @param query 查询条件
-     * @return 查询包装类
-     */
+    // 构建筛选条件（管理端与 C 端共用，保证两边筛选语义完全一致）
+    //
+    // 刻意不支持 techStack 筛选：它是 JSON 字符串列，
+    // 按它筛选只能写 LIKE '%Java%'，既不走索引又会误匹配（命中 JavaScript）。
+    // DESIGN 3.3 的取舍是「不筛、不建索引」；将来要按技术栈筛选应拆标签表。
+    //
+    // @param query 查询条件
+    // @return 查询包装类
     private LambdaQueryWrapper<StudioProject> buildQueryWrapper(ProjectQueryRequest query) {
         LambdaQueryWrapper<StudioProject> wrapper = new LambdaQueryWrapper<>();
         // 条件重载的第一个参数为 false 时该条件不拼进 SQL，省去手写 if 判断
@@ -355,13 +335,11 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
         return wrapper;
     }
 
-    /**
-     * 应用排序规则（白名单映射，仅管理端调用）
-     *
-     * @param wrapper   查询包装类
-     * @param sortField 排序字段名，可为空
-     * @param sortOrder 排序方向 asc / desc，可为空
-     */
+    // 应用排序规则（白名单映射，仅管理端调用）
+    //
+    // @param wrapper 查询包装类
+    // @param sortField 排序字段名，可为空
+    // @param sortOrder 排序方向 asc / desc，可为空
     private void applySort(LambdaQueryWrapper<StudioProject> wrapper, String sortField, String sortOrder) {
         boolean isAsc = "asc".equalsIgnoreCase(sortOrder) || "ascend".equalsIgnoreCase(sortOrder);
         switch (sortField == null ? "" : sortField) {
@@ -385,12 +363,10 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
         }
     }
 
-    /**
-     * 构造分页对象：页码与每页条数兜底纠正（管理端与 C 端共用同一套规则）
-     *
-     * @param query 查询条件
-     * @return 分页对象（searchCount 保持默认 true）
-     */
+    // 构造分页对象：页码与每页条数兜底纠正（管理端与 C 端共用同一套规则）
+    //
+    // @param query 查询条件
+    // @return 分页对象（searchCount 保持默认 true）
     private Page<StudioProject> newPageWithDefaults(ProjectQueryRequest query) {
         long current = (query.getCurrent() == null || query.getCurrent() < 1) ? 1L : query.getCurrent();
         long pageSize = (query.getPageSize() == null || query.getPageSize() < 1)
@@ -399,13 +375,11 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
         return new Page<>(current, pageSize);
     }
 
-    /**
-     * 解析并校验项目状态
-     *
-     * @param status        前端传入的状态，可为空
-     * @param defaultStatus 为空时的兜底值（新增传 ONLINE，更新传 null 表示不修改）
-     * @return 状态枚举；兜底值为 null 且未传时返回 null
-     */
+    // 解析并校验项目状态
+    //
+    // @param status 前端传入的状态，可为空
+    // @param defaultStatus 为空时的兜底值（新增传 ONLINE，更新传 null 表示不修改）
+    // @return 状态枚举；兜底值为 null 且未传时返回 null
     private ProjectStatusEnum resolveStatus(Integer status, ProjectStatusEnum defaultStatus) {
         if (status == null) {
             return defaultStatus;
@@ -417,12 +391,10 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
         return resolved;
     }
 
-    /**
-     * 校验队长存在（含「已逻辑删除视为不存在」）
-     *
-     * @param leaderId 队长（成员）ID
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 成员不存在时抛出（A0402）
-     */
+    // 校验队长存在（含「已逻辑删除视为不存在」）
+    //
+    // @param leaderId 队长（成员）ID
+    // @throws com.bhu.runshistudioweb.exception.BusinessException 成员不存在时抛出（A0402）
     private void assertLeaderExists(Long leaderId) {
         // selectById 会被 MP 自动追加 deleted_at = 0：已注销/已删除的成员同样视为不存在。
         // 这里的提示特意写明「队长」而不是「成员」，因为调用方传的是 leaderId 字段
@@ -430,15 +402,13 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
                 ErrorCode.NOT_FOUND_ERROR, "项目队长不存在");
     }
 
-    /**
-     * 序列化技术栈标签为 JSON 快照，并校验长度不超过列宽
-     *
-     * @param techStack 标签列表，可为 null
-     * @return JSON 字符串；入参为 null 时返回 null（表示不修改 / 无标签），
-     *         空列表返回 {@code "[]"}（表示「清空」——必须是非 null 值，
-     *         否则 updateById 会跳过该字段，等于清不掉）
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 序列化后长度超过 256 时抛出（A0401）
-     */
+    // 序列化技术栈标签为 JSON 快照，并校验长度不超过列宽
+    //
+    // @param techStack 标签列表，可为 null
+    // @return JSON 字符串；入参为 null 时返回 null（表示不修改 / 无标签），
+    // 空列表返回 "[]"（表示「清空」——必须是非 null 值，
+    // 否则 updateById 会跳过该字段，等于清不掉）
+    // @throws com.bhu.runshistudioweb.exception.BusinessException 序列化后长度超过 256 时抛出（A0401）
     private String serializeTechStack(List<String> techStack) {
         if (techStack == null) {
             return null;
@@ -458,15 +428,13 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
         return json;
     }
 
-    /**
-     * 解析 tech_stack 的 JSON 快照
-     *
-     * <p>解析失败（脏数据、手工改库改坏的）一律返回空列表，<b>绝不抛异常</b>——
-     * 一条坏数据不能让整个列表接口 500。
-     *
-     * @param techStackJson 数据库里的 JSON 字符串，可为空
-     * @return 标签列表；为空或解析失败时返回空列表
-     */
+    // 解析 tech_stack 的 JSON 快照
+    //
+    // 解析失败（脏数据、手工改库改坏的）一律返回空列表，绝不抛异常——
+    // 一条坏数据不能让整个列表接口 500。
+    //
+    // @param techStackJson 数据库里的 JSON 字符串，可为空
+    // @return 标签列表；为空或解析失败时返回空列表
     private List<String> parseTechStack(String techStackJson) {
         if (StrUtil.isBlank(techStackJson)) {
             return List.of();
@@ -479,12 +447,10 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
         }
     }
 
-    /**
-     * 实体分页结果转管理端 VO 分页结果
-     *
-     * @param entityPage 实体分页
-     * @return VO 分页（保留 total/current/size，前端分页组件依赖这三个值）
-     */
+    // 实体分页结果转管理端 VO 分页结果
+    //
+    // @param entityPage 实体分页
+    // @return VO 分页（保留 total/current/size，前端分页组件依赖这三个值）
     private Page<ProjectVO> toProjectVOPage(Page<StudioProject> entityPage) {
         Page<ProjectVO> voPage = new Page<>(entityPage.getCurrent(), entityPage.getSize(), entityPage.getTotal());
         voPage.setRecords(entityPage.getRecords().stream().map(this::getProjectVO).toList());
@@ -492,21 +458,19 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
         return voPage;
     }
 
-    /**
-     * 给管理端 VO 补「首页轮播排名」
-     *
-     * <p>首页轮播（{@code ProjectSpotlight}）取的是<b>官网口径</b>前 6 条，
-     * 而官网口径是 {@code sort_order DESC → created_at DESC → id DESC}——
-     * 与管理端列表的默认排序恰好一致，所以「列表顺序 = 首页顺序」，
-     * 运营翻列表时看到的名次就是首页上的名次。
-     *
-     * <p><b>排名按全局计算，不按当前筛选结果</b>：管理员按标题 / 状态筛选时，
-     * 本页只是全量的一个子集，用子集内的名次会严重误导
-     * （筛选结果里的「第 1 名」全局可能排第 20）。
-     *
-     * <p>⚠️ {@link #HOME_SPOTLIGHT_COUNT} 必须与门户 {@code ProjectSpotlight.MAX_COUNT}
-     * 保持一致：两边对不上时，后台显示的「首页 #N」会是假的。
-     */
+    // 给管理端 VO 补「首页轮播排名」
+    //
+    // 首页轮播（ ProjectSpotlight）取的是官网口径前 6 条，
+    // 而官网口径是 sort_order DESC → created_at DESC → id DESC——
+    // 与管理端列表的默认排序恰好一致，所以「列表顺序 = 首页顺序」，
+    // 运营翻列表时看到的名次就是首页上的名次。
+    //
+    // 排名按全局计算，不按当前筛选结果：管理员按标题 / 状态筛选时，
+    // 本页只是全量的一个子集，用子集内的名次会严重误导
+    // （筛选结果里的「第 1 名」全局可能排第 20）。
+    //
+    // ⚠️ #HOME_SPOTLIGHT_COUNT 必须与门户 ProjectSpotlight.MAX_COUNT
+    // 保持一致：两边对不上时，后台显示的「首页 #N」会是假的。
     private void fillHomeRank(List<ProjectVO> records) {
         if (records == null || records.isEmpty()) {
             return;
@@ -524,12 +488,10 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
         records.forEach(vo -> vo.setHomeRank(rankOfId.get(vo.getId())));
     }
 
-    /**
-     * 实体分页结果转 C 端 VO 分页结果（转的是脱敏 VO，不是管理端 VO）
-     *
-     * @param entityPage 实体分页
-     * @return C 端 VO 分页
-     */
+    // 实体分页结果转 C 端 VO 分页结果（转的是脱敏 VO，不是管理端 VO）
+    //
+    // @param entityPage 实体分页
+    // @return C 端 VO 分页
     private Page<ProjectFrontVO> toProjectFrontVOPage(Page<StudioProject> entityPage) {
         Page<ProjectFrontVO> voPage = new Page<>(entityPage.getCurrent(), entityPage.getSize(), entityPage.getTotal());
         voPage.setRecords(entityPage.getRecords().stream().map(this::getProjectFrontVO).toList());

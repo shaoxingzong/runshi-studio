@@ -2,17 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick } from 'vue';
 import type { QuizBatch, QuizVerdict } from '@/api/types';
 
-/**
- * 刷题会话状态机测试
- *
- * <p><b>为什么只测状态机，不测页面</b>：答题页的绝大部分逻辑都在这个 composable 里
- * （phase 流转、sessionStorage 恢复、提交失败回退、跳过前移指针）。
- * 页面本身只剩模板绑定，测它的成本远高于收益。
- *
- * <p><b>为什么 mock `quizApi` 而不是 mock axios</b>：请求层的解包逻辑
- * 已有 `request.test.ts` 覆盖；这里要验的是「拿到响应后状态怎么变」，
- * 直接替掉 API 层能让每个用例只有三五行。
- */
+// 刷题会话状态机测试
+//
+// 为什么只测状态机，不测页面：答题页的绝大部分逻辑都在这个 composable 里
+// （phase 流转、sessionStorage 恢复、提交失败回退、跳过前移指针）。
+// 页面本身只剩模板绑定，测它的成本远高于收益。
+//
+// 为什么 mock `quizApi` 而不是 mock axios：请求层的解包逻辑
+// 已有 `request.test.ts` 覆盖；这里要验的是「拿到响应后状态怎么变」，
+// 直接替掉 API 层能让每个用例只有三五行。
 vi.mock('@/api/quiz', () => ({
     quizApi: {
         startBatch: vi.fn(),
@@ -30,7 +28,7 @@ const mockedStart = vi.mocked(quizApi.startBatch);
 const mockedAnswer = vi.mocked(quizApi.answer);
 const mockedSkip = vi.mocked(quizApi.skip);
 
-/** 造一批两题（一单选一多选） */
+// 造一批两题（一单选一多选）
 function batch(): QuizBatch {
     return {
         batchId: '1001',
@@ -60,7 +58,7 @@ function batch(): QuizBatch {
     };
 }
 
-/** 造一个判定结果 */
+// 造一个判定结果
 function verdict(overrides: Partial<QuizVerdict> = {}): QuizVerdict {
     return {
         questionId: 'q1',

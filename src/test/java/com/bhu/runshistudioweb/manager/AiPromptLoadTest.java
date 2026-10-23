@@ -16,23 +16,19 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 系统提示词「文件 → 字段」加载链路的单元测试
- *
- * author: shaoshing
- *
- * <p>为什么不写成 {@code @SpringBootTest}：这条链路只依赖
- * {@link AiProperties}（提供位置）+ {@code ResourceLoader}（读文件）两个依赖，
- * 直接构造 {@link AiManager} 就能覆盖「classpath / file: / 文件缺失 / BOM」四种情形，
- * 没必要为它单独启动一个 Spring 上下文（本类方法在 base-url 为空时只加载提示词、
- * 不会构建模型、不会发网络请求）。
- *
- * <p>「文件 → 模型」的全链路由 {@code AiChatCrudTest} 覆盖（它把 location 指向测试夹具，
- * 并断言模型收到的首条消息就是夹具内容）；文件缺失时的降级由 {@code AiPromptFallbackTest} 覆盖。
- */
+// 系统提示词「文件 → 字段」加载链路的单元测试
+//
+// 为什么不写成 @SpringBootTest：这条链路只依赖
+// AiProperties（提供位置）+ ResourceLoader（读文件）两个依赖，
+// 直接构造 AiManager 就能覆盖「classpath / file: / 文件缺失 / BOM」四种情形，
+// 没必要为它单独启动一个 Spring 上下文（本类方法在 base-url 为空时只加载提示词、
+// 不会构建模型、不会发网络请求）。
+//
+// 「文件 → 模型」的全链路由 AiChatCrudTest 覆盖（它把 location 指向测试夹具，
+// 并断言模型收到的首条消息就是夹具内容）；文件缺失时的降级由 AiPromptFallbackTest 覆盖。
 class AiPromptLoadTest {
 
-    /** 构造只装「配置 + 资源加载器」的 AiManager，并触发启动加载 */
+    // 构造只装「配置 + 资源加载器」的 AiManager，并触发启动加载
     private AiManager managerWith(String location) {
         AiProperties properties = new AiProperties();
         properties.setSystemPromptLocation(location);

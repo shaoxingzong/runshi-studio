@@ -20,22 +20,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-/**
- * 管理端用户增删改查验收测试
- *
- * author: shaoshing
- *
- * <p>这组用例守两条线：
- * <ol>
- *     <li><b>越权</b>：普通用户、未登录用户访问管理端接口必须分别拿到 A0301 / A0201
- *     ——这是「权限」功能唯一真正重要的断言；</li>
- *     <li><b>可用性</b>：管理员走完 增 → 查 → 改 → 删 全流程，且每一步的数据落库结果正确
- *     （密码必须是 BCrypt 哈希、昵称要有兜底值、删除必须是逻辑删除）。</li>
- * </ol>
- *
- * <p>测试直接插库造管理员账号（不走注册接口，因为注册只会创建普通用户），
- * 再用真实登录接口换 token，这样权限链路上的每一环都是真的。
- */
+// 管理端用户增删改查验收测试
+//
+// 这组用例守两条线：
+// - 越权：普通用户、未登录用户访问管理端接口必须分别拿到 A0301 / A0201
+// ——这是「权限」功能唯一真正重要的断言；
+// - 可用性：管理员走完 增 → 查 → 改 → 删 全流程，且每一步的数据落库结果正确
+// （密码必须是 BCrypt 哈希、昵称要有兜底值、删除必须是逻辑删除）。
+//
+// 测试直接插库造管理员账号（不走注册接口，因为注册只会创建普通用户），
+// 再用真实登录接口换 token，这样权限链路上的每一环都是真的。
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional
@@ -47,13 +41,13 @@ class UserAdminCrudTest {
     @Resource
     private SysUserMapper sysUserMapper;
 
-    /** 绕过 ORM 直查数据库，用来验证「逻辑删除」的真实落库值 */
+    // 绕过 ORM 直查数据库，用来验证「逻辑删除」的真实落库值
     @Resource
     private JdbcTemplate jdbcTemplate;
 
     // ==================== 工具方法 ====================
 
-    /** 插库造账号，返回其 id */
+    // 插库造账号，返回其 id
     private long insertUser(String account, String role) {
         SysUser user = new SysUser();
         user.setUserAccount(account);
@@ -65,7 +59,7 @@ class UserAdminCrudTest {
         return user.getId();
     }
 
-    /** 走真实登录接口换 token */
+    // 走真实登录接口换 token
     private String login(String account) throws Exception {
         String body = postJson("/user/login",
                 "{\"userAccount\":\"" + account + "\",\"userPassword\":\"Studio@2026\"}", null);
@@ -88,13 +82,13 @@ class UserAdminCrudTest {
         return mockMvc.perform(request).andReturn().getResponse().getContentAsString();
     }
 
-    /** 从响应 JSON 中取出 data.code */
+    // 从响应 JSON 中取出 data.code
     private String code(String body) {
         int start = body.indexOf("\"code\":\"") + 8;
         return body.substring(start, body.indexOf('"', start));
     }
 
-    /** 从响应 JSON 中取出 data.xxx 的字符串值 */
+    // 从响应 JSON 中取出 data.xxx 的字符串值
     private String data(String body, String key) {
         int start = body.indexOf("\"" + key + "\":\"");
         if (start < 0) {
@@ -104,7 +98,7 @@ class UserAdminCrudTest {
         return body.substring(from, body.indexOf('"', from));
     }
 
-    /** 从响应 JSON 中取出 data 本身的字符串值（新增接口返回的是 data:"雪花ID"） */
+    // 从响应 JSON 中取出 data 本身的字符串值（新增接口返回的是 data:"雪花ID"）
     private String dataValue(String body) {
         return data(body, "data");
     }

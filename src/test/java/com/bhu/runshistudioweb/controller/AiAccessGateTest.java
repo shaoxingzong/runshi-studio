@@ -34,33 +34,27 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-/**
- * AI 访问门槛验收测试
- *
- * author: shaoshing
- *
- * <p><b>验收的规则</b>：
- * <ul>
- *     <li>游客（未登录）<b>不能</b>使用 AI 服务，提问返回 A0201；</li>
- *     <li>普通用户：可提问 {@code studio.ai.query-limit} 次（本类配为 5），超出返回 A0501；</li>
- *     <li>成员与管理员：<b>不限额</b>，且不计数。</li>
- * </ul>
- *
- * <p>AI 调用用本地 Stub（JDK {@link HttpServer}）代替真实服务商，
- * 通过 {@code @DynamicPropertySource} 把 {@code studio.ai.base-url} 指过来。
- *
- * <p>类名以 {@code Ai} 开头：本类新建 Spring 测试上下文，排序约束见 AiKnowledgeManageTest 类注释。
- *
- * <p>本类不加 {@code @Transactional}：配额计数走 Redis INCR（外部系统），
- * 数据库事务回滚对它无效，因此数据真实提交、由 {@link #cleanUp()} 按记录的用户 id 清理。
- */
+// AI 访问门槛验收测试
+//
+// 验收的规则：
+// - 游客（未登录）不能使用 AI 服务，提问返回 A0201；
+// - 普通用户：可提问 studio.ai.query-limit 次（本类配为 5），超出返回 A0501；
+// - 成员与管理员：不限额，且不计数。
+//
+// AI 调用用本地 Stub（JDK HttpServer）代替真实服务商，
+// 通过 @DynamicPropertySource 把 studio.ai.base-url 指过来。
+//
+// 类名以 Ai 开头：本类新建 Spring 测试上下文，排序约束见 AiKnowledgeManageTest 类注释。
+//
+// 本类不加 @Transactional：配额计数走 Redis INCR（外部系统），
+// 数据库事务回滚对它无效，因此数据真实提交、由 #cleanUp 按记录的用户 id 清理。
 @SpringBootTest
 @AutoConfigureMockMvc
 class AiAccessGateTest {
 
     private static final String ACCOUNT_PREFIX = "T31gate_";
 
-    /** 普通用户配额上限（与 DynamicPropertySource 配的 query-limit 保持一致） */
+    // 普通用户配额上限（与 DynamicPropertySource 配的 query-limit 保持一致）
     private static final int USER_QUOTA = 5;
 
     @Resource
@@ -78,7 +72,7 @@ class AiAccessGateTest {
     @Resource
     private JsonMapper jsonMapper;
 
-    /** 本类创建的用户 ID，用于精确清理 */
+    // 本类创建的用户 ID，用于精确清理
     private final List<Long> createdUserIds = new CopyOnWriteArrayList<>();
 
     private static HttpServer stub;
@@ -178,7 +172,7 @@ class AiAccessGateTest {
         return jsonMapper.readTree(body).get("code").asText();
     }
 
-    /** 注册指定角色的用户并登录，返回 token（用户 id 记入 createdUserIds 供清理） */
+    // 注册指定角色的用户并登录，返回 token（用户 id 记入 createdUserIds 供清理）
     private String loginWithRole(String role) throws Exception {
         String account = ACCOUNT_PREFIX + (System.nanoTime() % 100000000);
         SysUser user = new SysUser();
@@ -198,7 +192,7 @@ class AiAccessGateTest {
         return body.substring(start, body.indexOf('"', start));
     }
 
-    /** 清理本类产生的数据：先删 Redis 计数 key，再按 userId 清会话/消息/用户 */
+    // 清理本类产生的数据：先删 Redis 计数 key，再按 userId 清会话/消息/用户
     private void cleanUp() {
         for (Long userId : createdUserIds) {
             stringRedisTemplate.delete(AiQueryCountConstant.keyOf(userId));

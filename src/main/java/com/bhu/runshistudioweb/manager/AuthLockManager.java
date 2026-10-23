@@ -12,51 +12,41 @@ import org.springframework.stereotype.Component;
 
 import java.util.List;
 
-/**
- * 登录失败锁定（账号级，累积计数 + 固定窗口）
- *
- * author: shaoshing
- *
- * <p><b>为什么是独立的一个类，不并进 {@link IpRateLimitManager}</b>：两者模型不同。
- * IP 限流是「固定窗口内的频率控制」（INCR 到上限即拒，窗口过期计数归零）；
- * 账号锁定是「连续失败累积到阈值后锁一段时间，登录成功立即清零」。
- * 把两种语义塞进一个类，方法签名与注释很快就会互相腐化，各自独立才说得清。
- *
- * <p><b>与 IP 限流的分工</b>：IP 限流挡「单 IP 高频试多个账号」，但挡不住
- * <b>分布式慢速爆破</b>（海量 IP 各试几次，频次远低于任何单 IP 上限）。
- * 本类以「同一账号连续失败 N 次」触发，补的正是这个盲区（见 {@link AuthLockoutProperties}）。
- *
- * <p><b>三个方法的调用时机</b>（顺序不能乱）：
- * <ol>
- *     <li>{@link #assertNotLocked}：登录最开始——被锁的请求不查库、不比对密码；</li>
- *     <li>{@link #recordFailure}：仅在「账号存在但密码错误」时——账号不存在无可锁对象，
- *     且对不存在的账号锁定会让锁定提示变成账号存在性探测器；</li>
- *     <li>{@link #clear}：登录成功时——合法用户不该被自己几分钟前的失误一直挡在门外。</li>
- * </ol>
- *
- * <p><b>降级纪律与 IP 限流完全一致</b>：Redis 不可用时全部放行（只告警）。
- * 锁定是防护手段，不能反过来变成故障源——为了防刷把自己的登录功能搞挂，是本末倒置。
- */
+// 登录失败锁定（账号级，累积计数 + 固定窗口）
+//
+// 为什么是独立的一个类，不并进 IpRateLimitManager：两者模型不同。
+// IP 限流是「固定窗口内的频率控制」（INCR 到上限即拒，窗口过期计数归零）；
+// 账号锁定是「连续失败累积到阈值后锁一段时间，登录成功立即清零」。
+// 把两种语义塞进一个类，方法签名与注释很快就会互相腐化，各自独立才说得清。
+//
+// 与 IP 限流的分工：IP 限流挡「单 IP 高频试多个账号」，但挡不住
+// 分布式慢速爆破（海量 IP 各试几次，频次远低于任何单 IP 上限）。
+// 本类以「同一账号连续失败 N 次」触发，补的正是这个盲区（见 AuthLockoutProperties）。
+//
+// 三个方法的调用时机（顺序不能乱）：
+// - #assertNotLocked：登录最开始——被锁的请求不查库、不比对密码；
+// - #recordFailure：仅在「账号存在但密码错误」时——账号不存在无可锁对象，
+// 且对不存在的账号锁定会让锁定提示变成账号存在性探测器；
+// - #clear：登录成功时——合法用户不该被自己几分钟前的失误一直挡在门外。
+//
+// 降级纪律与 IP 限流完全一致：Redis 不可用时全部放行（只告警）。
+// 锁定是防护手段，不能反过来变成故障源——为了防刷把自己的登录功能搞挂，是本末倒置。
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class AuthLockManager {
 
-    /**
-     * 失败计数键前缀：{@code studio:auth:lock:{account}}
-     *
-     * <p>带上账号名而不是用户 ID：登录时手里只有账号（ID 要查库才知道），
-     * 且账号是攻击者直接接触的标识，按它计数不需要先查库。
-     */
+    // 失败计数键前缀： studio:auth:lock:{account}
+    //
+    // 带上账号名而不是用户 ID：登录时手里只有账号（ID 要查库才知道），
+    // 且账号是攻击者直接接触的标识，按它计数不需要先查库。
     private static final String KEY_PREFIX = "studio:auth:lock:";
 
-    /**
-     * 原子自增 + 首次设置过期时间（Lua）
-     *
-     * <p>与 {@code IpRateLimitManager} 同一段脚本、同一个理由：两步写法
-     * （先 INCR、判断等于 1 再 EXPIRE）在进程崩溃于两步之间时会留下<b>没有 TTL 的 key</b>，
-     * 那个账号会被<b>永久锁定</b>且没有任何报错。必须让 Redis 侧原子完成。
-     */
+    // 原子自增 + 首次设置过期时间（Lua）
+    //
+    // 与 IpRateLimitManager 同一段脚本、同一个理由：两步写法
+    // （先 INCR、判断等于 1 再 EXPIRE）在进程崩溃于两步之间时会留下没有 TTL 的 key，
+    // 那个账号会被永久锁定且没有任何报错。必须让 Redis 侧原子完成。
     private static final String LUA_INCR_WITH_EXPIRE =
             "local current = redis.call('INCR', KEYS[1]) "
                     + "if current == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end "
@@ -69,12 +59,10 @@ public class AuthLockManager {
 
     private final AuthLockoutProperties authLockoutProperties;
 
-    /**
-     * 登录前检查账号是否处于锁定状态
-     *
-     * @param account 登录账号（为空时直接放行：没有锁定对象）
-     * @throws BusinessException 失败次数已达阈值（锁定窗口内）时抛出 A0501
-     */
+    // 登录前检查账号是否处于锁定状态
+    //
+    // @param account 登录账号（为空时直接放行：没有锁定对象）
+    // @throws BusinessException 失败次数已达阈值（锁定窗口内）时抛出 A0501
     public void assertNotLocked(String account) {
         if (StrUtil.isBlank(account) || Boolean.FALSE.equals(authLockoutProperties.getEnabled())) {
             return;
@@ -100,15 +88,13 @@ public class AuthLockManager {
         }
     }
 
-    /**
-     * 记录一次登录失败（仅在「账号存在但密码错误」时调用）
-     *
-     * <p>TTL 只在<b>第一次</b>失败时设置（固定窗口，见
-     * {@link AuthLockoutProperties#getLockMinutes()} 关于「为什么不每次续期」的说明）：
-     * 从首次失败起算锁定时长，过期后计数清零、自动恢复。
-     *
-     * @param account 登录账号
-     */
+    // 记录一次登录失败（仅在「账号存在但密码错误」时调用）
+    //
+    // TTL 只在第一次失败时设置（固定窗口，见
+    // AuthLockoutProperties#getLockMinutes 关于「为什么不每次续期」的说明）：
+    // 从首次失败起算锁定时长，过期后计数清零、自动恢复。
+    //
+    // @param account 登录账号
     public void recordFailure(String account) {
         if (StrUtil.isBlank(account) || Boolean.FALSE.equals(authLockoutProperties.getEnabled())) {
             return;
@@ -126,14 +112,12 @@ public class AuthLockManager {
         }
     }
 
-    /**
-     * 登录成功时清零失败计数
-     *
-     * <p>合法用户输错一次就永久背 5 次计数是不合理的——成功一次即证明持有正确凭据，
-     * 此前的失败应当一笔勾销。
-     *
-     * @param account 登录账号
-     */
+    // 登录成功时清零失败计数
+    //
+    // 合法用户输错一次就永久背 5 次计数是不合理的——成功一次即证明持有正确凭据，
+    // 此前的失败应当一笔勾销。
+    //
+    // @param account 登录账号
     public void clear(String account) {
         if (StrUtil.isBlank(account) || Boolean.FALSE.equals(authLockoutProperties.getEnabled())) {
             return;

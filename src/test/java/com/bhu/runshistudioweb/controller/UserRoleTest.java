@@ -21,16 +21,12 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
-/**
- * 角色取值与默认角色验收测试
- *
- * author: shaoshing
- *
- * <p>把「角色取值 = user / member / admin」这条约定**钉在测试里**：
- * 它同时存在于 {@code db/user.sql} 的列注释与默认值、{@code db/DESIGN.md}、
- * 以及 Java 常量三处，任何一处改了而其他两处没跟上，都会静默变成
- * 「明明给了角色却一直 A0301」。这里改一处、跑一次，就能发现不一致。
- */
+// 角色取值与默认角色验收测试
+//
+// 把「角色取值 = user / member / admin」这条约定钉在测试里：
+// 它同时存在于 db/user.sql 的列注释与默认值、 db/DESIGN.md、
+// 以及 Java 常量三处，任何一处改了而其他两处没跟上，都会静默变成
+// 「明明给了角色却一直 A0301」。这里改一处、跑一次，就能发现不一致。
 @SpringBootTest
 @AutoConfigureMockMvc
 @Transactional

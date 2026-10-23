@@ -26,19 +26,15 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-/**
- * IP 双窗口限流器单测（纯 Mockito，不启 Spring、不连 Redis）
- *
- * author: shaoshing
- *
- * <p><b>为什么用纯单测而不是 MockMvc</b>：本类只依赖 {@link StringRedisTemplate}，
- * mock 掉它就能覆盖全部分支；走 Spring 上下文会新建一个上下文，
- * 而多个测试类对上下文停止顺序敏感（pom 的 surefire 注释记载过相关教训），
- * 能不起容器就不起。
- *
- * <p>覆盖重点：超限判定边界（等于上限放行、超过才拒）、双窗口各自的键与文案、
- * 拿不到 IP 放行、Redis 故障降级放行——降级是本类最重要的安全属性之一。
- */
+// IP 双窗口限流器单测（纯 Mockito，不启 Spring、不连 Redis）
+//
+// 为什么用纯单测而不是 MockMvc：本类只依赖 StringRedisTemplate，
+// mock 掉它就能覆盖全部分支；走 Spring 上下文会新建一个上下文，
+// 而多个测试类对上下文停止顺序敏感（pom 的 surefire 注释记载过相关教训），
+// 能不起容器就不起。
+//
+// 覆盖重点：超限判定边界（等于上限放行、超过才拒）、双窗口各自的键与文案、
+// 拿不到 IP 放行、Redis 故障降级放行——降级是本类最重要的安全属性之一。
 @ExtendWith(MockitoExtension.class)
 class IpRateLimitManagerTest {
 
@@ -51,7 +47,7 @@ class IpRateLimitManagerTest {
     @Mock
     private StringRedisTemplate stringRedisTemplate;
 
-    /** 被测对象：手动 new，只注入 mock 的模板（Lua 脚本字段有初始值，不是构造参数） */
+    // 被测对象：手动 new，只注入 mock 的模板（Lua 脚本字段有初始值，不是构造参数）
     private IpRateLimitManager newManager() {
         return new IpRateLimitManager(stringRedisTemplate);
     }

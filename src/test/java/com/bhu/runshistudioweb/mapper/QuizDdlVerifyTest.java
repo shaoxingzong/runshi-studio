@@ -15,31 +15,25 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 验收：刷题三张表的建库脚本结构 + 关键索引命中
- *
- * author: shaoshing
- *
- * <p>验证三件事（与 {@code AttendanceDdlVerifyTest} 同一套路）：
- * <ol>
- *     <li><b>三张表的建表语句连续执行两次不报错</b>：用例把从 {@code db/user.sql}
- *     抽出的 {@code CREATE TABLE} 改写成 {@code CREATE TABLE IF NOT EXISTS} 后连跑两次。
- *     注意 MySQL 没有 {@code CREATE INDEX IF NOT EXISTS}，所以「索引写在建表语句内」
- *     是幂等的前提；</li>
- *     <li><b>关键查询命中预期索引</b>：断言 {@code possible_keys}（证明索引对该查询可用），
- *     而不是 {@code key}（那是优化器在当前数据量下的选择，表很小时可能合理地选全表扫描）；</li>
- *     <li><b>结构就位</b>：列、唯一键真实存在，且「选项 JSON 里不含正确性」这条设计
- *     在数据层也成立（{@code correct_labels} 是独立列）。</li>
- * </ol>
- *
- * <p><b>为什么不用 {@code @Transactional} 回滚</b>：MySQL 的 DDL 会隐式提交，
- * 且本用例的目的正是「确认表能建出来」，所以刻意不回滚。
- * 造的数据控制在固定 ID 段内，重复跑不会无限增长。
- */
+// 验收：刷题三张表的建库脚本结构 + 关键索引命中
+//
+// 验证三件事（与 AttendanceDdlVerifyTest 同一套路）：
+// - 三张表的建表语句连续执行两次不报错：用例把从 db/user.sql
+// 抽出的 CREATE TABLE 改写成 CREATE TABLE IF NOT EXISTS 后连跑两次。
+// 注意 MySQL 没有 CREATE INDEX IF NOT EXISTS，所以「索引写在建表语句内」
+// 是幂等的前提；
+// - 关键查询命中预期索引：断言 possible_keys（证明索引对该查询可用），
+// 而不是 key（那是优化器在当前数据量下的选择，表很小时可能合理地选全表扫描）；
+// - 结构就位：列、唯一键真实存在，且「选项 JSON 里不含正确性」这条设计
+// 在数据层也成立（ correct_labels 是独立列）。
+//
+// 为什么不用 @Transactional 回滚：MySQL 的 DDL 会隐式提交，
+// 且本用例的目的正是「确认表能建出来」，所以刻意不回滚。
+// 造的数据控制在固定 ID 段内，重复跑不会无限增长。
 @SpringBootTest
 class QuizDdlVerifyTest {
 
-    /** 造数使用的 ID 段起点（固定段，便于重复执行与识别） */
+    // 造数使用的 ID 段起点（固定段，便于重复执行与识别）
     private static final long SEED_ID_BASE = 1910000000000500000L;
 
     @Resource
@@ -135,7 +129,7 @@ class QuizDdlVerifyTest {
                 """, "idx_scope", "顺序模式抽题");
 
         // ② 幂等键：同一批同一题的查重
-        //    注意**不要**把三个键全写成常量：MySQL 会把整条判成
+        //    注意不要把三个键全写成常量：MySQL 会把整条判成
         //    「const 表 + no matching row」并直接返回空结果（possible_keys 为 null），
         //    那样测的就不是索引了。这里用范围条件让优化器必须真的去查索引
         assertIndexCandidate("""
@@ -153,16 +147,14 @@ class QuizDdlVerifyTest {
 
     // ==================== 工具方法 ====================
 
-    /**
-     * 从全量建库脚本里取出指定表的建表语句
-     *
-     * <p>改写成 {@code CREATE TABLE IF NOT EXISTS}：全量脚本靠「先 DROP 再 CREATE」
-     * 保证可重跑，用例里不能真去 DROP（那会清空开发库），
-     * 也不能让第二次执行撞「表已存在」。
-     *
-     * <p>为什么必须去注释：JdbcTemplate 把整段当作<b>一条</b>语句发给 MySQL，
-     * 而连接串没开 {@code allowMultiQueries}，多余的注释会让语句解析失败。
-     */
+    // 从全量建库脚本里取出指定表的建表语句
+    //
+    // 改写成 CREATE TABLE IF NOT EXISTS：全量脚本靠「先 DROP 再 CREATE」
+    // 保证可重跑，用例里不能真去 DROP（那会清空开发库），
+    // 也不能让第二次执行撞「表已存在」。
+    //
+    // 为什么必须去注释：JdbcTemplate 把整段当作一条语句发给 MySQL，
+    // 而连接串没开 allowMultiQueries，多余的注释会让语句解析失败。
     private String readCreateTableDdl(String tableName) throws Exception {
         String raw = Files.readString(Path.of("db/user.sql"));
         StringBuilder sb = new StringBuilder();
@@ -215,12 +207,10 @@ class QuizDdlVerifyTest {
         assertTrue(count != null && count > 0, table + " 缺少唯一索引 " + indexName);
     }
 
-    /**
-     * 造数：让优化器有统计依据
-     *
-     * <p>20 道题 + 40 条作答 + 20 条错题。用固定 ID 段 + 先删后插，
-     * 保证重复执行不膨胀。
-     */
+    // 造数：让优化器有统计依据
+    //
+    // 20 道题 + 40 条作答 + 20 条错题。用固定 ID 段 + 先删后插，
+    // 保证重复执行不膨胀。
     private void seedIfNeeded() {
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM studio_quiz_question WHERE id >= " + SEED_ID_BASE, Integer.class);
@@ -262,12 +252,10 @@ class QuizDdlVerifyTest {
         jdbcTemplate.execute("ANALYZE TABLE studio_quiz_wrong");
     }
 
-    /**
-     * 断言 EXPLAIN 的候选索引包含预期索引
-     *
-     * <p>断言 {@code possible_keys} 而不是 {@code key}：前者证明「索引能被这条查询用上」，
-     * 后者是优化器在<b>当前数据量下</b>的选择——表小时它可能合理地选全表扫描。
-     */
+    // 断言 EXPLAIN 的候选索引包含预期索引
+    //
+    // 断言 possible_keys 而不是 key：前者证明「索引能被这条查询用上」，
+    // 后者是优化器在当前数据量下的选择——表小时它可能合理地选全表扫描。
     private void assertIndexCandidate(String explainSql, String expectedIndex, String scene) {
         Map<String, Object> row = jdbcTemplate.queryForMap(explainSql);
         String possibleKeys = String.valueOf(row.get("possible_keys"));

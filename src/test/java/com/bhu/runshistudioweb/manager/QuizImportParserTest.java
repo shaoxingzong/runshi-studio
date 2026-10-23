@@ -12,19 +12,15 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 题目导入解析器验收测试（纯单测：不启 Spring、不连数据库）
- *
- * author: shaoshing
- *
- * <p>解析器是本模块唯一「面向不规整输入」的组件：粘贴过来的文本
- * 全角半角混杂、答案有的用星号有的用「答案：」、块之间可能没有空行。
- * 这些边界全在这里覆盖——它们的失败表现为「导入报错但看不出哪错了」，
- * 比业务逻辑出错更让人烦躁。
- */
+// 题目导入解析器验收测试（纯单测：不启 Spring、不连数据库）
+//
+// 解析器是本模块唯一「面向不规整输入」的组件：粘贴过来的文本
+// 全角半角混杂、答案有的用星号有的用「答案：」、块之间可能没有空行。
+// 这些边界全在这里覆盖——它们的失败表现为「导入报错但看不出哪错了」，
+// 比业务逻辑出错更让人烦躁。
 class QuizImportParserTest {
 
-    /** 一条标准单选题（行尾星号标正确项） */
+    // 一条标准单选题（行尾星号标正确项）
     private static final String SINGLE_STAR = """
             【单选】物质的唯一特性是？
             A. 运动性
@@ -34,7 +30,7 @@ class QuizImportParserTest {
             解析：客观实在性是物质的唯一特性；运动是物质的根本属性。
             """;
 
-    /** 一条标准多选题（独立的「答案：」行） */
+    // 一条标准多选题（独立的「答案：」行）
     private static final String MULTIPLE_ANSWER_LINE = """
             【多选】下列属于唯物辩证法基本规律的有？
             A. 对立统一规律

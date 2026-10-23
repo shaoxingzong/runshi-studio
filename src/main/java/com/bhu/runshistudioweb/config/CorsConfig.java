@@ -12,47 +12,39 @@ import org.springframework.web.filter.CorsFilter;
 import java.util.Arrays;
 import java.util.List;
 
-/**
- * 跨域配置
- *
- * author: shaoshing
- *
- * <p><b>为什么用 {@link CorsFilter} 而不是 {@code WebMvcConfigurer#addCorsMappings}</b>：
- * 这是本类唯一需要记住的理由。浏览器的 CORS <b>预检</b>（{@code OPTIONS}）不带任何自定义头，
- * 因此它<b>没有 satoken</b>——如果跨域处理挂在 MVC 拦截器层，
- * 预检请求会先被 Sa-Token 拦截器拦下返回 401，浏览器随即判定预检失败，
- * 真正的请求永远不会发出。表现为「接口用 curl 能通、页面上报 CORS 错误」，极难排查。
- * 而 {@link CorsFilter} 在<b>过滤器层</b>就把预检短路返回，压根走不到拦截器。
- *
- * <p><b>为什么用 {@code allowedOriginPatterns} 而不是 {@code allowedOrigins}</b>：
- * 一旦 {@code allowCredentials=true}（前端要带 satoken，必须开），
- * 规范就<b>禁止</b>来源写 {@code *}，否则浏览器直接拒绝响应。
- * 但演示前端的端口是不固定的（file:// 直开、或 5173/8081 各种 dev server），
- * 所以用 <b>pattern</b> 形式的 {@code http://localhost:*} ——它可以带通配，
- * 又不是裸的 {@code *}，同时满足「凭据可用」与「端口不定」两个约束。
- *
- * <p><b>来源从配置读（{@code studio.web.allowed-origins}）</b>：
- * 本地演示、联调环境、将来真上线时的域名各不相同，写死在代码里等于每次改都要重新打包。
- * 默认值已覆盖本地两种回环地址，不配置也能直接用。
- */
+// 跨域配置
+//
+// 为什么用 CorsFilter 而不是 WebMvcConfigurer#addCorsMappings：
+// 这是本类唯一需要记住的理由。浏览器的 CORS 预检（ OPTIONS）不带任何自定义头，
+// 因此它没有 satoken——如果跨域处理挂在 MVC 拦截器层，
+// 预检请求会先被 Sa-Token 拦截器拦下返回 401，浏览器随即判定预检失败，
+// 真正的请求永远不会发出。表现为「接口用 curl 能通、页面上报 CORS 错误」，极难排查。
+// 而 CorsFilter 在过滤器层就把预检短路返回，压根走不到拦截器。
+//
+// 为什么用 allowedOriginPatterns 而不是 allowedOrigins：
+// 一旦 allowCredentials=true（前端要带 satoken，必须开），
+// 规范就禁止来源写 *，否则浏览器直接拒绝响应。
+// 但演示前端的端口是不固定的（file:// 直开、或 5173/8081 各种 dev server），
+// 所以用 pattern 形式的 http://localhost:* ——它可以带通配，
+// 又不是裸的 *，同时满足「凭据可用」与「端口不定」两个约束。
+//
+// 来源从配置读（ studio.web.allowed-origins）：
+// 本地演示、联调环境、将来真上线时的域名各不相同，写死在代码里等于每次改都要重新打包。
+// 默认值已覆盖本地两种回环地址，不配置也能直接用。
 @Configuration
 @RequiredArgsConstructor
 public class CorsConfig {
 
-    /**
-     * 允许的来源 pattern（逗号分隔）
-     *
-     * <p>默认值里的 {@code *} 是端口通配：{@code http://localhost:*} 匹配任意端口，
-     * 但不匹配其它域名——它不是「允许所有来源」
-     */
+    // 允许的来源 pattern（逗号分隔）
+    //
+    // 默认值里的 * 是端口通配： http://localhost:* 匹配任意端口，
+    // 但不匹配其它域名——它不是「允许所有来源」
     @Value("${studio.web.allowed-origins:http://localhost:*,http://127.0.0.1:*}")
     private final String allowedOrigins;
 
-    /**
-     * 注册跨域过滤器
-     *
-     * @return 过滤器（作用于 {@code /**}）
-     */
+    // 注册跨域过滤器
+    //
+    // @return 过滤器（作用于 /**）
     @Bean
     public CorsFilter corsFilter() {
         CorsConfiguration config = new CorsConfiguration();
@@ -73,12 +65,10 @@ public class CorsConfig {
         return new CorsFilter(source);
     }
 
-    /**
-     * 拆分逗号分隔的来源配置
-     *
-     * @param value 配置值
-     * @return 来源列表（已去空白与空串）
-     */
+    // 拆分逗号分隔的来源配置
+    //
+    // @param value 配置值
+    // @return 来源列表（已去空白与空串）
     private List<String> splitOrigins(String value) {
         if (StrUtil.isBlank(value)) {
             return List.of();

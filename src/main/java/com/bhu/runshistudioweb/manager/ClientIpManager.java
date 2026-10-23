@@ -8,66 +8,58 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.List;
 
-/**
- * 客户端 IP 解析与内外网判定（Manager 层）
- *
- * author: shaoshing
- *
- * <p><b>分层纪律（与 {@code manager/FileManager} 一致）</b>：本类<b>不认识 HTTP</b>——
- * 不注入 {@code HttpServletRequest}，只接收字符串参数。这样它既可以被 Controller 调用，
- * 也能在 MockMvc 单测、批量校验脚本里直接使用，且所有边界情况都能用纯单测覆盖，
- * 不必为「怎么伪造一个请求对象」浪费成本。
- * <p>因此「在请求线程里取 IP」这件事由调用方负责（见 {@code AttendanceController}）：
- * 必须在请求线程内取 {@code SaHolder.getRequest().getSource()} 之类的值再传进来。
- *
- * <h2>信任链：为什么默认「谁都不信」</h2>
- *
- * <p>判断一个 IP 是否可信，只有两个信息源：<b>TCP 对端地址</b>（内核提供，
- * 无法伪造）与<b>请求头</b>（客户端完全可控）。因此规则只有一条：
- *
- * <blockquote>
- * <b>只有当 TCP 对端地址本身是可信代理时，才采信它带来的请求头；否则一律忽略所有头。</b>
- * </blockquote>
- *
- * <p>反向理解更容易记住：如果不加这道判断，任何人在家打开浏览器开发者工具，
- * 加一个 {@code X-Real-IP: 192.168.1.5} 就能让自己「在工作室签到」——整套考勤的区分能力归零。
- *
- * <h2>XFF 的取数方向：从右往左，不是从左往右</h2>
- *
- * <p>{@code X-Forwarded-For} 的格式是逐跳追加的：
- * <pre>{@code X-Forwarded-For: <客户端声称的来源>, <第一跳代理>, <第二跳代理>}</pre>
- *
- * <p>常见误区是「取最左边那个，因为它是原始客户端」。这在<b>代理只做覆盖</b>时成立，
- * 但绝大多数 Nginx 配置用的是 {@code $proxy_add_x_forwarded_for}，它的语义是<b>追加</b>：
- * 客户端自己带的 {@code X-Forwarded-For: 1.2.3.4} 会被原样保留在最左侧。
- * 于是「取最左」等于把伪造权直接交给了客户端——攻击者只要发
- * {@code X-Forwarded-For: 192.168.1.5}，取到的就是内网地址。
- *
- * <p>因此本类<b>从右往左</b>扫描：跳过所有可信代理，遇到的第一个非可信地址才是真实客户端。
- * 这个方向不依赖代理是「覆盖」还是「追加」，两种配置都正确。
- *
- * <h2>为什么不用 Spring 的 forward-headers-strategy</h2>
- *
- * <p>{@code server.forward-headers-strategy=NATIVE/FRAMEWORK} 会让框架<b>无条件</b>用请求头
- * 改写 {@code request.getRemoteAddr()}。它的问题不是实现有 bug，而是<b>缺少信息来源的判断</b>——
- * 它无法表达「只信任来自 127.0.0.1 的头」这层语义，等于把所有客户端都当成可信代理。
- * 本项目需要的是「按来源分级信任」，所以自己做，而不是打开那个开关。
- */
+// 客户端 IP 解析与内外网判定（Manager 层）
+//
+// 分层纪律（与 manager/FileManager 一致）：本类不认识 HTTP——
+// 不注入 HttpServletRequest，只接收字符串参数。这样它既可以被 Controller 调用，
+// 也能在 MockMvc 单测、批量校验脚本里直接使用，且所有边界情况都能用纯单测覆盖，
+// 不必为「怎么伪造一个请求对象」浪费成本。
+// 因此「在请求线程里取 IP」这件事由调用方负责（见 AttendanceController）：
+// 必须在请求线程内取 SaHolder.getRequest().getSource() 之类的值再传进来。
+//
+// 信任链：为什么默认「谁都不信」
+//
+// 判断一个 IP 是否可信，只有两个信息源：TCP 对端地址（内核提供，
+// 无法伪造）与请求头（客户端完全可控）。因此规则只有一条：
+//
+// 只有当 TCP 对端地址本身是可信代理时，才采信它带来的请求头；否则一律忽略所有头。
+//
+// 反向理解更容易记住：如果不加这道判断，任何人在家打开浏览器开发者工具，
+// 加一个 X-Real-IP: 192.168.1.5 就能让自己「在工作室签到」——整套考勤的区分能力归零。
+//
+// XFF 的取数方向：从右往左，不是从左往右
+//
+// X-Forwarded-For 的格式是逐跳追加的：
+//  X-Forwarded-For: <客户端声称的来源>, <第一跳代理>, <第二跳代理>
+//
+// 常见误区是「取最左边那个，因为它是原始客户端」。这在代理只做覆盖时成立，
+// 但绝大多数 Nginx 配置用的是 $proxy_add_x_forwarded_for，它的语义是追加：
+// 客户端自己带的 X-Forwarded-For: 1.2.3.4 会被原样保留在最左侧。
+// 于是「取最左」等于把伪造权直接交给了客户端——攻击者只要发
+// X-Forwarded-For: 192.168.1.5，取到的就是内网地址。
+//
+// 因此本类从右往左扫描：跳过所有可信代理，遇到的第一个非可信地址才是真实客户端。
+// 这个方向不依赖代理是「覆盖」还是「追加」，两种配置都正确。
+//
+// 为什么不用 Spring 的 forward-headers-strategy
+//
+// server.forward-headers-strategy=NATIVE/FRAMEWORK 会让框架无条件用请求头
+// 改写 request.getRemoteAddr()。它的问题不是实现有 bug，而是缺少信息来源的判断——
+// 它无法表达「只信任来自 127.0.0.1 的头」这层语义，等于把所有客户端都当成可信代理。
+// 本项目需要的是「按来源分级信任」，所以自己做，而不是打开那个开关。
 @Slf4j
 @Component
 public class ClientIpManager {
 
-    /**
-     * 构造器注入而非字段注入：既符合 Spring 的推荐实践，也让本类能脱离 Spring 容器
-     * 在纯单测里直接 {@code new}——这是「本类不认识 HTTP、只收字符串」这条分层纪律的
-     * 另一半，否则要验证一个网段判定就得先 Mock 出整个请求上下文
-     */
+    // 构造器注入而非字段注入：既符合 Spring 的推荐实践，也让本类能脱离 Spring 容器
+    // 在纯单测里直接 new——这是「本类不认识 HTTP、只收字符串」这条分层纪律的
+    // 另一半，否则要验证一个网段判定就得先 Mock 出整个请求上下文
     private final AttendanceProperties attendanceProperties;
 
-    /** 预解析后的可信代理网段（避免每个请求都做字符串解析） */
+    // 预解析后的可信代理网段（避免每个请求都做字符串解析）
     private List<IpUtils.Cidr> trustedProxyCidrs = new ArrayList<>();
 
-    /** 预解析后的局域网网段 */
+    // 预解析后的局域网网段
     private List<IpUtils.Cidr> lanCidrs = new ArrayList<>();
 
     public ClientIpManager(AttendanceProperties attendanceProperties) {
@@ -77,14 +69,12 @@ public class ClientIpManager {
         init();
     }
 
-    /**
-     * 预解析配置并<b>把配置问题显式喊出来</b>（由构造器调用）
-     *
-     * <p>为什么要 fail-loud：网段写错（少写一位、用了 IPv6 网段配 IPv4 地址、
-     * 前缀长度越界）只会表现为「所有人都被判外网」，接口不报任何错、日志也没有异常，
-     * 是最难发现的一类问题。这里在启动阶段把每一条非法配置连原文一起打出来，
-     * 让它在部署时就被看见，而不是等考勤报表出来才发现。
-     */
+    // 预解析配置并把配置问题显式喊出来（由构造器调用）
+    //
+    // 为什么要 fail-loud：网段写错（少写一位、用了 IPv6 网段配 IPv4 地址、
+    // 前缀长度越界）只会表现为「所有人都被判外网」，接口不报任何错、日志也没有异常，
+    // 是最难发现的一类问题。这里在启动阶段把每一条非法配置连原文一起打出来，
+    // 让它在部署时就被看见，而不是等考勤报表出来才发现。
     public void init() {
         trustedProxyCidrs = parseAll(attendanceProperties.getTrustedProxies(), "可信代理（studio.attendance.trusted-proxies）");
         lanCidrs = parseAll(attendanceProperties.getLanCidrs(), "局域网网段（studio.attendance.lan-cidrs）");
@@ -107,19 +97,17 @@ public class ClientIpManager {
         }
     }
 
-    /**
-     * 解析客户端真实 IP
-     *
-     * <p>取值优先级：<b>对端不可信 → 一律用对端；对端可信 → X-Real-IP → XFF（从右往左）→ 对端</b>。
-     * 为什么可信时优先 {@code X-Real-IP}：Nginx 的惯用配置
-     * {@code proxy_set_header X-Real-IP $remote_addr;} 是<b>覆盖</b>语义，客户端传什么都不生效；
-     * 而 XFF 常被配置成追加，需要额外按可信度筛选（这也是它排在后面的原因）。
-     *
-     * @param remoteAddr   TCP 对端地址（调用方从请求上下文取；可能带端口）
-     * @param xRealIp      {@code X-Real-IP} 头的原始值，可为 null
-     * @param xForwardedFor {@code X-Forwarded-For} 头的原始值，可为 null
-     * @return 归一化后的客户端 IP；<b>拿不到任何有效地址时返回 null</b>
-     */
+    // 解析客户端真实 IP
+    //
+    // 取值优先级：对端不可信 → 一律用对端；对端可信 → X-Real-IP → XFF（从右往左）→ 对端。
+    // 为什么可信时优先 X-Real-IP：Nginx 的惯用配置
+    // proxy_set_header X-Real-IP $remote_addr; 是覆盖语义，客户端传什么都不生效；
+    // 而 XFF 常被配置成追加，需要额外按可信度筛选（这也是它排在后面的原因）。
+    //
+    // @param remoteAddr TCP 对端地址（调用方从请求上下文取；可能带端口）
+    // @param xRealIp X-Real-IP 头的原始值，可为 null
+    // @param xForwardedFor X-Forwarded-For 头的原始值，可为 null
+    // @return 归一化后的客户端 IP；拿不到任何有效地址时返回 null
     public String resolveClientIp(String remoteAddr, String xRealIp, String xForwardedFor) {
         String peer = IpUtils.normalize(remoteAddr);
         if (peer == null) {
@@ -153,15 +141,13 @@ public class ClientIpManager {
         return peer;
     }
 
-    /**
-     * 判断 IP 是否在工作室局域网内
-     *
-     * <p>未配置任何网段时<b>一律返回 false（外网）</b>：这个方向是安全的那一侧——
-     * 把未知地址当内网，等于给所有人发通行证；当外网，最坏只是记录不准。
-     *
-     * @param ip 客户端 IP（内部会归一化）
-     * @return 命中任一配置网段返回 true
-     */
+    // 判断 IP 是否在工作室局域网内
+    //
+    // 未配置任何网段时一律返回 false（外网）：这个方向是安全的那一侧——
+    // 把未知地址当内网，等于给所有人发通行证；当外网，最坏只是记录不准。
+    //
+    // @param ip 客户端 IP（内部会归一化）
+    // @return 命中任一配置网段返回 true
     public boolean isInLan(String ip) {
         byte[] addr = IpUtils.toBytes(ip);
         if (addr == null) {
@@ -178,14 +164,12 @@ public class ClientIpManager {
         return false;
     }
 
-    /**
-     * 返回命中的局域网网段（未命中返回 null）
-     *
-     * <p>C 端签到页要展示「当前位于哪个网段」，前端拿到的就是这个 source 文本。
-     *
-     * @param ip 客户端 IP
-     * @return 命中的网段配置原文；未命中或 IP 非法返回 null
-     */
+    // 返回命中的局域网网段（未命中返回 null）
+    //
+    // C 端签到页要展示「当前位于哪个网段」，前端拿到的就是这个 source 文本。
+    //
+    // @param ip 客户端 IP
+    // @return 命中的网段配置原文；未命中或 IP 非法返回 null
     public IpUtils.Cidr matchLanCidr(String ip) {
         byte[] addr = IpUtils.toBytes(ip);
         if (addr == null) {
@@ -199,14 +183,12 @@ public class ClientIpManager {
         return null;
     }
 
-    /**
-     * 判断某地址是否为可信代理
-     *
-     * <p>默认只有 {@code 127.0.0.1} 与 {@code ::1}，即「Nginx 与应用同机」这一最常见部署形态。
-     *
-     * @param ip 已归一化的地址
-     * @return 是可信代理返回 true
-     */
+    // 判断某地址是否为可信代理
+    //
+    // 默认只有 127.0.0.1 与 ::1，即「Nginx 与应用同机」这一最常见部署形态。
+    //
+    // @param ip 已归一化的地址
+    // @return 是可信代理返回 true
     public boolean isTrustedProxy(String ip) {
         byte[] addr = IpUtils.toBytes(ip);
         if (addr == null) {
@@ -220,16 +202,14 @@ public class ClientIpManager {
         return false;
     }
 
-    /**
-     * 从 XFF 中挑出真实客户端地址
-     *
-     * <p><b>从右往左</b>扫描、跳过可信代理，第一个非可信地址即为答案（理由见类注释）。
-     * 段内可能是 {@code unknown}（部分代理在拿不到地址时会填这个）或带端口的写法，
-     * 无法解析的段直接跳过而不是让整个解析失败——一个坏段不该让整条链路丢掉真实地址。
-     *
-     * @param xForwardedFor 头的原始值
-     * @return 真实客户端地址；无可用段返回 null
-     */
+    // 从 XFF 中挑出真实客户端地址
+    //
+    // 从右往左扫描、跳过可信代理，第一个非可信地址即为答案（理由见类注释）。
+    // 段内可能是 unknown（部分代理在拿不到地址时会填这个）或带端口的写法，
+    // 无法解析的段直接跳过而不是让整个解析失败——一个坏段不该让整条链路丢掉真实地址。
+    //
+    // @param xForwardedFor 头的原始值
+    // @return 真实客户端地址；无可用段返回 null
     private String pickFromXff(String xForwardedFor) {
         if (xForwardedFor == null || xForwardedFor.isBlank()) {
             return null;
@@ -247,13 +227,11 @@ public class ClientIpManager {
         return null;
     }
 
-    /**
-     * 批量解析网段配置，并逐条报出非法项
-     *
-     * @param texts 配置原文列表
-     * @param label 日志用的配置名
-     * @return 成功解析的网段列表（非法项被跳过，不会让启动失败）
-     */
+    // 批量解析网段配置，并逐条报出非法项
+    //
+    // @param texts 配置原文列表
+    // @param label 日志用的配置名
+    // @return 成功解析的网段列表（非法项被跳过，不会让启动失败）
     private List<IpUtils.Cidr> parseAll(List<String> texts, String label) {
         List<IpUtils.Cidr> result = new ArrayList<>();
         if (texts == null) {
@@ -274,12 +252,10 @@ public class ClientIpManager {
         return result;
     }
 
-    /**
-     * 把网段列表拼成日志可读文本
-     *
-     * @param cidrs 网段列表
-     * @return 以逗号分隔的原文
-     */
+    // 把网段列表拼成日志可读文本
+    //
+    // @param cidrs 网段列表
+    // @return 以逗号分隔的原文
     private String describe(List<IpUtils.Cidr> cidrs) {
         if (cidrs == null || cidrs.isEmpty()) {
             return "(空)";

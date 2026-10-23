@@ -24,15 +24,11 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
-/**
- * 启动自检单测（纯 Mockito）
- *
- * author: shaoshing
- *
- * <p>这个类的存在本身是上线前验证的产物（见 {@link StartupSelfCheck} 类注释：
- * 实测发现缺环境变量时应用照常启动），所以它的测试重点是**三种坏配置都必须被拦下**，
- * 以及**本地开发的合法形态（AI 留空）不能被误伤**——后者决定了测试环境能否启动上下文。
- */
+// 启动自检单测（纯 Mockito）
+//
+// 这个类的存在本身是上线前验证的产物（见 StartupSelfCheck 类注释：
+// 实测发现缺环境变量时应用照常启动），所以它的测试重点是三种坏配置都必须被拦下，
+// 以及本地开发的合法形态（AI 留空）不能被误伤——后者决定了测试环境能否启动上下文。
 @ExtendWith(MockitoExtension.class)
 class StartupSelfCheckTest {
 
@@ -55,7 +51,7 @@ class StartupSelfCheckTest {
         selfCheck = new StartupSelfCheck(jdbcTemplate, stringRedisTemplate, aiProperties, dataSource);
     }
 
-    /** 让 Redis mock 对任意回调返回 PONG */
+    // 让 Redis mock 对任意回调返回 PONG
     private void givenRedisPong() {
         when(stringRedisTemplate.execute(any(RedisCallback.class))).thenAnswer(invocation -> {
             RedisCallback<Object> callback = invocation.getArgument(0);

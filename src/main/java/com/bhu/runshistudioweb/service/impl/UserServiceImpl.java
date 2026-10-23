@@ -35,99 +35,85 @@ import org.springframework.stereotype.Service;
 
 import java.util.Objects;
 
-/**
- * 用户服务实现
- *
- * author: shaoshing
- *
- * <p><b>为什么加 {@code @Slf4j}</b>：本类继承 {@code ServiceImpl}，它自带一个
- * {@code org.apache.ibatis.logging.Log} 实例字段（MP 用来打 SQL 日志），其
- * {@code warn(String)} 只接受单个字符串、<b>不支持占位参数</b>。Lombok 生成的
- * 静态 SLF4J 日志器会遮蔽那个继承字段，让本类里的 {@code log.xxx("...{}", arg)}
- * 走标准占位写法（与 {@code PostServiceImpl} 同一模式）。
- * 遮蔽不影响父类：父类方法里的 {@code log} 仍在它自己的作用域内解析。
- *
- * <p>为什么继承 {@code ServiceImpl<SysUserMapper, SysUser>}：
- * MyBatis-Plus 的 ServiceImpl 已经把单表 CRUD（save / getById / count / updateById 等）
- * 用 Mapper 实现好了，这里只需要写「业务动作」，不用重复写 CRUD。
- * 注意第一个泛型必须是 Mapper 类型，写错会导致启动时找不到对应 Bean。
- *
- * <p>校验统一走 {@code ThrowUtils.throwIf}：条件成立即抛 {@code BusinessException}，
- * 由全局异常处理器转成标准响应，所以本类**不需要写 try-catch**，也不需要层层返回错误码。
- *
- * <p>注意：涉及多写的操作（注册）应保证原子性。当前注册只有一次 insert 是安全的；
- * 若以后注册还要写成员档案等第二张表，必须加 {@code @Transactional}，
- * 否则中途失败会留下「有账号无档案」的脏数据。
- */
+// 用户服务实现
+//
+// 为什么加 @Slf4j：本类继承 ServiceImpl，它自带一个
+// org.apache.ibatis.logging.Log 实例字段（MP 用来打 SQL 日志），其
+// warn(String) 只接受单个字符串、不支持占位参数。Lombok 生成的
+// 静态 SLF4J 日志器会遮蔽那个继承字段，让本类里的 log.xxx("...{}", arg)
+// 走标准占位写法（与 PostServiceImpl 同一模式）。
+// 遮蔽不影响父类：父类方法里的 log 仍在它自己的作用域内解析。
+//
+// 为什么继承 ServiceImpl<SysUserMapper, SysUser>：
+// MyBatis-Plus 的 ServiceImpl 已经把单表 CRUD（save / getById / count / updateById 等）
+// 用 Mapper 实现好了，这里只需要写「业务动作」，不用重复写 CRUD。
+// 注意第一个泛型必须是 Mapper 类型，写错会导致启动时找不到对应 Bean。
+//
+// 校验统一走 ThrowUtils.throwIf：条件成立即抛 BusinessException，
+// 由全局异常处理器转成标准响应，所以本类不需要写 try-catch，也不需要层层返回错误码。
+//
+// 注意：涉及多写的操作（注册）应保证原子性。当前注册只有一次 insert 是安全的；
+// 若以后注册还要写成员档案等第二张表，必须加 @Transactional，
+// 否则中途失败会留下「有账号无档案」的脏数据。
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> implements UserService {
 
-    /**
-     * 管理员新增用户且未填写密码时，随机初始密码的长度
-     *
-     * <p><b>为什么是随机而不是固定默认值</b>：固定默认口令意味着任何知道本系统存在的人
-     * 都能登录所有未及时改密的账号——把安全性寄托在「每个人都会立即改密」上，而现实里总有人不会。
-     * 随机口令只随 {@code addUser} 的返回值出现一次（后端不存明文、查不回来），
-     * 管理员必须当场转交本人。10 位是「足够复杂度」与「转告不出错」的平衡点。
-     */
+    // 管理员新增用户且未填写密码时，随机初始密码的长度
+    //
+    // 为什么是随机而不是固定默认值：固定默认口令意味着任何知道本系统存在的人
+    // 都能登录所有未及时改密的账号——把安全性寄托在「每个人都会立即改密」上，而现实里总有人不会。
+    // 随机口令只随 addUser 的返回值出现一次（后端不存明文、查不回来），
+    // 管理员必须当场转交本人。10 位是「足够复杂度」与「转告不出错」的平衡点。
     private static final int INIT_PASSWORD_LENGTH = 10;
 
-    /** 账号长度区间，必须与 UserRegisterRequest / UserAddRequest 上的 @Size 保持一致 */
+    // 账号长度区间，必须与 UserRegisterRequest / UserAddRequest 上的 @Size 保持一致
     private static final int MIN_ACCOUNT_LENGTH = 4;
     private static final int MAX_ACCOUNT_LENGTH = 16;
 
-    /** 密码长度区间，必须与各 DTO 上的 @Size 保持一致 */
+    // 密码长度区间，必须与各 DTO 上的 @Size 保持一致
     private static final int MIN_PASSWORD_LENGTH = 8;
     private static final int MAX_PASSWORD_LENGTH = 20;
 
-    /** 用户状态：0-正常，1-封禁（与 db/user.sql 中 user_status 的注释一致） */
+    // 用户状态：0-正常，1-封禁（与 db/user.sql 中 user_status 的注释一致）
     private static final int USER_STATUS_NORMAL = 0;
     private static final int USER_STATUS_BANNED = 1;
 
-    /** 分页每页条数的默认值与上限（上限是用来防「一次拉全表」的） */
+    // 分页每页条数的默认值与上限（上限是用来防「一次拉全表」的）
     private static final long DEFAULT_PAGE_SIZE = 10L;
     private static final long MAX_PAGE_SIZE = 50L;
 
-    /**
-     * AI 提问配额计数
-     *
-     * <p>只用于「读出合并值」：登录信息里的 {@code aiQueryCount} 必须是
-     * 「DB 基准 + Redis 未落库增量」，否则用户刚问完就看不出数字变化。
-     */
+    // AI 提问配额计数
+    //
+    // 只用于「读出合并值」：登录信息里的 aiQueryCount 必须是
+    // 「DB 基准 + Redis 未落库增量」，否则用户刚问完就看不出数字变化。
     private final AiQueryCountManager aiQueryCountManager;
 
-    /**
-     * 客户端 IP 解析（与考勤模块共用同一个 Manager）
-     *
-     * <p>登录 / 注册限流按 IP 计数，必须先拿到「真实客户端 IP」：
-     * 直接取 TCP 对端在 Nginx 部署下拿到的是代理地址（全员同一 IP，限流形同虚设），
-     * 因此复用考勤已验证的 {@code resolveClientIp}——只有对端是可信代理时才采信
-     * {@code X-Real-IP} / {@code X-Forwarded-For}，防伪造头绕过限流。
-     */
+    // 客户端 IP 解析（与考勤模块共用同一个 Manager）
+    //
+    // 登录 / 注册限流按 IP 计数，必须先拿到「真实客户端 IP」：
+    // 直接取 TCP 对端在 Nginx 部署下拿到的是代理地址（全员同一 IP，限流形同虚设），
+    // 因此复用考勤已验证的 resolveClientIp——只有对端是可信代理时才采信
+    // X-Real-IP / X-Forwarded-For，防伪造头绕过限流。
     private final ClientIpManager clientIpManager;
 
-    /** IP 级双窗口限流（登录 / 注册共用，与游客提问限流同一套实现） */
+    // IP 级双窗口限流（登录 / 注册共用，与游客提问限流同一套实现）
     private final IpRateLimitManager ipRateLimitManager;
 
-    /** 登录 / 注册限流的阈值与总开关 */
+    // 登录 / 注册限流的阈值与总开关
     private final AuthRateLimitProperties authRateLimitProperties;
 
-    /**
-     * 账号级登录失败锁定（与 IP 限流互补：IP 限流挡单 IP 高频，本类挡分布式慢速爆破）
-     *
-     * <p>为什么两道都要：爆破的两种形态——「一个 IP 对多个账号猛试」与
-     * 「海量 IP 各试几次」——单靠任何一道都拦不全，且两道都不依赖对方可用。
-     */
+    // 账号级登录失败锁定（与 IP 限流互补：IP 限流挡单 IP 高频，本类挡分布式慢速爆破）
+    //
+    // 为什么两道都要：爆破的两种形态——「一个 IP 对多个账号猛试」与
+    // 「海量 IP 各试几次」——单靠任何一道都拦不全，且两道都不依赖对方可用。
     private final AuthLockManager authLockManager;
 
-    /**
-     * 站内通知（成员身份授予时告知本人）
-     *
-     * <p>依赖方向单向（本类 → 通知服务），通知服务不反向依赖任何业务服务——
-     * 否则形成循环依赖，Spring 启动即失败。
-     */
+    // 站内通知（成员身份授予时告知本人）
+    //
+    // 依赖方向单向（本类 → 通知服务），通知服务不反向依赖任何业务服务——
+    // 否则形成循环依赖，Spring 启动即失败。
     private final NotificationService notificationService;
 
     // ==================== C 端：用户自己 ====================
@@ -165,7 +151,7 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         SysUser sysUser = new SysUser();
         sysUser.setUserAccount(userAccount);
         sysUser.setUserPassword(encryptedPassword);
-        // 昵称：DDL 中 user_name 是 NOT NULL 且**没有默认值**，不赋值会直接插入失败
+        // 昵称：DDL 中 user_name 是 NOT NULL 且没有默认值，不赋值会直接插入失败
         // （报错 Field 'user_name' doesn't have a default value）。
         // 新注册用户还没有昵称，先用账号兜底，后续在「个人资料」里自行修改
         sysUser.setUserName(userAccount);
@@ -178,7 +164,7 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         // 它们在 DDL 中都有 DEFAULT（0），MyBatis-Plus 插入时会跳过 null 字段，由数据库默认值兜底
 
         // 用 try / catch 接唯一索引冲突，而不是靠返回值判断：
-        // MyBatis-Plus 遇到唯一索引冲突时是**抛 DuplicateKeyException**，不会返回 false。
+        // MyBatis-Plus 遇到唯一索引冲突时是抛 DuplicateKeyException，不会返回 false。
         // 早先这里只有 `if (!saveResult)`，且注释假设「冲突会让 save 返回 false」——
         // 于是并发注册那条路径从来没人接住，一路冒到全局兜底变成 B0001「系统错误」。
         // 现在的分工：catch 负责并发竞态（唯一索引是最后一道防线，它以异常形式报错），
@@ -200,25 +186,21 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         return sysUser.getId();
     }
 
-    /**
-     * 用户登录（接口契约见 UserService）
-     *
-     * <p>实现上的执行顺序，任何一条调换都会出问题：
-     * <ol>
-     *     <li><b>IP 级限流</b>：挡「单 IP 高频尝试」，每一次尝试（含失败的）都计数；</li>
-     *     <li><b>账号级锁定检查</b>：挡「分布式慢速爆破」，被锁的请求不查库、不比对密码；</li>
-     *     <li>按账号查实体——查不到也要走完"密码比对"这一步（这里用短路统一提示）；</li>
-     *     <li>密码比对用 {@code PasswordUtils.matches}（BCrypt），不能用 equals 比哈希串；
-     *     失败时仅在<b>账号存在</b>的前提下记录失败次数（账号不存在无可锁对象，
-     *     且对不存在的账号锁定会让「已锁定」提示变成账号存在性探测器）；</li>
-     *     <li>封禁校验放最后——此时已确认密码正确，攻击者无法通过报错差异探测账号状态；</li>
-     *     <li>登录成功后清零失败计数（合法用户不该被几分钟前的失误挡在门外）。</li>
-     * </ol>
-     *
-     * @param userAccount  用户账号
-     * @param userPassword 明文密码
-     * @return 脱敏用户信息（含 token）
-     */
+    // 用户登录（接口契约见 UserService）
+    //
+    // 实现上的执行顺序，任何一条调换都会出问题：
+    // - IP 级限流：挡「单 IP 高频尝试」，每一次尝试（含失败的）都计数；
+    // - 账号级锁定检查：挡「分布式慢速爆破」，被锁的请求不查库、不比对密码；
+    // - 按账号查实体——查不到也要走完"密码比对"这一步（这里用短路统一提示）；
+    // - 密码比对用 PasswordUtils.matches（BCrypt），不能用 equals 比哈希串；
+    // 失败时仅在账号存在的前提下记录失败次数（账号不存在无可锁对象，
+    // 且对不存在的账号锁定会让「已锁定」提示变成账号存在性探测器）；
+    // - 封禁校验放最后——此时已确认密码正确，攻击者无法通过报错差异探测账号状态；
+    // - 登录成功后清零失败计数（合法用户不该被几分钟前的失误挡在门外）。
+    //
+    // @param userAccount 用户账号
+    // @param userPassword 明文密码
+    // @return 脱敏用户信息（含 token）
     @Override
     public LoginUserVO userLogin(String userAccount, String userPassword,
                                  String remoteAddr, String xRealIp, String xForwardedFor) {
@@ -236,7 +218,7 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         queryWrapper.eq(SysUser::getUserAccount, userAccount);
         SysUser user = this.getOne(queryWrapper);
 
-        // 防账号枚举：账号不存在与密码错误使用**同一个提示文案**。
+        // 防账号枚举：账号不存在与密码错误使用同一个提示文案。
         // 若分开提示（"账号不存在"/"密码错误"），攻击者可用两种报错扫出一批有效账号，再集中爆破。
         boolean passwordMatched = user != null && PasswordUtils.matches(userPassword, user.getUserPassword());
         if (!passwordMatched && user != null) {
@@ -262,14 +244,12 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         return loginUserVO;
     }
 
-    /**
-     * 取当前登录用户实体（接口契约见 UserService）
-     *
-     * <p>返回的是**实体**而不是 VO，仅用于服务端内部逻辑（鉴权、审计、守卫判断）。
-     * 要返回给前端请走 {@link #getLoginUserVO(SysUser)} 转换为脱敏 VO。
-     *
-     * @return 当前登录用户实体，含密码哈希串，切勿直接序列化到响应里
-     */
+    // 取当前登录用户实体（接口契约见 UserService）
+    //
+    // 返回的是实体而不是 VO，仅用于服务端内部逻辑（鉴权、审计、守卫判断）。
+    // 要返回给前端请走 #getLoginUserVO 转换为脱敏 VO。
+    //
+    // @return 当前登录用户实体，含密码哈希串，切勿直接序列化到响应里
     @Override
     public SysUser getLoginUser() {
         // isLogin 会检查 token 是否有效/未过期，未登录时本方法不允许返回 null，
@@ -293,15 +273,13 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         return user;
     }
 
-    /**
-     * 实体转「用户自己看」的 VO（含 token 字段，不含密码）
-     *
-     * <p>与 {@link #getUserVO(SysUser)} 的区别：这个是给用户自己看的（带角色、不带状态位），
-     * 那个是给管理员看的（带角色与状态）。二者都不含密码字段。
-     *
-     * @param user 用户实体，允许为 null
-     * @return VO；入参为 null 时返回 null
-     */
+    // 实体转「用户自己看」的 VO（含 token 字段，不含密码）
+    //
+    // 与 #getUserVO 的区别：这个是给用户自己看的（带角色、不带状态位），
+    // 那个是给管理员看的（带角色与状态）。二者都不含密码字段。
+    //
+    // @param user 用户实体，允许为 null
+    // @return VO；入参为 null 时返回 null
     @Override
     public LoginUserVO getLoginUserVO(SysUser user) {
         if (user == null) {
@@ -309,7 +287,7 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         }
         LoginUserVO loginUserVO = new LoginUserVO();
         // 用属性名自动拷贝，避免手写一长串 setXxx（漏一个字段就是线上 bug）；
-        // VO 中没有 userPassword 字段，因此密码哈希串**不会**被拷贝进去，这是脱敏的关键
+        // VO 中没有 userPassword 字段，因此密码哈希串不会被拷贝进去，这是脱敏的关键
         BeanUtils.copyProperties(user, loginUserVO);
         // aiQueryCount 覆盖为合并值：库里的是「基准」，最近几次提问的增量还在 Redis 里
         // 等定时回刷。只返回库值的话，用户会看到「问了好几次，数字一动不动」
@@ -320,14 +298,12 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         return loginUserVO;
     }
 
-    /**
-     * 注销登录（接口契约见 UserService）
-     *
-     * <p>只清**当前账号当前端**的会话：Sa-Token 默认按 token 注销，
-     * 同一账号在别的设备上登录的会话不受影响（如需全端下线要传 SaLogoutParameter）。
-     *
-     * @return true 表示注销成功
-     */
+    // 注销登录（接口契约见 UserService）
+    //
+    // 只清当前账号当前端的会话：Sa-Token 默认按 token 注销，
+    // 同一账号在别的设备上登录的会话不受影响（如需全端下线要传 SaLogoutParameter）。
+    //
+    // @return true 表示注销成功
     @Override
     public boolean userLogout() {
         // 未登录时直接失败：让前端明确知道「当前本来就没有登录态」，
@@ -340,19 +316,17 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
 
     // ==================== 管理端：调用方必须已通过 @SaCheckRole("admin") ====================
 
-    /**
-     * 管理员新增用户（接口契约见 UserService）
-     *
-     * <p>与自助注册（{@link #userRegister}）唯一的业务差别是**允许指定角色与状态**，
-     * 其余规则（账号唯一、只存 BCrypt 哈希、昵称为空用账号兜底）完全共用同一套逻辑，
-     * 因此新增账号的"最低权限"由 {@code UserRoleEnum.USER} 兜底，不会越权。
-     *
-     * <p>初始密码：管理员指定则用他指定的，留空则<b>随机生成</b>，
-     * 明文只随返回值出现一次——后端不存明文，也没有二次查询的接口。
-     *
-     * @param userAddRequest 新增请求（账号必填；密码留空则使用随机初始密码）
-     * @return 新用户 ID 与本次生效的初始密码（明文，仅此一次）
-     */
+    // 管理员新增用户（接口契约见 UserService）
+    //
+    // 与自助注册（ #userRegister）唯一的业务差别是允许指定角色与状态，
+    // 其余规则（账号唯一、只存 BCrypt 哈希、昵称为空用账号兜底）完全共用同一套逻辑，
+    // 因此新增账号的"最低权限"由 UserRoleEnum.USER 兜底，不会越权。
+    //
+    // 初始密码：管理员指定则用他指定的，留空则随机生成，
+    // 明文只随返回值出现一次——后端不存明文，也没有二次查询的接口。
+    //
+    // @param userAddRequest 新增请求（账号必填；密码留空则使用随机初始密码）
+    // @return 新用户 ID 与本次生效的初始密码（明文，仅此一次）
     @Override
     public UserAddResultVO addUser(UserAddRequest userAddRequest) {
         ThrowUtils.throwIf(userAddRequest == null || StrUtil.isBlank(userAddRequest.getUserAccount()),
@@ -397,16 +371,14 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         return result;
     }
 
-    /**
-     * 管理员更新用户（部分更新，接口契约见 UserService）
-     *
-     * <p><b>防锁死守卫</b>是本方法最容易被删掉的部分：管理员不能封禁自己、不能把自己降级。
-     * 因为权限判定是实时查库的，一旦自己失去 admin 角色会立刻无法管理，
-     * 且此时没有任何管理员能通过接口把你改回来，只能去数据库修数据。
-     *
-     * @param userUpdateRequest 更新请求（id 必填）
-     * @return true 表示更新成功
-     */
+    // 管理员更新用户（部分更新，接口契约见 UserService）
+    //
+    // 防锁死守卫是本方法最容易被删掉的部分：管理员不能封禁自己、不能把自己降级。
+    // 因为权限判定是实时查库的，一旦自己失去 admin 角色会立刻无法管理，
+    // 且此时没有任何管理员能通过接口把你改回来，只能去数据库修数据。
+    //
+    // @param userUpdateRequest 更新请求（id 必填）
+    // @return true 表示更新成功
     @Override
     public boolean updateUser(UserUpdateRequest userUpdateRequest) {
         ThrowUtils.throwIf(userUpdateRequest == null || userUpdateRequest.getId() == null,
@@ -423,7 +395,7 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
                 ErrorCode.PARAMS_ERROR, "用户角色不合法，仅支持 " + UserRoleEnum.valuesText());
 
         // 防锁死守卫：管理员不能把自己封禁、也不能把自己降级。
-        // 权限判定每次都查库（见 StpInterfaceImpl），一旦自己失去 admin 角色会**立刻**无法管理，
+        // 权限判定每次都查库（见 StpInterfaceImpl），一旦自己失去 admin 角色会立刻无法管理，
         // 而且此时已经没有任何管理员能通过接口把你改回来，只能去数据库修数据
         if (Objects.equals(id, StpUtil.getLoginIdAsLong())) {
             ThrowUtils.throwIf(Integer.valueOf(USER_STATUS_BANNED).equals(userUpdateRequest.getUserStatus()),
@@ -471,12 +443,10 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         return updated;
     }
 
-    /**
-     * 管理员按 id 查用户详情（返回脱敏 VO，接口契约见 UserService）
-     *
-     * @param id 用户 ID
-     * @return 用户信息；不存在时抛 A0402，不返回 null
-     */
+    // 管理员按 id 查用户详情（返回脱敏 VO，接口契约见 UserService）
+    //
+    // @param id 用户 ID
+    // @return 用户信息；不存在时抛 A0402，不返回 null
     @Override
     public UserVO getUserById(long id) {
         SysUser user = this.getById(id);
@@ -485,14 +455,12 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         return this.getUserVO(user);
     }
 
-    /**
-     * 管理员删除用户（逻辑删除，接口契约见 UserService）
-     *
-     * <p>守卫：不能删除当前登录账号——删掉自己会立刻失去管理端权限，且无法自行恢复。
-     *
-     * @param id 用户 ID
-     * @return true 表示删除成功
-     */
+    // 管理员删除用户（逻辑删除，接口契约见 UserService）
+    //
+    // 守卫：不能删除当前登录账号——删掉自己会立刻失去管理端权限，且无法自行恢复。
+    //
+    // @param id 用户 ID
+    // @return true 表示删除成功
     @Override
     public boolean deleteUser(long id) {
         // 防误删守卫：删掉自己会立刻失去管理端权限（权限判定实时查库），且无法自行恢复
@@ -515,16 +483,14 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         return removed;
     }
 
-    /**
-     * 管理端分页查询（接口契约见 UserService）
-     *
-     * <p>分页与排序参数在这里做兜底纠正：页码 < 1 视为 1、每页条数收敛到 50、
-     * 排序字段走 {@code applySort} 的白名单（防 ORDER BY 注入）。
-     * 刻意不做"参数非法就报错"，避免把"页码传错"变成 B0001 系统错误。
-     *
-     * @param userQueryRequest 查询条件，允许为 null（无条件查第一页）
-     * @return 分页结果，记录为管理端 VO
-     */
+    // 管理端分页查询（接口契约见 UserService）
+    //
+    // 分页与排序参数在这里做兜底纠正：页码 < 1 视为 1、每页条数收敛到 50、
+    // 排序字段走 applySort 的白名单（防 ORDER BY 注入）。
+    // 刻意不做"参数非法就报错"，避免把"页码传错"变成 B0001 系统错误。
+    //
+    // @param userQueryRequest 查询条件，允许为 null（无条件查第一页）
+    // @return 分页结果，记录为管理端 VO
     @Override
     public Page<UserVO> listUserByPage(UserQueryRequest userQueryRequest) {
         UserQueryRequest query = userQueryRequest == null ? new UserQueryRequest() : userQueryRequest;
@@ -553,12 +519,10 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         return toUserVOPage(entityPage);
     }
 
-    /**
-     * 实体转管理端 VO（含角色与状态，不含密码）
-     *
-     * @param user 用户实体，允许为 null
-     * @return VO；入参为 null 时返回 null
-     */
+    // 实体转管理端 VO（含角色与状态，不含密码）
+    //
+    // @param user 用户实体，允许为 null
+    // @return VO；入参为 null 时返回 null
     @Override
     public UserVO getUserVO(SysUser user) {
         if (user == null) {
@@ -572,11 +536,9 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
 
     // ==================== 私有工具方法 ====================
 
-    /**
-     * 校验账号未被占用
-     *
-     * @param userAccount 待校验账号
-     */
+    // 校验账号未被占用
+    //
+    // @param userAccount 待校验账号
     private void assertAccountNotExists(String userAccount) {
         // count 而不是 selectOne：只需要判断存在性，避免把整行数据查回内存
         LambdaQueryWrapper<SysUser> queryWrapper = new LambdaQueryWrapper<>();
@@ -589,11 +551,9 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         ThrowUtils.throwIf(count > 0, ErrorCode.PARAMS_ERROR, "账号已存在");
     }
 
-    /**
-     * 注册限流：按 IP 双窗口计数，超限抛 A0501
-     *
-     * <p>开关关闭（测试环境由 surefire 统一置 false）时直接放行。
-     */
+    // 注册限流：按 IP 双窗口计数，超限抛 A0501
+    //
+    // 开关关闭（测试环境由 surefire 统一置 false）时直接放行。
     private void assertRegisterRateAllowed(String remoteAddr, String xRealIp, String xForwardedFor) {
         if (Boolean.FALSE.equals(authRateLimitProperties.getEnabled())) {
             return;
@@ -604,12 +564,10 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
                 authRateLimitProperties.getRegisterDailyLimit(), "注册");
     }
 
-    /**
-     * 登录限流：按 IP 双窗口计数，超限抛 A0501
-     *
-     * <p>与注册限流的差别只是阈值与键前缀（被登录限流不该连带堵死注册，反之亦然）。
-     * 开关关闭（测试环境）时直接放行。
-     */
+    // 登录限流：按 IP 双窗口计数，超限抛 A0501
+    //
+    // 与注册限流的差别只是阈值与键前缀（被登录限流不该连带堵死注册，反之亦然）。
+    // 开关关闭（测试环境）时直接放行。
     private void assertLoginRateAllowed(String remoteAddr, String xRealIp, String xForwardedFor) {
         if (Boolean.FALSE.equals(authRateLimitProperties.getEnabled())) {
             return;
@@ -620,13 +578,11 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
                 authRateLimitProperties.getLoginDailyLimit(), "登录");
     }
 
-    /**
-     * 解析角色：空值用兜底角色，非法值直接报错
-     *
-     * @param userRole    前端传入的角色，可为空
-     * @param defaultRole 兜底角色
-     * @return 角色枚举
-     */
+    // 解析角色：空值用兜底角色，非法值直接报错
+    //
+    // @param userRole 前端传入的角色，可为空
+    // @param defaultRole 兜底角色
+    // @return 角色枚举
     private UserRoleEnum resolveRole(String userRole, UserRoleEnum defaultRole) {
         if (StrUtil.isBlank(userRole)) {
             return defaultRole;
@@ -637,17 +593,6 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         return role;
     }
 
-    /**
-     * 应用排序规则（白名单映射）
-     *
-     * <p>关键点：前端只能传「字段名」，由这里映射成实体字段引用。
-     * 如果把前端字符串直接拼进 SQL 的 ORDER BY，就是最典型的 SQL 注入入口，
-     * 而且 ORDER BY 位置无法用占位符参数化，只能靠白名单。
-     *
-     * @param wrapper   查询包装类
-     * @param sortField 排序字段名，可为空
-     * @param sortOrder 排序方向 asc/desc，可为空
-     */
     private void applySort(LambdaQueryWrapper<SysUser> wrapper, String sortField, String sortOrder) {
         boolean isAsc = "asc".equalsIgnoreCase(sortOrder);
         switch (sortField == null ? "" : sortField) {
@@ -662,35 +607,29 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         }
     }
 
-    /**
-     * 实体分页结果转 VO 分页结果
-     *
-     * @param entityPage 实体分页
-     * @return VO 分页（保留 total/size/current，前端分页组件依赖这三个值）
-     */
+    // 实体分页结果转 VO 分页结果
+    //
+    // @param entityPage 实体分页
+    // @return VO 分页（保留 total/size/current，前端分页组件依赖这三个值）
     private Page<UserVO> toUserVOPage(Page<SysUser> entityPage) {
         Page<UserVO> voPage = new Page<>(entityPage.getCurrent(), entityPage.getSize(), entityPage.getTotal());
         voPage.setRecords(entityPage.getRecords().stream().map(this::getUserVO).toList());
         return voPage;
     }
 
-    /**
-     * 判断用户是否已被封禁
-     *
-     * @param user 用户实体
-     * @return 状态为封禁返回 true
-     */
+    // 判断用户是否已被封禁
+    //
+    // @param user 用户实体
+    // @return 状态为封禁返回 true
     private boolean isBanned(SysUser user) {
         return user.getUserStatus() != null && user.getUserStatus() == USER_STATUS_BANNED;
     }
 
-    /**
-     * 空白字符串替换为默认值（账号、昵称等场景）
-     *
-     * @param value        原值，可为 null/空白
-     * @param defaultValue 默认值
-     * @return 原值非空白时返回原值，否则返回默认值
-     */
+    // 空白字符串替换为默认值（账号、昵称等场景）
+    //
+    // @param value 原值，可为 null/空白
+    // @param defaultValue 默认值
+    // @return 原值非空白时返回原值，否则返回默认值
     private String blankToDefault(String value, String defaultValue) {
         return StrUtil.isBlank(value) ? defaultValue : value;
     }

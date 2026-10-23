@@ -28,91 +28,73 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * 成员服务实现
- *
- * author: shaoshing
- *
- * <p>沿用了 {@link UserServiceImpl} 的三条范式，先读那一份再读这里会更快：
- * <ol>
- *     <li>校验统一走 {@code ThrowUtils.throwIf}，条件成立即抛，本类不写 try-catch
- *     （唯一例外是唯一索引冲突，见下）；</li>
- *     <li>分页参数兜底纠正（页码 &lt; 1 视为 1、pageSize 上限 50），而不是抛异常；</li>
- *     <li>排序字段走白名单 switch 映射，绝不把前端字符串拼进 SQL。</li>
- * </ol>
- *
- * <p><b>本模块特有的四个考点</b>（面试高频，逐条看注释）：
- * <ul>
- *     <li><b>user_id 可选绑定</b>：非空时必须「账号存在」且「未被其他成员绑定」；
- *     并发竞态靠唯一索引 {@code uk_userid_deleted} 兜底 —— 所以 seed 里必须 catch
- *     {@link DuplicateKeyException} 并换成可读提示，否则前端只会看到 B0001「系统错误」；</li>
- *     <li><b>grade_year 是 smallint</b>：用 Integer + 区间校验（1950~2100），
- *     拒绝「2026级」这类字符串输入（Jackson 反序列化阶段就会失败）；</li>
- *     <li><b>team_position / member_status 走枚举校验</b>：非法值入库会让筛选与渲染静默出错；</li>
- *     <li><b>默认排序是 sort_order 倒序</b>（官网置顶权重），不是 id 倒序；
- *     并追加 id 倒序作为最终排序键，保证 sort_order 相同的行在分页时次序稳定。</li>
- * </ul>
- *
- * <p>事务说明：单条 insert / update 是一次写，数据库自身的原子性已足够，因此不加事务；
- * 而 {@link #deleteMember} 是「清理关联表 + 逻辑删除主表」两次写，
- * 已加 {@code @Transactional(rollbackFor = Exception.class)}（DESIGN.md 2.2）。
- * 写 {@code rollbackFor = Exception.class} 的原因：Spring 默认只回滚 RuntimeException，
- * 受检异常（如 SQLException 的包装）不回滚，显式声明才能覆盖全部情况。
- */
+// 成员服务实现
+//
+// 沿用了 UserServiceImpl 的三条范式，先读那一份再读这里会更快：
+// - 校验统一走 ThrowUtils.throwIf，条件成立即抛，本类不写 try-catch
+// （唯一例外是唯一索引冲突，见下）；
+// - 分页参数兜底纠正（页码 < 1 视为 1、pageSize 上限 50），而不是抛异常；
+// - 排序字段走白名单 switch 映射，绝不把前端字符串拼进 SQL。
+//
+// 本模块特有的四个考点（面试高频，逐条看注释）：
+// - user_id 可选绑定：非空时必须「账号存在」且「未被其他成员绑定」；
+// 并发竞态靠唯一索引 uk_userid_deleted 兜底 —— 所以 seed 里必须 catch
+// DuplicateKeyException 并换成可读提示，否则前端只会看到 B0001「系统错误」；
+// - grade_year 是 smallint：用 Integer + 区间校验（1950~2100），
+// 拒绝「2026级」这类字符串输入（Jackson 反序列化阶段就会失败）；
+// - team_position / member_status 走枚举校验：非法值入库会让筛选与渲染静默出错；
+// - 默认排序是 sort_order 倒序（官网置顶权重），不是 id 倒序；
+// 并追加 id 倒序作为最终排序键，保证 sort_order 相同的行在分页时次序稳定。
+//
+// 事务说明：单条 insert / update 是一次写，数据库自身的原子性已足够，因此不加事务；
+// 而 #deleteMember 是「清理关联表 + 逻辑删除主表」两次写，
+// 已加 @Transactional(rollbackFor = Exception.class)（DESIGN.md 2.2）。
+// 写 rollbackFor = Exception.class 的原因：Spring 默认只回滚 RuntimeException，
+// 受检异常（如 SQLException 的包装）不回滚，显式声明才能覆盖全部情况。
 @Service
 @RequiredArgsConstructor
 public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, StudioMember>
         implements StudioMemberService {
 
-    /** 入学年份合理区间，必须与 MemberAddRequest / MemberUpdateRequest 上的 @Min/@Max 保持一致 */
+    // 入学年份合理区间，必须与 MemberAddRequest / MemberUpdateRequest 上的 @Min/@Max 保持一致
     private static final int GRADE_YEAR_MIN = 1950;
     private static final int GRADE_YEAR_MAX = 2100;
 
-    /** 分页每页条数的默认值与上限（上限用来防「一次拉全表」） */
+    // 分页每页条数的默认值与上限（上限用来防「一次拉全表」）
     private static final long DEFAULT_PAGE_SIZE = 10L;
     private static final long MAX_PAGE_SIZE = 50L;
 
-    /** 置顶权重不传时的默认值（0 表示不置顶，与 DDL 默认值一致） */
+    // 置顶权重不传时的默认值（0 表示不置顶，与 DDL 默认值一致）
     private static final int DEFAULT_SORT_ORDER = 0;
 
-    /**
-     * 成员档案与登录账号的绑定关系维护在 studio_member.user_id 上，
-     * 校验「账号是否存在」需要查 sys_user，故注入它的 Mapper
-     */
+    // 成员档案与登录账号的绑定关系维护在 studio_member.user_id 上，
+    // 校验「账号是否存在」需要查 sys_user，故注入它的 Mapper
     private final SysUserMapper sysUserMapper;
 
-    /**
-     * 成员-证书关联服务：删除成员时要级联清理关联关系
-     *
-     * <p>依赖方向是单向的（本类 → 关联服务），不会构成循环依赖：
-     * {@code MemberCertificateServiceImpl} 只注入 Mapper，不依赖本类。
-     */
+    // 成员-证书关联服务：删除成员时要级联清理关联关系
+    //
+    // 依赖方向是单向的（本类 → 关联服务），不会构成循环依赖：
+    // MemberCertificateServiceImpl 只注入 Mapper，不依赖本类。
     private final MemberCertificateService memberCertificateService;
 
-    /**
-     * 成员-项目关联服务：删除成员时同样要级联清理
-     *
-     * <p>与上面同一个道理：{@code MemberProjectServiceImpl} 只注入 Mapper，
-     * 它自己不会被本类依赖回去，因此不构成循环依赖。
-     */
+    // 成员-项目关联服务：删除成员时同样要级联清理
+    //
+    // 与上面同一个道理： MemberProjectServiceImpl 只注入 Mapper，
+    // 它自己不会被本类依赖回去，因此不构成循环依赖。
     private final MemberProjectService memberProjectService;
 
     // ==================== 管理端：调用方必须已通过 @SaCheckRole("admin") ====================
 
-    /**
-     * 新增成员档案（接口契约见 StudioMemberService）
-     *
-     * <p>这里补充三件**接口文档之外**的实现要点：
-     * <ul>
-     *     <li>入学年份、职务、状态三处校验与更新接口走同一套规则，杜绝两套标准；</li>
-     *     <li>绑定账号必须过 {@code assertUserBindable}：先确认账号存在、再确认没被别的档案占用；</li>
-     *     <li><b>并发兜底</b>：两个请求同时通过上面的校验时，后到的会被唯一索引拦下抛
-     *     {@code DuplicateKeyException}，这里必须翻成可读提示，否则会落到全局兜底变成 B0001。</li>
-     * </ul>
-     *
-     * @param memberAddRequest 新增请求（姓名必填）
-     * @return 新成员档案 ID
-     */
+    // 新增成员档案（接口契约见 StudioMemberService）
+    //
+    // 这里补充三件接口文档之外的实现要点：
+    // - 入学年份、职务、状态三处校验与更新接口走同一套规则，杜绝两套标准；
+    // - 绑定账号必须过 assertUserBindable：先确认账号存在、再确认没被别的档案占用；
+    // - 并发兜底：两个请求同时通过上面的校验时，后到的会被唯一索引拦下抛
+    // DuplicateKeyException，这里必须翻成可读提示，否则会落到全局兜底变成 B0001。
+    //
+    // @param memberAddRequest 新增请求（姓名必填）
+    // @return 新成员档案 ID
     @Override
     public long addMember(MemberAddRequest memberAddRequest) {
         ThrowUtils.throwIf(memberAddRequest == null || StrUtil.isBlank(memberAddRequest.getName()),
@@ -159,18 +141,16 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
         return member.getId();
     }
 
-    /**
-     * 更新成员档案（部分更新，接口契约见 StudioMemberService）
-     *
-     * <p><b>安全要点</b>：更新字段是**服务端写死的白名单**，只 set 允许修改的字段，
-     * 绝不接收前端实体整体更新——否则前端能顺手改动 deletedAt、审计字段等内部数据。
-     *
-     * <p>与新增的两处差异：① 改绑账号时要「排除自身」再判唯一性；
-     * ② 同样要接住 {@code DuplicateKeyException} 竞态。
-     *
-     * @param memberUpdateRequest 更新请求（id 必填）
-     * @return true 表示更新成功
-     */
+    // 更新成员档案（部分更新，接口契约见 StudioMemberService）
+    //
+    // 安全要点：更新字段是服务端写死的白名单，只 set 允许修改的字段，
+    // 绝不接收前端实体整体更新——否则前端能顺手改动 deletedAt、审计字段等内部数据。
+    //
+    // 与新增的两处差异：① 改绑账号时要「排除自身」再判唯一性；
+    // ② 同样要接住 DuplicateKeyException 竞态。
+    //
+    // @param memberUpdateRequest 更新请求（id 必填）
+    // @return true 表示更新成功
     @Override
     public boolean updateMember(MemberUpdateRequest memberUpdateRequest) {
         ThrowUtils.throwIf(memberUpdateRequest == null || memberUpdateRequest.getId() == null,
@@ -227,12 +207,10 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
         }
     }
 
-    /**
-     * 按 id 查成员详情（返回管理端 VO，接口契约见 StudioMemberService）
-     *
-     * @param id 成员 ID
-     * @return 成员信息；不存在时抛 A0402，不返回 null
-     */
+    // 按 id 查成员详情（返回管理端 VO，接口契约见 StudioMemberService）
+    //
+    // @param id 成员 ID
+    // @return 成员信息；不存在时抛 A0402，不返回 null
     @Override
     public MemberVO getMemberById(long id) {
         StudioMember member = this.getById(id);
@@ -241,16 +219,14 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
         return this.getMemberVO(member);
     }
 
-    /**
-     * 删除成员（逻辑删除 + 级联清理关联表，接口契约见 StudioMemberService）
-     *
-     * <p>两次写（清理关联表 + 逻辑删除主表）必须在<b>同一事务</b>内完成：
-     * 如果先清关联、主表删除失败，成员还在但证书关系没了（数据静默丢失）；
-     * 如果先删主表、清理失败，就留下指向已删除成员的悬空关联（DESIGN.md 2.2 明确禁止）。
-     *
-     * @param id 成员 ID
-     * @return true 表示删除成功
-     */
+    // 删除成员（逻辑删除 + 级联清理关联表，接口契约见 StudioMemberService）
+    //
+    // 两次写（清理关联表 + 逻辑删除主表）必须在同一事务内完成：
+    // 如果先清关联、主表删除失败，成员还在但证书关系没了（数据静默丢失）；
+    // 如果先删主表、清理失败，就留下指向已删除成员的悬空关联（DESIGN.md 2.2 明确禁止）。
+    //
+    // @param id 成员 ID
+    // @return true 表示删除成功
     @Override
     @Transactional(rollbackFor = Exception.class)
     public boolean deleteMember(long id) {
@@ -258,7 +234,7 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
         ThrowUtils.throwIf(existing == null, ErrorCode.NOT_FOUND_ERROR, "成员不存在");
 
         // 同一事务内先清关联，再逻辑删除主表（DESIGN.md 2.2）。
-        // 注意这里是**两张**关联表：成员-证书与成员-项目，
+        // 注意这里是两张关联表：成员-证书与成员-项目，
         // 必须都清——只清一张就会留下指向已删除成员的悬空关联，
         // 表现为「某个已删除的成员还出现在项目参与人列表里」。
         // 两个 removeByXxxId 都是物理删除：关联表没有 deleted_at，也不该有
@@ -270,16 +246,14 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
         return this.removeById(id);
     }
 
-    /**
-     * 管理端分页查询（接口契约见 StudioMemberService）
-     *
-     * <p>分页参数在这里做兜底纠正（页码 < 1 视为 1、每页条数收敛到上限），
-     * 而不是靠 DTO 校验报错：传错页码没必要让整个查询失败，
-     * 而且 GET 参数校验失败抛的是 BindException，会落到全局兜底变成 B0001。
-     *
-     * @param memberQueryRequest 查询条件，允许为 null（无条件查第一页）
-     * @return 分页结果，记录为管理端 VO
-     */
+    // 管理端分页查询（接口契约见 StudioMemberService）
+    //
+    // 分页参数在这里做兜底纠正（页码 < 1 视为 1、每页条数收敛到上限），
+    // 而不是靠 DTO 校验报错：传错页码没必要让整个查询失败，
+    // 而且 GET 参数校验失败抛的是 BindException，会落到全局兜底变成 B0001。
+    //
+    // @param memberQueryRequest 查询条件，允许为 null（无条件查第一页）
+    // @return 分页结果，记录为管理端 VO
     @Override
     public Page<MemberVO> listMemberByPage(MemberQueryRequest memberQueryRequest) {
         MemberQueryRequest query = memberQueryRequest == null ? new MemberQueryRequest() : memberQueryRequest;
@@ -302,16 +276,14 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
     //
     // 这里保留一条原来的性能纪律（对将来任何列表聚合都适用）：
     // 若要让「成员列表」显示每人证书数，绝不能写成
-    // {@code for (成员 m : 列表) { countByMember(m.id) }}（标准 N+1，一页 50 条 = 50 次查询），
-    // 正确做法是一次 {@code SELECT member_id, COUNT(*) ... WHERE member_id IN (...) GROUP BY member_id}，
-    // 用 {@code selectMaps} 拿回 Map 后在内存里拼。
+    //  for (成员 m : 列表) { countByMember(m.id) }（标准 N+1，一页 50 条 = 50 次查询），
+    // 正确做法是一次  SELECT member_id, COUNT(*) ... WHERE member_id IN (...) GROUP BY member_id，
+    // 用  selectMaps 拿回 Map 后在内存里拼。
 
-    /**
-     * 实体转管理端 VO（含全部字段，只给管理员看）
-     *
-     * @param member 成员实体，允许为 null
-     * @return VO；入参为 null 时返回 null
-     */
+    // 实体转管理端 VO（含全部字段，只给管理员看）
+    //
+    // @param member 成员实体，允许为 null
+    // @return VO；入参为 null 时返回 null
     @Override
     public MemberVO getMemberVO(StudioMember member) {
         if (member == null) {
@@ -323,16 +295,14 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
         return memberVO;
     }
 
-    /**
-     * 实体转 C 端展示 VO（游客可见）
-     *
-     * <p>脱敏靠**目标 VO 的字段结构**实现：VO 里没有 userId / sortOrder / createdBy /
-     * updatedBy / deletedAt 这些字段，所以 copyProperties 天然拷不过去。
-     * 比「拷完再手动置空某些字段」可靠得多——新增敏感字段时不会被漏掉。
-     *
-     * @param member 成员实体，允许为 null
-     * @return VO；入参为 null 时返回 null
-     */
+    // 实体转 C 端展示 VO（游客可见）
+    //
+    // 脱敏靠目标 VO 的字段结构实现：VO 里没有 userId / sortOrder / createdBy /
+    // updatedBy / deletedAt 这些字段，所以 copyProperties 天然拷不过去。
+    // 比「拷完再手动置空某些字段」可靠得多——新增敏感字段时不会被漏掉。
+    //
+    // @param member 成员实体，允许为 null
+    // @return VO；入参为 null 时返回 null
     @Override
     public MemberFrontVO getMemberFrontVO(StudioMember member) {
         if (member == null) {
@@ -340,7 +310,7 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
         }
         MemberFrontVO memberFrontVO = new MemberFrontVO();
         // 关键安全点：目标 VO 中没有 userId / sortOrder / createdBy / updatedBy / deletedAt 字段，
-        // 因此即使实体里有这些内部信息，copyProperties 也**不可能**把它们带出去——
+        // 因此即使实体里有这些内部信息，copyProperties 也不可能把它们带出去——
         // 这是「结构上脱敏」，比在同一个 VO 里写 if 判断字段更不容易出错
         BeanUtils.copyProperties(member, memberFrontVO);
         return memberFrontVO;
@@ -348,20 +318,16 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
 
     // ==================== 考勤模块依赖：按登录账号查在队成员 ====================
 
-    /**
-     * 按绑定的登录账号查在队成员（接口契约见 StudioMemberService）
-     *
-     * <p>条件有两条，缺一不可：
-     * <ul>
-     *     <li>{@code user_id = ?}：成员必须绑定了这个登录账号（未绑定的档案 user_id 是 NULL）；</li>
-     *     <li>{@code member_status = 0}：<b>在队</b>。毕业/离队（1）的成员不再有考勤资格，
-     *     但他们既不报错也不该静默通过——这个条件就是那道门槛。</li>
-     * </ul>
-     * 第三重条件 {@code deleted_at = 0} 由 {@code @TableLogic} 自动追加，不需要手写。
-     *
-     * @param userId 登录账号 ID，为 null 返回 null
-     * @return 在队成员档案；查不到返回 null
-     */
+    // 按绑定的登录账号查在队成员（接口契约见 StudioMemberService）
+    //
+    // 条件有两条，缺一不可：
+    // - user_id = ?：成员必须绑定了这个登录账号（未绑定的档案 user_id 是 NULL）；
+    // - member_status = 0：在队。毕业/离队（1）的成员不再有考勤资格，
+    // 但他们既不报错也不该静默通过——这个条件就是那道门槛。
+    // 第三重条件 deleted_at = 0 由 @TableLogic 自动追加，不需要手写。
+    //
+    // @param userId 登录账号 ID，为 null 返回 null
+    // @return 在队成员档案；查不到返回 null
     @Override
     public StudioMember getActiveMemberByUserId(Long userId) {
         if (userId == null) {
@@ -380,12 +346,10 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
 
     // ==================== 私有工具方法 ====================
 
-    /**
-     * 构建筛选条件（管理端与 C 端共用，保证两边筛选语义完全一致）
-     *
-     * @param query 查询条件
-     * @return 查询包装类
-     */
+    // 构建筛选条件（管理端与 C 端共用，保证两边筛选语义完全一致）
+    //
+    // @param query 查询条件
+    // @return 查询包装类
     private LambdaQueryWrapper<StudioMember> buildQueryWrapper(MemberQueryRequest query) {
         LambdaQueryWrapper<StudioMember> wrapper = new LambdaQueryWrapper<>();
         // 条件重载的第一个参数为 false 时该条件不会拼进 SQL，省去手写 if 判断
@@ -401,17 +365,15 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
         return wrapper;
     }
 
-    /**
-     * 应用排序规则（白名单映射）
-     *
-     * <p>关键点：前端只能传「字段名」，由这里映射成实体字段引用。
-     * 如果把前端字符串直接拼进 SQL 的 ORDER BY，就是最典型的 SQL 注入入口，
-     * 而且 ORDER BY 位置无法用占位符参数化，只能靠白名单。
-     *
-     * @param wrapper   查询包装类
-     * @param sortField 排序字段名，可为空
-     * @param sortOrder 排序方向 asc/desc，可为空
-     */
+    // 应用排序规则（白名单映射）
+    //
+    // 关键点：前端只能传「字段名」，由这里映射成实体字段引用。
+    // 如果把前端字符串直接拼进 SQL 的 ORDER BY，就是最典型的 SQL 注入入口，
+    // 而且 ORDER BY 位置无法用占位符参数化，只能靠白名单。
+    //
+    // @param wrapper 查询包装类
+    // @param sortField 排序字段名，可为空
+    // @param sortOrder 排序方向 asc/desc，可为空
     private void applySort(LambdaQueryWrapper<StudioMember> wrapper, String sortField, String sortOrder) {
         boolean isAsc = "asc".equalsIgnoreCase(sortOrder);
         switch (sortField == null ? "" : sortField) {
@@ -425,18 +387,16 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
             case "sortOrder" -> wrapper.orderBy(true, isAsc, StudioMember::getSortOrder)
                     .orderByDesc(StudioMember::getId);
             // 默认按 sort_order 倒序（官网置顶权重，数值越大越靠前）。
-            // 注意不能沿用用户模块的「id 倒序」默认值：成员列表是**运营排序**，
+            // 注意不能沿用用户模块的「id 倒序」默认值：成员列表是运营排序，
             // 置顶是产品明确要求的能力，id 倒序（≈创建时间倒序）只作为次级稳定键
             default -> wrapper.orderByDesc(StudioMember::getSortOrder)
                     .orderByDesc(StudioMember::getId);
         }
     }
 
-    /**
-     * 校验入学年份在合理区间
-     *
-     * @param gradeYear 入学年份
-     */
+    // 校验入学年份在合理区间
+    //
+    // @param gradeYear 入学年份
     private void assertGradeYearValid(Integer gradeYear) {
         // grade_year 是 smallint 列：这里挡的是「1800」「3200」这类业务上不可能的值；
         // 「2026级」这类字符串在 JSON 反序列化阶段就已失败（A0401），不会走到这里
@@ -444,13 +404,11 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
                 ErrorCode.PARAMS_ERROR, "入学年份不合法，需在 " + GRADE_YEAR_MIN + "-" + GRADE_YEAR_MAX + " 之间");
     }
 
-    /**
-     * 解析团队职务：空值用兜底职务，非法值直接报错
-     *
-     * @param teamPosition    前端传入的职务，可为空
-     * @param defaultPosition 兜底职务
-     * @return 职务枚举
-     */
+    // 解析团队职务：空值用兜底职务，非法值直接报错
+    //
+    // @param teamPosition 前端传入的职务，可为空
+    // @param defaultPosition 兜底职务
+    // @return 职务枚举
     private TeamPositionEnum resolveTeamPosition(String teamPosition, TeamPositionEnum defaultPosition) {
         if (StrUtil.isBlank(teamPosition)) {
             return defaultPosition;
@@ -461,13 +419,11 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
         return position;
     }
 
-    /**
-     * 解析成员状态：空值用兜底状态，非法值直接报错
-     *
-     * @param memberStatus    前端传入的状态，可为空
-     * @param defaultStatus   兜底状态
-     * @return 状态枚举
-     */
+    // 解析成员状态：空值用兜底状态，非法值直接报错
+    //
+    // @param memberStatus 前端传入的状态，可为空
+    // @param defaultStatus 兜底状态
+    // @return 状态枚举
     private MemberStatusEnum resolveMemberStatus(Integer memberStatus, MemberStatusEnum defaultStatus) {
         if (memberStatus == null) {
             return defaultStatus;
@@ -478,12 +434,10 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
         return status;
     }
 
-    /**
-     * 校验账号可绑定：必须存在，且未被其他成员档案占用
-     *
-     * @param userId       待绑定的账号 id，为 null 表示不绑定（直接通过）
-     * @param selfMemberId 当前成员 id，新增时传 null；更新时传自身的 id（用于排除自己）
-     */
+    // 校验账号可绑定：必须存在，且未被其他成员档案占用
+    //
+    // @param userId 待绑定的账号 id，为 null 表示不绑定（直接通过）
+    // @param selfMemberId 当前成员 id，新增时传 null；更新时传自身的 id（用于排除自己）
     private void assertUserBindable(Long userId, Long selfMemberId) {
         if (userId == null) {
             return;
@@ -508,14 +462,12 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
         ThrowUtils.throwIf(count > 0, ErrorCode.PARAMS_ERROR, "该账号已被其他成员绑定");
     }
 
-    /**
-     * 构造分页对象：页码与每页条数做兜底纠正（而不是抛异常）
-     *
-     * <p>管理端与 C 端共用这一份规则，避免出现「后台一页 10 条、官网一页 20 条」的两套标准。
-     *
-     * @param query 查询条件
-     * @return 分页对象（searchCount 保持默认 true，即会执行 COUNT 查询）
-     */
+    // 构造分页对象：页码与每页条数做兜底纠正（而不是抛异常）
+    //
+    // 管理端与 C 端共用这一份规则，避免出现「后台一页 10 条、官网一页 20 条」的两套标准。
+    //
+    // @param query 查询条件
+    // @return 分页对象（searchCount 保持默认 true，即会执行 COUNT 查询）
     private Page<StudioMember> newPageWithDefaults(MemberQueryRequest query) {
         // 页码传错没必要让整个查询失败，收敛到合理区间继续查
         long current = (query.getCurrent() == null || query.getCurrent() < 1) ? 1L : query.getCurrent();
@@ -527,12 +479,10 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
         return new Page<>(current, pageSize);
     }
 
-    /**
-     * 实体分页结果转 VO 分页结果
-     *
-     * @param entityPage 实体分页
-     * @return VO 分页（保留 total/current/size，前端分页组件依赖这三个值）
-     */
+    // 实体分页结果转 VO 分页结果
+    //
+    // @param entityPage 实体分页
+    // @return VO 分页（保留 total/current/size，前端分页组件依赖这三个值）
     private Page<MemberVO> toMemberVOPage(Page<StudioMember> entityPage) {
         Page<MemberVO> voPage = new Page<>(entityPage.getCurrent(), entityPage.getSize(), entityPage.getTotal());
         voPage.setRecords(entityPage.getRecords().stream().map(this::getMemberVO).toList());

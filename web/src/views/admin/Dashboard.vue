@@ -7,21 +7,19 @@ import { portalApi } from '@/api/portal';
 import { trafficApi } from '@/api/traffic';
 import type { Overview, TrafficOverview } from '@/api/types';
 
-/**
- * 管理后台 · 首页概览
- *
- * <p><b>定位</b>：管理员登录后落地的第一屏——「有多少事等着我处理」比任何功能入口都重要。
- * `/admin` 不跳成员列表而落地待审队列：看不到积压，就容易漏掉最紧急的事。
- *
- * <p><b>全部复用现有接口，不新增后端</b>：待审帖子 / 待审评论 / 用户 / 成员 / 证书 / 知识库文档
- * 六项计数，分别来自既有的管理端分页接口（pageSize=1 只取 total）与官网大盘接口。
- *
- * <p><b>失败隔离</b>：六项计数并行请求，任何一项失败只让那一张卡片显示「—」，
- * 不拖垮整页——概览页挂掉会比没有概览更糟（它还是登录后的落地页）。
- */
+// 管理后台 · 首页概览
+//
+// 定位：管理员登录后落地的第一屏——「有多少事等着我处理」比任何功能入口都重要。
+// `/admin` 不跳成员列表而落地待审队列：看不到积压，就容易漏掉最紧急的事。
+//
+// 全部复用现有接口，不新增后端：待审帖子 / 待审评论 / 用户 / 成员 / 证书 / 知识库文档
+// 六项计数，分别来自既有的管理端分页接口（pageSize=1 只取 total）与官网大盘接口。
+//
+// 失败隔离：六项计数并行请求，任何一项失败只让那一张卡片显示「—」，
+// 不拖垮整页——概览页挂掉会比没有概览更糟（它还是登录后的落地页）。
 const router = useRouter();
 
-/** 单项计数：value 为 null 表示「取数失败」，与「真的是 0」是两回事 */
+// 单项计数：value 为 null 表示「取数失败」，与「真的是 0」是两回事
 interface CountCard {
     key: string;
     label: string;
@@ -43,7 +41,7 @@ const overview = ref<Overview | null>(null);
 const traffic = ref<TrafficOverview | null>(null);
 const loading = ref(false);
 
-/** 证书级别的中文映射：与官网荣誉墙同一套（后端存英文枚举） */
+// 证书级别的中文映射：与官网荣誉墙同一套（后端存英文枚举）
 const LEVEL_TEXT: Record<string, string> = { national: '国家级', provincial: '省级', municipal: '市级/校级' };
 const TYPE_TEXT: Record<string, string> = {
     competition: '学科竞赛',
@@ -52,7 +50,7 @@ const TYPE_TEXT: Record<string, string> = {
     paper: '论文',
 };
 
-/** 分布数据转有序数组：与「是否有数据」共用同一份，过滤掉 0 值维度 */
+// 分布数据转有序数组：与「是否有数据」共用同一份，过滤掉 0 值维度
 function entriesOf(source: Record<string, number> | undefined): [string, number][] {
     return Object.entries(source ?? {}).filter(([, value]) => value > 0);
 }
@@ -64,11 +62,9 @@ function setCard(key: string, value: number | null) {
     }
 }
 
-/**
- * 取一项计数，失败时落 null 而不是抛出
- *
- * <p>每项各自 catch：一项接口挂掉不应该让其余五项也变成「—」。
- */
+// 取一项计数，失败时落 null 而不是抛出
+//
+// 每项各自 catch：一项接口挂掉不应该让其余五项也变成「—」。
 async function countOf(key: string, loader: () => Promise<number>) {
     try {
         setCard(key, await loader());

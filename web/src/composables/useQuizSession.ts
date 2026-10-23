@@ -2,56 +2,52 @@ import { computed, ref } from 'vue';
 import { quizApi } from '@/api/quiz';
 import type { QuizMode, QuizQuestion, QuizVerdict } from '@/api/types';
 
-/**
- * 一轮刷题的状态机
- *
- * <p><b>为什么用 composable 而不是 Pinia store</b>：会话状态只属于当前页面，
- * 刷新后由 sessionStorage 恢复；放进全局 store 反而要处理「离开页面后何时清空」。
- * 项目里 Pinia 目前只承载登录态（`stores/user.ts`），保持这个边界。
- *
- * <p><b>为什么进度存在 sessionStorage</b>：服务端不持久化批次（题目不含答案，
- * 整批交给前端即可），所以刷新页面后只能靠本地恢复。用 sessionStorage 而不是
- * localStorage：关掉标签页就该结束这一轮，而不是下次打开还停在三周前的第 7 题。
- *
- * <p><b>三个 phase 的含义</b>：
- * <ul>
- *     <li>{@code idle}：还没选答案，或提交失败退回（保留已选）；</li>
- *     <li>{@code submitting}：请求在飞，选项与提交按钮禁用；</li>
- *     <li>{@code graded}：已拿到判定，选项<b>全部禁用</b>——防止「看到答案再改选」。</li>
- * </ul>
- *
- * <p><b>提交失败不本地判分</b>：判分是服务端的职责，前端兜底判分会与后端规则分叉
- * （例如多选题的部分分规则），而且用户会看到与统计不一致的结果。
- * 失败时回到 {@code idle}，由请求层统一弹提示。
- */
+// 一轮刷题的状态机
+//
+// 为什么用 composable 而不是 Pinia store：会话状态只属于当前页面，
+// 刷新后由 sessionStorage 恢复；放进全局 store 反而要处理「离开页面后何时清空」。
+// 项目里 Pinia 目前只承载登录态（`stores/user.ts`），保持这个边界。
+//
+// 为什么进度存在 sessionStorage：服务端不持久化批次（题目不含答案，
+// 整批交给前端即可），所以刷新页面后只能靠本地恢复。用 sessionStorage 而不是
+// localStorage：关掉标签页就该结束这一轮，而不是下次打开还停在三周前的第 7 题。
+//
+// 三个 phase 的含义：
+// - idle：还没选答案，或提交失败退回（保留已选）；
+// - submitting：请求在飞，选项与提交按钮禁用；
+// - graded：已拿到判定，选项全部禁用——防止「看到答案再改选」。
+//
+// 提交失败不本地判分：判分是服务端的职责，前端兜底判分会与后端规则分叉
+// （例如多选题的部分分规则），而且用户会看到与统计不一致的结果。
+// 失败时回到 idle，由请求层统一弹提示。
 export type QuizPhase = 'idle' | 'submitting' | 'graded';
 
-/** sessionStorage 的键：单数，因为同时只会有一轮 */
+// sessionStorage 的键：单数，因为同时只会有一轮
 export const QUIZ_STORAGE_KEY = 'quiz_batch';
 
-/** 存进 sessionStorage 的结构（题目不含答案，存浏览器无泄露风险） */
+// 存进 sessionStorage 的结构（题目不含答案，存浏览器无泄露风险）
 interface StoredBatch {
     batchId: string;
     mode: QuizMode;
     questions: QuizQuestion[];
-    /** 当前指针：第几题（0 起） */
+    // 当前指针：第几题（0 起）
     index: number;
-    /** 本轮已回答的题数（用于进度条与「本轮正确」） */
+    // 本轮已回答的题数（用于进度条与「本轮正确」）
     answered: number;
-    /** 本轮答对数 */
+    // 本轮答对数
     correct: number;
-    /** 已判定过的题：questionId → 判定结果（用于「上一题」回看） */
+    // 已判定过的题：questionId → 判定结果（用于「上一题」回看）
     verdicts: Record<string, QuizVerdict>;
 }
 
 export function useQuizSession() {
     const batch = ref<StoredBatch | null>(null);
     const phase = ref<QuizPhase>('idle');
-    /** 当前已选标签（单选只有一个字符） */
+    // 当前已选标签（单选只有一个字符）
     const chosen = ref<string>('');
-    /** 当前题的判定结果（graded 时才有值） */
+    // 当前题的判定结果（graded 时才有值）
     const verdict = ref<QuizVerdict | null>(null);
-    /** 提交失败的原因（空 = 正常） */
+    // 提交失败的原因（空 = 正常）
     const error = ref('');
 
     const current = computed<QuizQuestion | null>(() => {
@@ -67,15 +63,15 @@ export function useQuizSession() {
     const isFinished = computed(() => total.value > 0 && index.value >= total.value);
     const progress = computed(() => (total.value === 0 ? 0 : Math.round((index.value / total.value) * 100)));
 
-    /** 当前题是否已判定（决定选项禁用与「下一题」可用性） */
+    // 当前题是否已判定（决定选项禁用与「下一题」可用性）
     const isGraded = computed(() => phase.value === 'graded');
 
-    /** 当前题是否为多选（决定 radio / checkbox 与「点击即提交」） */
+    // 当前题是否为多选（决定 radio / checkbox 与「点击即提交」）
     const isMultiple = computed(() => current.value?.type === 1);
 
     // ==================== 持久化 ====================
 
-    /** 从 sessionStorage 恢复（刷新页面后接着答） */
+    // 从 sessionStorage 恢复（刷新页面后接着答）
     function restore(): boolean {
         try {
             const raw = sessionStorage.getItem(QUIZ_STORAGE_KEY);
@@ -114,7 +110,7 @@ export function useQuizSession() {
         }
     }
 
-    /** 清空本轮（结束或退出时调用） */
+    // 清空本轮（结束或退出时调用）
     function clear() {
         batch.value = null;
         phase.value = 'idle';
@@ -126,12 +122,10 @@ export function useQuizSession() {
 
     // ==================== 开始一轮 ====================
 
-    /**
-     * 开一批并进入答题
-     *
-     * @param params 开批参数（mode 必填）
-     * @return 是否成功；失败时 `error` 有值
-     */
+    // 开一批并进入答题
+    //
+    // @param params 开批参数（mode 必填）
+    // @return 是否成功；失败时 `error` 有值
     async function start(params: {
         mode: QuizMode;
         textbookName?: string;
@@ -166,14 +160,12 @@ export function useQuizSession() {
 
     // ==================== 选择与提交 ====================
 
-    /**
-     * 切换某个选项
-     *
-     * <p>单选：直接覆盖（只有一个值）；多选：加入或移除。
-     * 已判定时忽略——选项在 graded 阶段是禁用的，这里再挡一层防键盘事件绕过。
-     *
-     * @param label 选项标签（A–F）
-     */
+    // 切换某个选项
+    //
+    // 单选：直接覆盖（只有一个值）；多选：加入或移除。
+    // 已判定时忽略——选项在 graded 阶段是禁用的，这里再挡一层防键盘事件绕过。
+    //
+    // @param label 选项标签（A–F）
     function toggle(label: string) {
         if (phase.value !== 'idle') {
             return;
@@ -187,11 +179,9 @@ export function useQuizSession() {
         }
     }
 
-    /**
-     * 提交当前题
-     *
-     * @return 判定结果；失败时返回 null（`error` 有值，`phase` 回到 idle 且保留已选）
-     */
+    // 提交当前题
+    //
+    // @return 判定结果；失败时返回 null（`error` 有值，`phase` 回到 idle 且保留已选）
     async function submit(): Promise<QuizVerdict | null> {
         const data = batch.value;
         const question = current.value;
@@ -224,14 +214,12 @@ export function useQuizSession() {
         }
     }
 
-    /**
-     * 跳过当前题
-     *
-     * <p>跳过<b>不产生判定</b>、<b>不进错题本</b>、<b>不返回答案</b>。
-     * 前端直接前移指针即可——服务端只落一条「跳过过」的记录。
-     *
-     * @return 是否成功
-     */
+    // 跳过当前题
+    //
+    // 跳过不产生判定、不进错题本、不返回答案。
+    // 前端直接前移指针即可——服务端只落一条「跳过过」的记录。
+    //
+    // @return 是否成功
     async function skip(): Promise<boolean> {
         const data = batch.value;
         const question = current.value;
@@ -248,7 +236,7 @@ export function useQuizSession() {
         }
     }
 
-    /** 进入下一题（或结束本轮） */
+    // 进入下一题（或结束本轮）
     function next() {
         const data = batch.value;
         if (!data) {
@@ -264,11 +252,11 @@ export function useQuizSession() {
 
     // ==================== 本轮统计 ====================
 
-    /** 本轮已答数（不含跳过） */
+    // 本轮已答数（不含跳过）
     const answeredCount = computed(() => batch.value?.answered ?? 0);
-    /** 本轮答对数 */
+    // 本轮答对数
     const correctCount = computed(() => batch.value?.correct ?? 0);
-    /** 本轮正确率；未答时为 null（显示 "--"） */
+    // 本轮正确率；未答时为 null（显示 "--"）
     const accuracy = computed(() => {
         const answered = answeredCount.value;
         return answered === 0 ? null : correctCount.value / answered;

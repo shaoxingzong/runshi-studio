@@ -28,71 +28,54 @@ import org.springframework.web.bind.annotation.RequestParam;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * 成员接口：**只有管理端**（管理员增删改查）
- *
- * author: shaoshing
- *
- * <p><b>业务规则：团队成员不对外展示</b>。
- * 成员档案只作为<b>后台内部数据</b>存在，对外唯一的成员信息出口是项目详情里的「参与成员」。
- *
- * <p>Controller 的职责边界与 {@link UserController} 一致：只做三件事——接参、调 Service、
- * 包成 {@link BaseResponse}；业务规则全部在 Service 层，这里不写 if-else 业务分支。
- *
- * <p>本类全部接口的鉴权：
- * <table border="1">
- *     <caption>接口清单</caption>
- *     <tr><th>路径</th><th>鉴权</th></tr>
- *     <tr><td>{@code /member/add}、{@code /member/update}、{@code /member/delete}、
- *     {@code /member/get}、{@code /member/list/page}</td>
- *     <td>全部要求 {@code @SaCheckRole("admin")}</td></tr>
- *     <tr><td>{@code /member/mine}</td>
- *     <td>{@code @SaCheckLogin}——登录用户看<b>自己</b>的成员档案，
- *     是全部接口里唯一的非 admin 接口</td></tr>
- * </table>
- * 注意：管理端维护绑定关系不在这里，而在 {@link MemberCertificateController}
- * （{@code /member-certificate/bind} 等），避免本类职责膨胀。
- *
- * <p><b>返回类型</b>：管理端返回 {@link MemberVO}（含 userId / sortOrder 等内部字段），
- * 只在 admin 面前出现。脱敏的 {@code MemberFrontVO} 仍然保留，但如今唯一的对外出处是
- * <b>项目详情</b>里的「参与成员」（{@code /project/detail}，产品确认保留）——
- * 那是本规则下有意的唯一例外，已登记在 db/DESIGN.md 场景 L。
- *
- * <p>接口地址前缀：{@code server.servlet.context-path=/api}，完整路径形如
- * {@code http://localhost:8080/api/member/list}。
- */
+// 成员接口：只有管理端（管理员增删改查）
+//
+// 业务规则：团队成员不对外展示。
+// 成员档案只作为后台内部数据存在，对外唯一的成员信息出口是项目详情里的「参与成员」。
+//
+// Controller 的职责边界与 UserController 一致：只做三件事——接参、调 Service、
+// 包成 BaseResponse；业务规则全部在 Service 层，这里不写 if-else 业务分支。
+//
+// 本类全部接口的鉴权：
+// 接口清单
+// 路径 | 鉴权
+// /member/add、 /member/update、 /member/delete、 | /member/get、 /member/list/page | 全部要求 @SaCheckRole("admin")
+// /member/mine | @SaCheckLogin——登录用户看自己的成员档案， | 是全部接口里唯一的非 admin 接口
+// 注意：管理端维护绑定关系不在这里，而在 MemberCertificateController
+// （ /member-certificate/bind 等），避免本类职责膨胀。
+//
+// 返回类型：管理端返回 MemberVO（含 userId / sortOrder 等内部字段），
+// 只在 admin 面前出现。脱敏的 MemberFrontVO 仍然保留，但如今唯一的对外出处是
+// 项目详情里的「参与成员」（ /project/detail，产品确认保留）——
+// 那是本规则下有意的唯一例外，已登记在 db/DESIGN.md 场景 L。
 @RestController
 @RequestMapping("/member")
 @Tag(name = "成员模块", description = "官网成员展示（匿名可访问）与管理员成员管理")
 @RequiredArgsConstructor
 public class StudioMemberController {
 
-    /**
-     * 构造器注入（{@code @RequiredArgsConstructor} + {@code final}）：装配后不可变，
-     * 依赖缺失在启动期就失败，而不是等到真正调用时才 NPE
-     */
+    // 构造器注入（ @RequiredArgsConstructor + final）：装配后不可变，
+    // 依赖缺失在启动期就失败，而不是等到真正调用时才 NPE
     private final StudioMemberService studioMemberService;
 
     // ==================== 当前登录用户：查自己的在队成员档案 ====================
 
-    /**
-     * 我的成员档案（当前登录用户）
-     *
-     * <p><b>为什么要这个接口</b>：判断「我是不是在队成员」必须以 {@code studio_member} 表为准，
-     * 而不是前端 localStorage 里的 {@code userRole}——角色是权限标签，可能与档案不同步
-     * （管理员改了角色未必建档案，成员毕业时档案状态改了角色未必跟着改）。
-     * 前端只按角色判断，就会出现「发帖按钮在那儿，点了却被后端拒绝」。
-     *
-     * <p>前端拿它决定要不要显示「发帖」入口；将来的考勤模块（只有成员能打卡、
-     * 也只有成员能看出勤看板）需要的是同一个判断。
-     *
-     * <p><b>为什么用 null 表示「不是成员」而不是抛异常</b>：
-     * 「不是成员」是完全正常的查询结果，不是错误——普通注册用户就是这个结果。
-     * 真正的拦截（A0301）发生在发帖、打卡这些业务接口里，那里才该报错。
-     * 让查询接口抛异常，会把「查询」和「鉴权」两件事混在一起。
-     *
-     * @return 在队的成员档案；不是成员（或已毕业离队）时返回 <b>null</b>
-     */
+    // 我的成员档案（当前登录用户）
+    //
+    // 为什么要这个接口：判断「我是不是在队成员」必须以 studio_member 表为准，
+    // 而不是前端 localStorage 里的 userRole——角色是权限标签，可能与档案不同步
+    // （管理员改了角色未必建档案，成员毕业时档案状态改了角色未必跟着改）。
+    // 前端只按角色判断，就会出现「发帖按钮在那儿，点了却被后端拒绝」。
+    //
+    // 前端拿它决定要不要显示「发帖」入口；将来的考勤模块（只有成员能打卡、
+    // 也只有成员能看出勤看板）需要的是同一个判断。
+    //
+    // 为什么用 null 表示「不是成员」而不是抛异常：
+    // 「不是成员」是完全正常的查询结果，不是错误——普通注册用户就是这个结果。
+    // 真正的拦截（A0301）发生在发帖、打卡这些业务接口里，那里才该报错。
+    // 让查询接口抛异常，会把「查询」和「鉴权」两件事混在一起。
+    //
+    // @return 在队的成员档案；不是成员（或已毕业离队）时返回 null
     @GetMapping("/mine")
     @SaCheckLogin
     @Operation(summary = "【登录用户】我的成员档案", description = "在队则返回档案；不是成员返回 null")
@@ -112,17 +95,15 @@ public class StudioMemberController {
     //   - 官网成员页与成员详情页同步下线（web/ 与 static/ 两套前端）；
     //   - Service 侧配套方法（listFrontMembers / getFrontMemberDetail /
     //     listFrontCertificatesByMember）与 MemberDetailFrontVO 一并删除。
-    // 成员档案自此只作为**后台内部数据**：读取走下面的 /member/list/page 与 /member/get。
+    // 成员档案自此只作为后台内部数据：读取走下面的 /member/list/page 与 /member/get。
     //
     // 一处有意保留的例外：项目详情（/project/detail）仍返回参与成员，用于项目介绍
     // （产品确认保留），见 db/DESIGN.md 场景 L。
 
-    /**
-     * 管理员新增成员档案
-     *
-     * @param memberAddRequest 新增请求（姓名与入学年份必填；userId 为可选的账号绑定）
-     * @return 新成员 ID（雪花算法生成的 Long，序列化时已是字符串，前端不会精度丢失）
-     */
+    // 管理员新增成员档案
+    //
+    // @param memberAddRequest 新增请求（姓名与入学年份必填；userId 为可选的账号绑定）
+    // @return 新成员 ID（雪花算法生成的 Long，序列化时已是字符串，前端不会精度丢失）
     @PostMapping("/add")
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】新增成员", description = "可绑定系统账号；绑定校验「账号存在且未被占用」")
@@ -132,14 +113,12 @@ public class StudioMemberController {
         return ResultUtils.success(studioMemberService.addMember(memberAddRequest));
     }
 
-    /**
-     * 管理员更新成员档案
-     *
-     * <p>部分更新语义：请求体里为 null 的字段不会被改动，前端「只改头像」时不必回传整行数据。
-     *
-     * @param memberUpdateRequest 更新请求（id 必填）
-     * @return true 表示更新成功
-     */
+    // 管理员更新成员档案
+    //
+    // 部分更新语义：请求体里为 null 的字段不会被改动，前端「只改头像」时不必回传整行数据。
+    //
+    // @param memberUpdateRequest 更新请求（id 必填）
+    // @return true 表示更新成功
     @PostMapping("/update")
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】更新成员", description = "字段为 null 表示不修改；改绑账号时校验唯一性")
@@ -148,12 +127,10 @@ public class StudioMemberController {
         return ResultUtils.success(studioMemberService.updateMember(memberUpdateRequest));
     }
 
-    /**
-     * 管理员删除成员档案（逻辑删除）
-     *
-     * @param deleteRequest 删除请求（id 必填）
-     * @return true 表示删除成功
-     */
+    // 管理员删除成员档案（逻辑删除）
+    //
+    // @param deleteRequest 删除请求（id 必填）
+    // @return true 表示删除成功
     @PostMapping("/delete")
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】删除成员", description = "逻辑删除，数据可追溯；其绑定的账号会被释放")
@@ -162,12 +139,10 @@ public class StudioMemberController {
         return ResultUtils.success(studioMemberService.deleteMember(deleteRequest.getId()));
     }
 
-    /**
-     * 管理员按 id 查询成员详情
-     *
-     * @param id 成员 ID
-     * @return 含内部字段的成员信息（管理端视图）
-     */
+    // 管理员按 id 查询成员详情
+    //
+    // @param id 成员 ID
+    // @return 含内部字段的成员信息（管理端视图）
     @GetMapping("/get")
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】查询成员详情")
@@ -177,16 +152,14 @@ public class StudioMemberController {
         return ResultUtils.success(studioMemberService.getMemberById(id));
     }
 
-    /**
-     * 管理员分页查询成员列表
-     *
-     * <p>查询参数走 GET（便于分享链接与浏览器缓存），没有请求体；
-     * 分页与排序的非法值由 Service 兜底纠正，默认按置顶权重（sort_order）倒序。
-     *
-     * @param memberQueryRequest 查询条件（id/姓名/届别/方向/职务/状态
-     *                            + current/pageSize/sortField/sortOrder），允许为空
-     * @return 分页结果，记录为含内部字段的 {@link MemberVO}
-     */
+    // 管理员分页查询成员列表
+    //
+    // 查询参数走 GET（便于分享链接与浏览器缓存），没有请求体；
+    // 分页与排序的非法值由 Service 兜底纠正，默认按置顶权重（sort_order）倒序。
+    //
+    // @param memberQueryRequest 查询条件（id/姓名/届别/方向/职务/状态
+    // + current/pageSize/sortField/sortOrder），允许为空
+    // @return 分页结果，记录为含内部字段的 MemberVO
     @GetMapping("/list/page")
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】分页查询成员", description = "支持姓名/方向模糊查询与届别筛选，每页最多 50 条")

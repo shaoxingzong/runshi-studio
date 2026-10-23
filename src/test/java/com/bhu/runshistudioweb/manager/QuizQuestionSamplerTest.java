@@ -13,14 +13,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/**
- * 选题器验收测试（纯单测：不启 Spring、不连数据库）
- *
- * author: shaoshing
- *
- * <p>三种模式的边界全部在这里覆盖：刷完、题量不足、随机不重复、随机可复现。
- * 这些是「用户能不能顺利刷完一轮」的直接决定因素，比 CRUD 更值得写测试。
- */
+// 选题器验收测试（纯单测：不启 Spring、不连数据库）
+//
+// 三种模式的边界全部在这里覆盖：刷完、题量不足、随机不重复、随机可复现。
+// 这些是「用户能不能顺利刷完一轮」的直接决定因素，比 CRUD 更值得写测试。
 class QuizQuestionSamplerTest {
 
     private static List<Long> ids(long... values) {
@@ -142,7 +138,7 @@ class QuizQuestionSamplerTest {
         assertEquals(20, QuizQuestionSampler.resolveSize(0, 20, 100), "0 视为「没传」");
         assertEquals(20, QuizQuestionSampler.resolveSize(-3, 20, 100));
         assertEquals(50, QuizQuestionSampler.resolveSize(50, 20, 100));
-        // 超限**收敛**而不是报错：与分页参数同一处理方式
+        // 超限收敛而不是报错：与分页参数同一处理方式
         assertEquals(100, QuizQuestionSampler.resolveSize(99999, 20, 100));
     }
 
