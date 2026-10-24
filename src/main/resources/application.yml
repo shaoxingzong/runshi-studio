@@ -41,6 +41,25 @@ spring:
       max-file-size: 10MB       # 框架层限制：单个文件最大 10MB
       max-request-size: 10MB    # 框架层限制：整个请求最大 10MB
 
+  # ===== 虚拟线程（JDK 21）=====
+  # Tomcat 的请求处理改用「一请求一线程」的虚拟线程，替代 200 个平台线程的池。
+  # 为什么适合本项目：接口几乎全是 I/O 等待型——MySQL 查询、Redis 限流计数、
+  # 外部 AI 的 HTTP 调用（AI 咨询接口一次提问要等模型几秒到几十秒）。
+  # 这类负载下虚拟线程的吞吐与并发上限远高于平台线程池，且内存代价可忽略。
+  #
+  # ⚠️ JDK 21 的注意点：synchronized 块内做阻塞 I/O 会「钉住」载体线程，
+  #    虚拟线程的优势会打折。本项目主代码已核查为零 synchronized（并发控制
+  #    全部用 ConcurrentHashMap / Redis 原子操作），第三方依赖（Sa-Token /
+  #    MyBatis-Plus）同样不在 synchronized 里做 I/O，因此安全。
+  #
+  # ⚠️ 开了它不等于并发无上限：数据库连接的真实闸门是 HikariCP 连接池
+  #    （默认 10，未显式配置）。并发请求会从「排队等线程」变成「排队等连接」，
+  #    行为更优（不占内存），但 2 核 2G 上不要顺手把池调大——每个 MySQL
+  #    连接服务端要占几 MB，池越大内存越紧。
+  threads:
+    virtual:
+      enabled: true
+
   # Redis（Spring Boot 4 的前缀是 spring.data.redis；Boot 2 的 spring.redis 已废弃）
   data:
     redis:

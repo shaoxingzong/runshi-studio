@@ -3,6 +3,7 @@ package com.bhu.runshistudioweb.config;
 import cn.hutool.core.util.StrUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.env.Environment;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -58,12 +59,32 @@ public class StartupSelfCheck {
 
     private final DataSource dataSource;
 
+    private final Environment environment;
+
     @PostConstruct
     public void checkOnStartup() {
         checkDatabase();
         checkRedis();
         checkAiConfigShape();
         log.info("启动自检通过：数据库 / Redis 连通正常，AI 配置形态合法");
+        logRequestThreadMode();
+    }
+
+    /**
+     * 打印请求处理的线程模式
+     *
+     * 虚拟线程是本项目在 2 核 2G 上的关键并发手段（I/O 等待型负载），
+     * 但「配置写了」和「生效了」是两件事——Tomcat 换执行器发生在启动早期，
+     * 且没有任何显式日志。这里读配置状态打一行，运维在启动日志里即可确认，
+     * 不必去翻 Boot 的调试日志或连上去 jcmd。
+     */
+    private void logRequestThreadMode() {
+        // 取不到（属性未配置）按 false 处理；用 TRUE.equals 而非直接拆箱，null 不会 NPE
+        boolean virtual = Boolean.TRUE.equals(
+                environment.getProperty("spring.threads.virtual.enabled", Boolean.class, false));
+        log.info("请求处理线程模式：{}（spring.threads.virtual.enabled={}）",
+                virtual ? "虚拟线程（一请求一线程，I/O 等待型负载的并发手段）" : "平台线程池（Tomcat 默认 200）",
+                virtual);
     }
 
     /**

@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.core.env.Environment;
 import org.springframework.dao.DataAccessException;
 import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.core.RedisCallback;
@@ -46,11 +47,15 @@ class StartupSelfCheckTest {
     @Mock
     private DataSource dataSource;
 
+    /** 虚拟线程开关的读取来源；mock 下不设值返回 null，主代码按 false 处理（见 StartupSelfCheck） */
+    @Mock
+    private Environment environment;
+
     private StartupSelfCheck selfCheck;
 
     @BeforeEach
     void setUp() {
-        selfCheck = new StartupSelfCheck(jdbcTemplate, stringRedisTemplate, aiProperties, dataSource);
+        selfCheck = new StartupSelfCheck(jdbcTemplate, stringRedisTemplate, aiProperties, dataSource, environment);
     }
 
     /** 让 Redis mock 对任意回调返回 PONG */
