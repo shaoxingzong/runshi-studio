@@ -145,6 +145,54 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
 
     // ==================== C 端：用户自己 ====================
 
+    /**
+     * 用户自助注册：校验参数与账号唯一性后，创建一个「最低权限」的普通账号
+     *
+     * <p>为什么这样设计：注册是<b>唯一一个完全面向陌生人的写接口</b>，
+     * 它同时承担两个互相冲突的职责——给正常用户明确反馈（「账号已存在」必须说清楚，
+     * 否则用户不知道该换一个），以及不给扫描者提供批量探测的便利。
+     * 两者无法同时满足，最终的选择是：<b>提示照实给，防扫描交给 IP 级限流</b>。
+     * 若为了防探测而把提示改成模糊的「注册失败」，正常用户会卡在注册页反复试错，
+     * 而攻击者本来就能通过「换一个账号名再试」得到同样的信息。
+     *
+     * <p>为什么角色写死成 user 而不是由前端传入：注册接口一旦允许指定角色，
+     * 任何人都能注册一个 admin，这是最常见的越权漏洞。同理也不给 member——
+     * 注册只代表「有了账号」，是不是工作室成员由管理员在后台建档决定，
+     * 这条界线一旦模糊，就会出现「网上随便注册个号就能改成员档案」。
+     *
+     * <p>执行步骤（顺序即代码里的注释顺序）：
+     * <ol>
+     *     <li>空值兜底。Controller 的 {@code @Valid} 已经拦了一道，这里再拦一次，
+     *     是因为 Service 也可能被管理端、定时任务或测试直接调用，不能只依赖 Web 层；</li>
+     *     <li><b>先限流</b>，再校验密码与长度。这是成本顺序：被限流拒绝的请求
+     *     不产生任何后续开销，而密码比对与长度校验虽然便宜，却也是白白消耗。
+     *     更重要的是，注册接口是账号存在性探测器，限流是防批量扫描的主要手段，
+     *     它必须挡在「探测动作」之前；</li>
+     *     <li>两次密码一致性、账号与密码的长度校验。长度区间与 DTO 上的 {@code @Size}
+     *     共用类顶部的常量——两边各写一套的话，迟早出现「DTO 说最多 16 位、
+     *     Service 说最多 20 位」的两套标准；</li>
+     *     <li>查账号是否已存在。放在长度校验之后：格式都不合法的账号名不值得查库；</li>
+     *     <li>加密。必须存 BCrypt 哈希串而不是明文，明文入库一旦泄露等于全网账号沦陷；</li>
+     *     <li>组装实体并落库，同时接住唯一索引冲突（见「容易踩的坑」）；</li>
+     *     <li>返回新账号的 ID，由 {@code save} 回填到实体上。</li>
+     * </ol>
+     *
+     * <p>容易踩的坑：<b>不能靠 {@code save} 的返回值判断账号是否重复。</b>
+     * MyBatis-Plus 遇到唯一索引冲突时抛的是 {@code DuplicateKeyException}，不会返回 false。
+     * 并发场景下两个请求可能同时通过第 ④ 步的存在性检查（互相都还没写库），
+     * 后到的那条由数据库唯一索引拦下——如果这里不 catch，它就会一路冒到全局兜底，
+     * 变成 B0001「系统错误」，用户既不知道原因也无从重试。
+     *
+     * @param userAccount 用户账号，长度 4~16，全局唯一；传 null 或空白会抛 A0401
+     * @param userPassword 明文密码，长度 8~20；方法内部用 BCrypt 加密后才入库
+     * @param checkPassword 确认密码，必须与 {@code userPassword} 完全一致（含大小写）
+     * @param remoteAddr TCP 对端地址，用于 IP 限流；可为 null（此时限流放行）
+     * @param xRealIp X-Real-IP 头的原始值，可为 null
+     * @param xForwardedFor X-Forwarded-For 头的原始值，可为 null
+     * @return 新用户的雪花 ID（19 位 Long，序列化时已转成字符串，前端不会丢精度）
+     * @throws BusinessException 参数为空或格式不合法（A0401）、两次密码不一致（A0401）、
+     *                           账号已存在（A0401）、触发 IP 限流（A0501）、入库失败（B0001）时抛出
+     */
     @Override
     public long userRegister(String userAccount, String userPassword, String checkPassword,
                              String remoteAddr, String xRealIp, String xForwardedFor) {
@@ -192,9 +240,7 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
 
         // 用 try / catch 接唯一索引冲突，而不是靠返回值判断：
         // MyBatis-Plus 遇到唯一索引冲突时是抛 DuplicateKeyException，不会返回 false。
-        // 早先这里只有 `if (!saveResult)`，且注释假设「冲突会让 save 返回 false」——
-        // 于是并发注册那条路径从来没人接住，一路冒到全局兜底变成 B0001「系统错误」。
-        // 现在的分工：catch 负责并发竞态（唯一索引是最后一道防线，它以异常形式报错），
+        // 分工是：catch 负责并发竞态（唯一索引是最后一道防线，它以异常形式报错），
         // 下面的 throwIf 负责「返回 false 但没有抛异常」的其它失败情况
         boolean saveResult;
         try {
@@ -214,21 +260,67 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
     }
 
     /**
-     * 用户登录（接口契约见 UserService）
+     * 用户登录：先过两道防爆破闸门，再查库比对密码，最后才下发 token
      *
-     * 实现上的执行顺序，任何一条调换都会出问题：
-     * - IP 级限流：挡「单 IP 高频尝试」，每一次尝试（含失败的）都计数；
-     * - 账号级锁定检查：挡「分布式慢速爆破」，被锁的请求不查库、不比对密码；
-     * - 按账号查实体——查不到也要走完"密码比对"这一步（这里用短路统一提示）；
-     * - 密码比对用 PasswordUtils.matches（BCrypt），不能用 equals 比哈希串；
-     * 失败时仅在账号存在的前提下记录失败次数（账号不存在无可锁对象，
-     * 且对不存在的账号锁定会让「已锁定」提示变成账号存在性探测器）；
-     * - 封禁校验放最后——此时已确认密码正确，攻击者无法通过报错差异探测账号状态；
-     * - 登录成功后清零失败计数（合法用户不该被几分钟前的失误挡在门外）。
+     * <p>为什么这样设计：登录接口是整套系统里唯一一个「陌生人可以无限次尝试」的入口，
+     * 它必须自己承担防爆破的责任。防护拆成两道互补的闸，缺任何一道都有明显漏洞：
+     * <b>IP 级限流</b>挡的是「一个 IP 对多个账号猛试」，<b>账号级锁定</b>挡的是
+     * 「海量 IP 各试几次」的分布式慢速爆破——后者每次尝试的频次都远低于任何单 IP 上限，
+     * 单靠限流永远发现不了。两道闸互不依赖，任一道失效另一道仍然有效。
      *
-     * @param userAccount 用户账号
-     * @param userPassword 明文密码
-     * @return 脱敏用户信息（含 token）
+     * <p>为什么顺序是「先 IP 限流、再账号锁定、最后查库比对密码」——这是<b>按成本从低到高</b>排的：
+     * <ul>
+     *     <li>IP 限流是一次 Redis 往返，最便宜，且它对每一次尝试都计数（含失败的），
+     *     挡在最前面意味着被拒绝的请求不产生任何数据库开销；</li>
+     *     <li>账号锁定也是一次 Redis 读，但只有在「该账号已被锁」时才拒绝，
+     *     所以它必须排在限流之后——否则被限流的请求还要多花一次 Redis 往返；</li>
+     *     <li>查库 + BCrypt 比对最贵（BCrypt 是<b>故意</b>设计成慢的，一次约几十毫秒），
+     *     必须放在最后。反过来写的话，攻击者每次尝试都能让我们跑一次 BCrypt，
+     *     防护措施本身就成了压垮 CPU 的那只手。</li>
+     * </ul>
+     * 这个顺序还有一个附带好处：前两道闸都不需要知道账号是否存在，
+     * 因此它们对「账号不存在」与「账号存在」的行为完全一致，不泄露任何信息。
+     *
+     * <p>执行步骤：
+     * <ol>
+     *     <li>空值兜底，避免后面的逻辑对 null 做字符串操作；</li>
+     *     <li>IP 级限流。它对每次尝试计数，包括那些注定失败的；</li>
+     *     <li>账号级锁定检查。放在查库之前，被锁的请求连数据库都不该碰；</li>
+     *     <li>按账号查实体。<b>查不到也要继续走完密码比对</b>（这里用短路表达式统一处理），
+     *     而不是提前抛「账号不存在」——那会让报错差异变成账号枚举工具；</li>
+     *     <li>用 {@code PasswordUtils.matches} 比对密码。失败时<b>只在账号存在时</b>
+     *     累计失败次数，理由见「容易踩的坑」；</li>
+     *     <li>密码不对就抛统一提示「账号或密码错误」。注意这一步在封禁校验之前，
+     *     否则攻击者可以用「已封禁」与「密码错误」的差异反推密码是否猜对；</li>
+     *     <li>封禁校验。放在密码校验<b>之后</b>：此时已确认密码正确，
+     *     攻击者无法再通过报错差异探测账号状态；</li>
+     *     <li>登录成功，清零该账号的失败计数；</li>
+     *     <li>建立会话并回填 token。</li>
+     * </ol>
+     *
+     * <p>容易踩的坑（三个）：
+     * <ul>
+     *     <li><b>不能对「账号不存在」也累计失败。</b>那样一来，「已锁定」这个提示
+     *     就变成了账号存在性探测器——能被锁定说明账号存在。攻击者可以先拿一批
+     *     猜出来的账号名把它们刷成锁定状态，既完成了探测，又顺手坑了真实用户；</li>
+     *     <li><b>不能用 {@code equals} 比较哈希串。</b>BCrypt 每次加密都会生成新的随机盐，
+     *     同一明文两次加密的结果并不相等，用 equals 会让登录<b>永远失败</b>，
+     *     而且失败得毫无规律（只有极少数恰好撞上同一盐值的情况才会成功）；</li>
+     *     <li><b>校验方法本身不抛异常</b>（{@code PasswordUtils.matches} 对非法哈希串
+     *     与空密码都只返回 false）。这是刻意的：若它抛异常，一个库里的脏哈希串
+     *     就能让登录接口返回 500，攻击者可以据此判断「这个账号的密码字段有问题」。
+     *     返回 false 让所有异常输入走同一条「账号或密码错误」路径，行为完全一致。</li>
+     * </ul>
+     *
+     * @param userAccount 用户账号，不能为 null（为 null 抛 A0401）
+     * @param userPassword 明文密码，不能为 null；内部用 BCrypt 与库中哈希串比对
+     * @param remoteAddr TCP 对端地址，用于 IP 限流；可为 null（此时限流放行）
+     * @param xRealIp X-Real-IP 头的原始值，可为 null
+     * @param xForwardedFor X-Forwarded-For 头的原始值，可为 null
+     * @return 脱敏后的登录用户信息，其中 token 只在登录这一刻返回，前端需保存并在
+     *         后续请求里带上（请求头 {@code satoken: xxx}）
+     * @throws BusinessException 账号或密码为空（A0401）、账号或密码错误（A0401）、
+     *                           账号被封禁（A0302）、触发 IP 限流或账号锁定（A0501）时抛出
      */
     @Override
     public LoginUserVO userLogin(String userAccount, String userPassword,
@@ -249,6 +341,8 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
 
         // 防账号枚举：账号不存在与密码错误使用同一个提示文案。
         // 若分开提示（"账号不存在"/"密码错误"），攻击者可用两种报错扫出一批有效账号，再集中爆破。
+        // 短路写法还有一个作用：user 为 null 时根本不会调用 matches，
+        // 因此「账号不存在」这条路径比「账号存在」更快，但差异小到无法用来做时序探测
         boolean passwordMatched = user != null && PasswordUtils.matches(userPassword, user.getUserPassword());
         if (!passwordMatched && user != null) {
             // 只在账号存在时累计失败：账号不存在时没有可锁对象，
@@ -274,12 +368,38 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
     }
 
     /**
-     * 取当前登录用户实体（接口契约见 UserService）
+     * 取当前登录用户的实体（服务端内部用）
      *
-     * 返回的是实体而不是 VO，仅用于服务端内部逻辑（鉴权、审计、守卫判断）。
-     * 要返回给前端请走 getLoginUserVO 转换为脱敏 VO。
+     * <p>为什么这样设计：本方法返回的是<b>实体</b>而不是 VO，因为它服务于服务端自己的判断
+     * （鉴权、审计、守卫），这些地方需要完整字段——包括密码哈希串。
+     * 但也正因如此，它<b>绝不能</b>被直接序列化进响应体。要返回给前端，
+     * 必须再走一次 {@link #getLoginUserVO(SysUser)} 转成脱敏 VO。
+     * 把「内部实体」与「对外 VO」分成两个方法，而不是在同一个对象上按场景置空字段，
+     * 是为了让泄露变成一件「做不到」的事，而不是「记得别做」的事。
      *
-     * @return 当前登录用户实体，含密码哈希串，切勿直接序列化到响应里
+     * <p>为什么未登录时抛异常而不是返回 null：调用方大多是 Controller，
+     * 若返回 null，每个调用方都得自己判空，漏一处就是一次 NPE 变成 B0001。
+     * 抛异常则由全局异常处理器统一转成 A0201，前端据此跳登录页，行为一致。
+     *
+     * <p>执行步骤：
+     * <ol>
+     *     <li>先确认已登录。{@code isLogin} 会检查 token 是否有效、是否过期；</li>
+     *     <li>按 loginId 查实体；</li>
+     *     <li>查不到时同样按「未登录」处理。典型场景是账号被逻辑删除——
+     *     token 还在有效期内，但人已经不存在了。返回 null 会让上游 NPE，
+     *     按未登录处理则能让前端干净地回到登录页；</li>
+     *     <li>封禁校验。这一步是<b>兜底</b>而不是主防线：token 在 Redis 里的有效期
+     *     最长可达数天，若只依赖登录时的那一次检查，被封禁的用户在 token 过期前
+     *     仍能使用全部登录态接口。真正的即时生效靠 {@link #updateUser} 里的踢会话。</li>
+     * </ol>
+     *
+     * <p>容易踩的坑：第 ④ 步用的错误码是 A0201「未登录」而不是 A0302「已封禁」。
+     * 这看起来反直觉，但链路是自洽的：前端拿到 A0201 会跳登录页，
+     * 而登录接口对被封禁账号有明确提示（「账号已被封禁」），用户到了登录页就会看到真实原因。
+     * 若这里返回 A0302，前端不会跳转，用户会卡在一个「什么都点不动」的页面上。
+     *
+     * @return 当前登录用户的完整实体，含密码哈希串；调用方必须自行脱敏后再对外输出
+     * @throws BusinessException 未登录、token 失效、用户已不存在或已被封禁时抛出（A0201）
      */
     @Override
     public SysUser getLoginUser() {
@@ -305,13 +425,33 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
     }
 
     /**
-     * 实体转「用户自己看」的 VO（含 token 字段，不含密码）
+     * 把用户实体转成「用户自己看」的 VO（带 token 字段，不带密码）
      *
-     * 与 getUserVO 的区别：这个是给用户自己看的（带角色、不带状态位），
-     * 那个是给管理员看的（带角色与状态）。二者都不含密码字段。
+     * <p>为什么这样设计：脱敏<b>靠目标类的字段结构</b>实现，而不是靠「拷完再手动置空」。
+     * {@code LoginUserVO} 里根本没有 {@code userPassword} 这个字段，
+     * 因此 {@code BeanUtils.copyProperties} 无论怎么拷都不可能把密码带出去。
+     * 这个区别很关键：手动置空的做法在「将来给实体新增一个敏感字段」时会失效，
+     * 而结构上不存在字段的做法不会。
+     *
+     * <p>为什么要在这里覆盖 {@code aiQueryCount}：数据库里存的是「已落库的基准值」，
+     * 而最近几次提问的增量还在 Redis 里等定时任务回刷。只返回库值的话，
+     * 用户会看到「明明问了好几次，数字一动不动」。合并值才是用户视角的真实配额。
+     *
+     * <p>执行步骤：
+     * <ol>
+     *     <li>入参为 null 时返回 null。这是纯转换方法，不该为 null 抛异常——
+     *     它不承载任何业务判断；</li>
+     *     <li>按属性名自动拷贝；</li>
+     *     <li>用合并值覆盖配额字段。先判 id 非空，是因为合并需要按用户 ID 去查 Redis，
+     *     id 为空时那次查询毫无意义。</li>
+     * </ol>
+     *
+     * <p>容易踩的坑：{@code copyProperties} 只按<b>属性名与类型</b>匹配，类型不一致的属性
+     * 会被<b>静默跳过</b>，不报任何错。所以给 VO 加字段时，类型必须与实体完全一致
+     * （例如实体是 {@code LocalDateTime}，VO 写成 {@code Date} 就会永远拿到 null）。
      *
      * @param user 用户实体，允许为 null
-     * @return VO；入参为 null 时返回 null
+     * @return 脱敏后的 VO；入参为 null 时返回 null，调用方必须判空
      */
     @Override
     public LoginUserVO getLoginUserVO(SysUser user) {
@@ -332,12 +472,30 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
     }
 
     /**
-     * 注销登录（接口契约见 UserService）
+     * 注销登录：清掉当前这一端的会话
      *
-     * 只清当前账号当前端的会话：Sa-Token 默认按 token 注销，
-     * 同一账号在别的设备上登录的会话不受影响（如需全端下线要传 SaLogoutParameter）。
+     * <p>为什么这样设计：注销是<b>幂等（重复调用结果一致）</b>语义上的清理动作，
+     * 但这里刻意<b>不</b>做成静默成功——未登录时直接抛 A0201。
+     * 原因是：若未登录也返回 true，前端就无法区分「注销成功」与
+     * 「token 早就过期了、你其实一直没登录」，这类含糊的成功会掩盖真实的登录态问题。
      *
-     * @return true 表示注销成功
+     * <p>作用范围是「当前账号 + 当前这一端」：Sa-Token 默认按 token 注销，
+     * 同一账号在别的设备上登录的会话不受影响。要全端下线需要另传
+     * {@code SaLogoutParameter}，本方法不承担这个职责。
+     *
+     * <p>执行步骤：
+     * <ol>
+     *     <li>确认当前确实处于登录态，否则抛 A0201；</li>
+     *     <li>调用注销。这一步会同时清掉服务端会话（Redis）与客户端 Cookie——
+     *     两处都清才算真正退出，只清一处的话，另一个仍能被继续使用。</li>
+     * </ol>
+     *
+     * <p>容易踩的坑：本方法返回的 {@code true} 是<b>常量</b>，不是 {@code logout()}
+     * 的返回值——{@code StpUtil.logout()} 本身没有返回值。因此不要把它理解成
+     * 「服务端确认注销成功」，它表达的是「走到这里说明已登录且注销动作已执行」。
+     *
+     * @return 恒为 true；走到返回值这一行说明注销动作已经执行完毕
+     * @throws BusinessException 未登录时抛出（A0201）
      */
     @Override
     public boolean userLogout() {
@@ -352,30 +510,76 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
     // ==================== 管理端：调用方必须已通过 @SaCheckRole("admin") ====================
 
     /**
-     * 管理员新增用户（接口契约见 UserService）
+     * 管理员新增用户：创建一个账号，并返回「本次生效的初始密码」（明文，仅此一次）
      *
-     * 与自助注册（ userRegister）唯一的业务差别是允许指定角色与状态，
-     * 其余规则（账号唯一、只存 BCrypt 哈希、昵称为空用账号兜底）完全共用同一套逻辑，
-     * 因此新增账号的"最低权限"由 UserRoleEnum.USER 兜底，不会越权。
+     * <p>为什么这样设计：它与自助注册只差一处——允许指定角色与状态，
+     * 但正是这一处决定了两者不能合并成一个方法。合并之后注册接口就能被传一个
+     * role=admin 的参数，任何人都能注册出管理员，这是最常见的越权漏洞。
+     * 因此两条路径各写一份入口，共用同一套底层规则（账号唯一、只存哈希、
+     * 昵称为空用账号兜底），而不是共用一个「什么都能传」的方法。
+     * 第二个关键取舍是<b>随机生成初始密码而不是用固定默认口令</b>：
+     * 固定默认值（例如全站统一发 Runshi@123）意味着任何知道本系统存在的人
+     * 都能登录所有未及时改密的账号——安全性被寄托在「每个人都会立即改密」上，
+     * 而现实里总有人不会。随机口令只随本方法的返回值出现一次，
+     * 后端既不存明文也没有「再查一次」的接口，管理员必须当场转交本人。
+     * 生成器还刻意剔除了 0/O/1/l/I 这类易混淆字符（见 PasswordUtils），
+     * 因为初始密码往往要靠电话或口头转告。
+     * 第三个取舍是角色与状态的默认值写在代码里而不是靠 DDL 默认值：
+     * 显式赋值让「不传就是普通用户、不传就是正常状态」这件事在代码里可读，
+     * 也避免以后 DDL 变更时行为悄悄漂移。
      *
-     * 初始密码：管理员指定则用他指定的，留空则随机生成，
-     * 明文只随返回值出现一次——后端不存明文，也没有二次查询的接口。
+     * <p>执行步骤：
+     * <ol>
+     *     <li>① 校验账号非空并 trim。放在最前面是因为后面每一步都要用到它，
+     *     而且空账号查库没有任何意义；</li>
+     *     <li>② 校验账号未被占用。必须在落库之前查——虽然唯一索引才是最终防线，
+     *     但提前查一次能给出「账号已存在」这种明确提示，而不是等数据库抛异常；</li>
+     *     <li>③ 解析角色：不传按最低权限（user）兜底，传了就必须是枚举内的取值。
+     *     这一步必须在组装实体之前，否则非法角色会先被写进实体再被拒绝；
+     *     这里刻意不用 {@code @Pattern} 把取值写死在注解上——枚举一改，注解就过期了；</li>
+     *     <li>④ 决定初始密码：管理员指定就用他指定的，留空则随机生成。
+     *     顺序上必须在第 ⑤ 步加密之前，因为加密只能做一次，不能先生成再回头改；</li>
+     *     <li>⑤ 组装实体并落库。密码在这里加密，明文绝不入库；
+     *     昵称为空时用账号兜底，因为 user_name 是 NOT NULL 且没有默认值，
+     *     不赋值会直接插入失败；</li>
+     *     <li>⑥ 返回 ID 与本次生效的初始密码。两者缺一不可——
+     *     只返回 ID，管理员就永远拿不到这个账号的口令。</li>
+     * </ol>
      *
-     * @param userAddRequest 新增请求（账号必填；密码留空则使用随机初始密码）
-     * @return 新用户 ID 与本次生效的初始密码（明文，仅此一次）
+     * <p>容易踩的坑：初始密码是<b>明文且只返回这一次</b>，后端不存明文、
+     * 也没有二次查询的接口，管理员刷新页面后就再也看不到了；
+     * 丢了只能走「重置密码」，而不是「再查一次」。
+     * 另一个坑在日志：只能记用户 ID 与「已生成初始密码」这个事件，
+     * 绝不能把口令打进日志——日志的访问范围往往比数据库更大，
+     * 写进去等于把它散播给所有能看日志的人。
+     * 还有一点：本方法<b>不幂等</b>，同一账号重复调用第二次会因账号已存在而失败，
+     * 这是刻意的——静默返回已有账号会让管理员以为「新建成功了」。
+     *
+     * @param userAddRequest 新增请求，不能为 null；账号必填（长度 4~16）；
+     *                       密码留空则使用随机初始密码（长度 10），
+     *                       传了则必须在 8~20 位之间（由 DTO 上的 {@code @Size} 拦下）；
+     *                       角色不传按 user 处理，传了必须是 user / member / admin；
+     *                       状态不传按 0（正常）处理
+     * @return 新用户 ID（雪花算法生成的 19 位 Long，序列化时会转成字符串）
+     *         与本次生效的初始密码（明文）；管理员指定了密码时，
+     *         这里原样回显他指定的那个，不是随机值
+     * @throws BusinessException 账号为空（A0401）、账号已存在（A0401）、
+     *         角色非法（A0401）、入库失败（B0001）时抛出
      */
     @Override
     public UserAddResultVO addUser(UserAddRequest userAddRequest) {
+        // ① 账号是后面每一步的前提，空值先挡掉
         ThrowUtils.throwIf(userAddRequest == null || StrUtil.isBlank(userAddRequest.getUserAccount()),
                 ErrorCode.PARAMS_ERROR, "用户账号不能为空");
         String userAccount = userAddRequest.getUserAccount().trim();
+        // ② 提前查一次：唯一索引才是最终防线，但先查能给出明确的「已存在」提示
         assertAccountNotExists(userAccount);
 
-        // 角色：不传按最低权限（user）处理，传了就必须是枚举内的合法取值。
+        // ③ 角色：不传按最低权限（user）处理，传了就必须是枚举内的合法取值。
         // 这里绝不能用 @Pattern 把取值写死在注解上——枚举一改，注解就过期了
         UserRoleEnum role = resolveRole(userAddRequest.getUserRole(), UserRoleEnum.USER);
 
-        // 初始密码：管理员指定则用他指定的，留空则随机生成。
+        // ④ 初始密码：管理员指定则用他指定的，留空则随机生成。
         // 随机化而不是固定默认口令——固定值意味着任何知道本系统的人
         // 都能登录所有未及时改密的账号；随机口令只随返回值出现一次，攻击者无法预知。
         // 字符集剔除 0/O/1/l/I（见 PasswordUtils.generateRandomPassword），转告时不会听错
@@ -383,6 +587,7 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
                 ? userAddRequest.getUserPassword()
                 : PasswordUtils.generateRandomPassword(INIT_PASSWORD_LENGTH);
 
+        // ⑤ 组装实体：密码只以 BCrypt 哈希形式入库
         SysUser sysUser = new SysUser();
         sysUser.setUserAccount(userAccount);
         // 无论哪种情况都只存 BCrypt 哈希串，明文绝不入库
@@ -398,6 +603,7 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         boolean saveResult = this.save(sysUser);
         ThrowUtils.throwIf(!saveResult, ErrorCode.SYSTEM_ERROR, "新增用户失败，数据库异常");
 
+        // ⑥ 返回 ID 与明文口令：口令只出现这一次，不返回它管理员就永远拿不到
         UserAddResultVO result = new UserAddResultVO();
         result.setId(sysUser.getId());
         result.setInitialPassword(initialPassword);
@@ -409,14 +615,64 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
     }
 
     /**
-     * 管理员更新用户（部分更新，接口契约见 UserService）
+     * 管理员更新用户（部分更新）：改资料、改角色、改状态、重置密码，并按副作用联动
      *
-     * 防锁死守卫是本方法最容易被删掉的部分：管理员不能封禁自己、不能把自己降级。
-     * 因为权限判定是实时查库的，一旦自己失去 admin 角色会立刻无法管理，
-     * 且此时没有任何管理员能通过接口把你改回来，只能去数据库修数据。
+     * <p>为什么这样设计：本方法最容易被删掉的部分是那几个守卫，而它们挡的是
+     * 「一次误操作导致系统不可维护」的路径：
+     * <ul>
+     *     <li><b>不能封禁自己、不能把自己降级</b>：权限判定是实时查库的
+     *     （见 StpInterfaceImpl），一旦自己失去 admin 角色会立刻无法管理，
+     *     而此时已经没有任何管理员能通过接口把你改回来，只能去数据库改数据。
+     *     这类「把自己锁在门外」的路径值得在代码里显式挡一道；</li>
+     *     <li><b>授予 member / admin 前必须确认该账号已有成员档案</b>：
+     *     成员功能的准入判据是 studio_member 档案的 user_id 命中当前账号，
+     *     user_role 只是权限标签。只把角色改成 member 却没有档案时，
+     *     界面上的成员入口不会出现（前端也按档案判断），即使从别处进了页面，
+     *     后端接口也会返回 A0301。这正是「有时候不显示、有时候显示了也报错」的来源；</li>
+     *     <li><b>封禁要立刻踢会话</b>：不踢的话，被封禁的用户在 token 自然过期前的
+     *     窗口期里仍能用全部登录态接口，封禁就只是一个界面上的标签。</li>
+     * </ul>
+     * 另一个取舍是「传 null 表示不修改」：它依赖 MyBatis-Plus 的默认策略
+     * （null 字段不参与 UPDATE），好处是前端做「只改昵称」的表单时
+     * 不必先把整行查出来回传，避免了自己漏字段导致误清空的坑。
+     * 代价是无法通过本接口把某个字段清空，真需要时应另设一个语义明确的接口。
      *
-     * @param userUpdateRequest 更新请求（id 必填）
-     * @return true 表示更新成功
+     * <p>执行步骤：
+     * <ol>
+     *     <li>① 校验 id 非空并先查一次确认用户存在。先查是为了区分
+     *     「不存在」与「存在但没改成」——否则 updateById 只返回 false，
+     *     前端看到「更新失败」却不知道原因；</li>
+     *     <li>② 校验角色合法性。非法值一旦入库，权限判定会静默失效
+     *     （拿不到任何角色却也不报错），这类问题极难排查；</li>
+     *     <li>③ 授予 member / admin 前查成员档案是否存在。必须在写库之前——
+     *     写进去之后再发现没档案，就得回滚一次已经生效的权限变更；</li>
+     *     <li>④ 防锁死守卫：只在「目标就是当前登录账号」时生效，
+     *     因此必须先取当前登录 ID 再比较。顺序不能与第 ③ 步互换，
+     *     因为「不能降级自己」也要用到角色值；</li>
+     *     <li>⑤ 组装白名单字段并写库，密码传了才加密重置。
+     *     白名单是刻意的：绝不能把 DTO 直接转成实体整体更新，
+     *     那样前端能顺手改 deletedAt 与审计字段；</li>
+     *     <li>⑥ 封禁时踢掉目标账号的全部会话。放在写库成功之后——
+     *     写库失败还去踢人，等于「没封成但把人踢了」；</li>
+     *     <li>⑦ 成员身份授予通知：只在「角色从非成员变为成员」时发。
+     *     判断依据是查出来的旧角色，而不是「这次传了角色」——
+     *     否则每次改昵称都会重复发一条通知。</li>
+     * </ol>
+     *
+     * <p>容易踩的坑：第 ③ 步最容易被当成多余校验删掉，但它挡的是真实故障
+     * （「成员入口不出现」「进了页面又报无权限」）。
+     * 另一个坑是第 ④ 步的判断写成了 {@code userRole != null && ADMIN != of(userRole)}，
+     * 而不是「传了角色就拒绝」——管理员把自己从 admin 改成 admin 是合法的，
+     * 那等于什么都没改，不该报错。
+     * 还有一点：本方法<b>不幂等</b>，重复封禁会重复踢会话（通知则会被幂等键挡掉）。
+     *
+     * @param userUpdateRequest 更新请求，不能为 null；id 必填且必须为正数；
+     *                          其余字段为 null 表示不修改；密码传值即重置（内部 BCrypt 加密后覆盖），
+     *                          传 null 或空串表示不动原密码
+     * @return true 表示更新动作已执行成功；注意它<b>不代表数据真的变了</b>——
+     *         什么都没改时也是 true，调用方不要用它判断「有没有变化」
+     * @throws BusinessException 用户不存在（A0402）；角色非法、授予成员身份但无档案、
+     *         封禁或降级当前登录账号（均为 A0401）时抛出
      */
     @Override
     public boolean updateUser(UserUpdateRequest userUpdateRequest) {
@@ -424,16 +680,16 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
                 ErrorCode.PARAMS_ERROR, "用户 id 不能为空");
         Long id = userUpdateRequest.getId();
 
-        // 先确认目标存在：否则 updateById 只返回 false，前端只看到「更新失败」而不知道原因
+        // ① 先确认目标存在：否则 updateById 只返回 false，前端只看到「更新失败」而不知道原因
         SysUser existing = this.getById(id);
         ThrowUtils.throwIf(existing == null, ErrorCode.NOT_FOUND_ERROR, "用户不存在");
 
         String userRole = userUpdateRequest.getUserRole();
-        // 角色合法性校验：非法值一旦入库，权限判定会静默失效（拿不到任何角色却也不报错）
+        // ② 角色合法性校验：非法值一旦入库，权限判定会静默失效（拿不到任何角色却也不报错）
         ThrowUtils.throwIf(userRole != null && UserRoleEnum.of(userRole) == null,
                 ErrorCode.PARAMS_ERROR, "用户角色不合法，仅支持 " + UserRoleEnum.valuesText());
 
-        // 授予成员角色前，必须确认该账号已有成员档案。
+        // ③ 授予成员角色前，必须确认该账号已有成员档案。
         //
         // 为什么必须拦：成员功能的准入判据是「studio_member 档案的 user_id 命中当前账号」，
         // 而 user_role 只是权限标签。只把角色改成 member、却没有档案时，
@@ -452,7 +708,7 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
                     "该账号还没有成员档案，授予成员/管理员身份前请先到「成员管理」为他建档并绑定此账号");
         }
 
-        // 防锁死守卫：管理员不能把自己封禁、也不能把自己降级。
+        // ④ 防锁死守卫：管理员不能把自己封禁、也不能把自己降级。
         // 权限判定每次都查库（见 StpInterfaceImpl），一旦自己失去 admin 角色会立刻无法管理，
         // 而且此时已经没有任何管理员能通过接口把你改回来，只能去数据库修数据
         if (Objects.equals(id, StpUtil.getLoginIdAsLong())) {
@@ -464,6 +720,7 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
 
         SysUser update = new SysUser();
         update.setId(id);
+        // ⑤ 只 set 白名单字段：DTO 里的值原样搬过来，null 交给 MyBatis-Plus 跳过
         update.setUserName(userUpdateRequest.getUserName());
         update.setUserAvatar(userUpdateRequest.getUserAvatar());
         update.setUserRole(userRole);
@@ -476,7 +733,7 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         // updateById 默认跳过 null 字段，这正是「传 null 表示不修改」语义成立的基础
         boolean updated = this.updateById(update);
 
-        // 封禁即时生效：把目标账号的会话全部踢掉（token 直接失效），
+        // ⑥ 封禁即时生效：把目标账号的会话全部踢掉（token 直接失效），
         // 而不是等 7 天后 token 自然过期——否则被封禁的用户在窗口期内
         // 仍可用全部登录态接口。防锁死守卫已保证管理员不会封禁自己，无误踢风险。
         // 只在这一种场景踢：改昵称/头像/角色都不影响既有会话的有效性
@@ -484,7 +741,7 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
             StpUtil.logout(id);
         }
 
-        // 成员身份授予通知：角色从非成员变为 member 时告知本人。
+        // ⑦ 成员身份授予通知：角色从非成员变为 member 时告知本人。
         // 此前用户被授予成员身份后毫无感知，只能等管理员口头通知——
         // 而「身份变了」这种事件本来就该有系统反馈（工作台/刷题入口也是这时出现的）。
         // 只认 member 不认 admin：管理员极少且互相认识，授予时本人就在场；
@@ -516,27 +773,60 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
     }
 
     /**
-     * 管理员删除用户（逻辑删除，接口契约见 UserService）
+     * 管理员删除用户（逻辑删除）：让账号消失，并立刻让它的登录态失效
      *
-     * 守卫：不能删除当前登录账号——删掉自己会立刻失去管理端权限，且无法自行恢复。
+     * <p>为什么这样设计：三个关键取舍。
+     * 第一，<b>必须拦住「删除当前登录账号」</b>：删掉自己会立刻失去管理端权限
+     * （权限判定实时查库，查不到用户就等于没有角色），而此时已经没有任何管理员
+     * 能通过接口把自己恢复，只能去数据库改数据。这是一条不可逆的误操作路径，
+     * 所以它在最前面就被挡掉，而不是等用户点完确认再报错。
+     * 第二，<b>逻辑删除而不是物理删除</b>：实际执行的是
+     * {@code UPDATE ... SET deleted_at = 毫秒时间戳}，数据仍可追溯；
+     * 而且账号名的唯一索引带着 deleted_at，删除后这个账号名会被释放，
+     * 本人可以重新注册——物理删除会让这条「历史」彻底消失。
+     * 第三，<b>删除后必须踢会话</b>：不踢的话，该账号手里的 token 在自然过期前
+     * 仍然有效。「取当前登录用户」那条路径能兜住「用户已被删除」的情况，
+     * 但直接拿登录 ID 干活的端点看不到那一层，踢会话才是根治。
      *
-     * @param id 用户 ID
-     * @return true 表示删除成功
+     * <p>执行步骤：
+     * <ol>
+     *     <li>① 防误删守卫：id 等于当前登录账号时直接拒绝。
+     *     这一步放在最前，连一次查库都不该为它浪费；</li>
+     *     <li>② 查实体确认存在。必须在删除之前——
+     *     removeById 对不存在的行只返回 false，前端会看到「删除失败」却不知道为什么；</li>
+     *     <li>③ 逻辑删除。返回 false 说明这一行在查出来之后被并发删掉了，
+     *     此时不该继续往下踢会话；</li>
+     *     <li>④ 踢掉该账号的全部会话。用 removed 做条件，
+     *     是为了不出现「没删成却把人踢下线」这种反向影响。</li>
+     * </ol>
+     *
+     * <p>容易踩的坑：删除<b>不会</b>级联清理该账号的成员档案与业务数据。
+     * 那些是独立的业务实体，级联删除属于另一个决策（要不要保留历史记录），
+     * 不在本方法职责内——但这也意味着「删了用户，成员档案还在」是正常现象，
+     * 排查「为什么成员列表里还有这个人」时先看档案表，而不是怀疑删除没生效。
+     * 另一个坑是本方法<b>不幂等</b>：对同一个 id 再删一次，第二次会因查不到而抛 A0402，
+     * 前端做「删除后刷新列表」时要把 A0402 当成「已经删掉了」处理，而不是弹报错。
+     *
+     * @param id 用户 ID；等于当前登录账号时抛 A0401（不允许删除自己）
+     * @return true 表示删除成功；false 表示该行在查出来之后已被并发删除
+     *         （此时没有踢会话，因为这个人已经不存在了）
+     * @throws BusinessException 试图删除自己（A0401）、用户不存在或被逻辑删除（A0402）时抛出
      */
     @Override
     public boolean deleteUser(long id) {
-        // 防误删守卫：删掉自己会立刻失去管理端权限（权限判定实时查库），且无法自行恢复
+        // ① 防误删守卫：删掉自己会立刻失去管理端权限（权限判定实时查库），且无法自行恢复
         ThrowUtils.throwIf(id == StpUtil.getLoginIdAsLong(),
                 ErrorCode.PARAMS_ERROR, "不能删除当前登录的账号");
 
+        // ② 先确认存在：removeById 对不存在的行只返回 false，前端会分不清原因
         SysUser existing = this.getById(id);
         ThrowUtils.throwIf(existing == null, ErrorCode.NOT_FOUND_ERROR, "用户不存在");
 
-        // 逻辑删除：实际执行 UPDATE ... SET deleted_at = 毫秒时间戳，
+        // ③ 逻辑删除：实际执行 UPDATE ... SET deleted_at = 毫秒时间戳，
         // 数据仍可追溯，且账号名会因为「唯一索引带 deleted_at」而被释放，可以重新注册
         boolean removed = this.removeById(id);
 
-        // 与封禁同一理由：删除后踢掉该账号全部会话，不让已下发的 token 继续有效
+        // ④ 与封禁同一理由：删除后踢掉该账号全部会话，不让已下发的 token 继续有效
         // （getLoginUser 的 user==null 分支能兜住「当前用户」接口，
         //   但直接拿 loginId 干活的端点看不到那一层，踢会话才是根治）
         if (removed) {
@@ -546,20 +836,58 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
     }
 
     /**
-     * 管理端分页查询（接口契约见 UserService）
+     * 管理端分页查询用户：按条件筛选、排序并返回脱敏后的分页结果
      *
-     * 分页与排序参数在这里做兜底纠正：页码 < 1 视为 1、每页条数收敛到 50、
-     * 排序字段走 applySort 的白名单（防 ORDER BY 注入）。
-     * 刻意不做"参数非法就报错"，避免把"页码传错"变成 B0001 系统错误。
+     * <p>为什么这样设计：这里刻意<b>不做「参数非法就报错」</b>，而是把分页与排序参数
+     * 兜底纠正到合理区间。两个理由：一是这些参数走 GET 传递，校验失败抛出的异常
+     * 会落到全局兜底变成 B0001，把「页码传错了」显示成「服务器故障」，
+     * 排查方向被完全带偏；二是页码传错没必要让整个查询失败，
+     * 纠正成第 1 页继续查更符合用户预期。
+     * 另一个关键取舍是<b>排序字段必须走白名单</b>：ORDER BY 的位置无法用占位符参数化，
+     * 把前端传来的字符串直接拼进 SQL 就是最典型的注入入口，
+     * 而且它不像 WHERE 那样能被预编译挡住。因此这里用 switch 把有限的几个字段名
+     * 映射成实体方法引用，认不出的字段一律走默认排序，而不是原样拼进去。
+     * 还有一点：每页条数有硬上限（50）。不设上限的话，前端一个
+     * {@code pageSize=100000} 就能把整表读进内存，这是最容易发生的自我 DoS。
      *
-     * @param userQueryRequest 查询条件，允许为 null（无条件查第一页）
-     * @return 分页结果，记录为管理端 VO
+     * <p>执行步骤：
+     * <ol>
+     *     <li>① 请求为 null 时兜一个空对象：不传任何条件等于「无条件查第一页」，
+     *     这是合理用法，不该报错；</li>
+     *     <li>② 纠正分页参数：页码下限 1、每页条数收敛到上限。
+     *     必须在拼查询条件之前完成，因为分页对象要用到这两个值；</li>
+     *     <li>③ 拼筛选条件。每个条件都带一个「是否生效」的布尔参数
+     *     （{@code query.getId() != null} 这种），为 false 时该条件不会拼进 SQL，
+     *     省去了手写 if 判断；精确匹配用于 id / 角色 / 状态（枚举值域，走索引），
+     *     模糊匹配只用于账号与昵称；</li>
+     *     <li>④ 应用排序（白名单映射）。放在筛选之后，
+     *     这样即使排序字段非法也不影响已经拼好的 WHERE；</li>
+     *     <li>⑤ 分页查询并转成脱敏 VO 分页对象。转换必须逐条走 getUserVO，
+     *     而不是让实体直接序列化出去——实体带着密码哈希串。</li>
+     * </ol>
+     *
+     * <p>容易踩的坑：模糊查询没有转义 {@code %} 与 {@code _}。
+     * 用户输入这两个字符时它们仍会被当作通配符，例如搜「100%」会匹配到一堆无关账号。
+     * 这是 LIKE 的固有语义，这里刻意接受（转义会让「搜索」变得反直觉），
+     * 但要在排查「为什么搜出多余结果」时先想到它。
+     * 另一个坑是别把 {@code sortOrder} 的判断写成「等于 asc 才升序，否则降序」之后
+     * 又忘了默认值——本实现里「不传或非法」都按降序处理，这是明确的约定，
+     * 不要在调用方再猜一遍。
+     *
+     * @param userQueryRequest 查询条件，允许整体为 null（表示无条件查第一页）；
+     *                         字段为 null 表示「该条件不参与筛选」，不是「查 null 值」；
+     *                         current 与 pageSize 传错会被纠正而不是报错；
+     *                         sortField 只认白名单内的字段名，认不出时按 id 倒序
+     * @return 分页结果，记录为脱敏后的 UserVO（不含密码字段）；
+     *         没有匹配数据时 records 为空列表（不是 null），total 为 0；
+     *         永不为 null
      */
     @Override
     public Page<UserVO> listUserByPage(UserQueryRequest userQueryRequest) {
+        // ① 不传条件等于无条件查第一页，兜一个空对象而不是报错
         UserQueryRequest query = userQueryRequest == null ? new UserQueryRequest() : userQueryRequest;
 
-        // 分页参数兜底纠正（而不是抛异常）：页码传错没必要让整个查询失败，
+        // ② 分页参数兜底纠正（而不是抛异常）：页码传错没必要让整个查询失败，
         // 收敛到合理区间继续查更符合预期，也避免「参数错」和「查询无结果」混在一起难以排查
         long current = (query.getCurrent() == null || query.getCurrent() < 1) ? 1L : query.getCurrent();
         long pageSize = (query.getPageSize() == null || query.getPageSize() < 1)
@@ -567,6 +895,7 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         // 上限收敛：不设上限时，前端一个 pageSize=100000 就能把整表读进内存
         pageSize = Math.min(pageSize, MAX_PAGE_SIZE);
 
+        // ③ 拼筛选条件：每个条件都带「是否生效」的布尔参数，为 false 时不拼进 SQL
         LambdaQueryWrapper<SysUser> wrapper = new LambdaQueryWrapper<>();
         // 条件重载的第一个参数为 false 时该条件不会拼进 SQL，省去了手写 if 判断
         wrapper.eq(query.getId() != null, SysUser::getId, query.getId());
@@ -577,8 +906,10 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         // 精确匹配：角色/状态是枚举值域，精确匹配才能命中索引、结果也才可预期
         wrapper.eq(StrUtil.isNotBlank(query.getUserRole()), SysUser::getUserRole, query.getUserRole());
         wrapper.eq(query.getUserStatus() != null, SysUser::getUserStatus, query.getUserStatus());
+        // ④ 排序走白名单：ORDER BY 无法用占位符参数化，前端字符串绝不能直接拼进 SQL
         applySort(wrapper, query.getSortField(), query.getSortOrder());
 
+        // ⑤ 分页在数据库侧完成，转换逐条走 getUserVO（实体带着密码哈希串，不能直接序列化出去）
         Page<SysUser> entityPage = this.page(new Page<>(current, pageSize), wrapper);
         return toUserVOPage(entityPage);
     }

@@ -9,7 +9,6 @@ import java.io.Serializable;
  *
  * @author shaoshing
  */
- */
 @Data
 public class PageTrafficVO implements Serializable {
 

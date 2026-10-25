@@ -47,20 +47,44 @@ public enum QuizAnswerResultEnum {
     }
 
     /**
-     * 按取值查找结果
+     * 把数据库里的作答结果翻译成枚举，查不到时返回 null
      *
-     * @param value 数据库中的结果值
-     * @return 匹配的枚举；无匹配（含 null）时返回 null
+     * <p>为什么这样设计：这个枚举用在统计与回显两条路径上，两者对脏值的容忍度不同。
+     * 统计正确率时，认不出的结果应当被明确排除并记一笔日志（否则会被算成「错误」，
+     * 让正确率凭空变低）；而回显历史作答时，一条脏数据只该让这一行显示成「未知」，
+     * 不能让整页作答记录打不开。查不到返回 null，把处置权交给调用方，
+     * 比在这里替它选一种行为安全。
+     *
+     * <p>为什么不兜底成 WRONG：兜底会把「数据坏了」伪装成「用户答错了」，
+     * 正确率被悄悄拉低，而没有人会去查——这是最难发现的一类偏差。
+     *
+     * <p>执行步骤：
+     * <ol>
+     *     <li>先挡 null：旧数据可能没有这一列，或不传参，null 必须原样返回；</li>
+     *     <li>遍历全部常量逐个比对，命中即返回；</li>
+     *     <li>走完仍未命中返回 null。</li>
+     * </ol>
+     *
+     * <p>容易踩的坑：{@code result.value == value} 能正确比较，是因为左边 int、
+     * 右边 Integer，比较前右边会自动拆箱。若把字段改成 Integer，
+     * 同一个 {@code ==} 就变成比对象引用，只有缓存范围内的值碰巧相等。
+     *
+     * @param value 数据库中的结果值，允许为 null；合法取值为 1 / 2 / 3
+     * @return 命中的枚举常量；传 null 或不是 1 / 2 / 3 时返回 null，调用方必须判空
      */
     public static QuizAnswerResultEnum of(Integer value) {
+        // ① 先挡 null：不判空就拆箱比较会 NPE，而 null 在这里是正常输入
         if (value == null) {
             return null;
         }
+        // ② 遍历全部常量：新增结果类型时这里不用改
         for (QuizAnswerResultEnum result : values()) {
+            // 左边 int、右边 Integer，比较的是数值而非对象引用
             if (result.value == value) {
                 return result;
             }
         }
+        // ③ 查不到返回 null：统计路径据此排除脏值，而不是把它算成答错
         return null;
     }
 }

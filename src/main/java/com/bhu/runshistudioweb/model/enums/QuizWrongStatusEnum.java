@@ -41,20 +41,46 @@ public enum QuizWrongStatusEnum {
     }
 
     /**
-     * 按取值查找枚举
+     * 把数据库或前端传来的数字翻译成错题本状态，查不到时返回 null
      *
-     * @param value 数据库 / 前端传来的取值
-     * @return 匹配的枚举；无匹配（含 null）时返回 null
+     * <p>为什么这样设计：查不到返回 null 而不是抛异常，是因为两条路径的要求相反。
+     * 前端按状态筛选错题（只看待复习）时，传一个 5 进来必须报参数错误——
+     * 否则会正常返回空列表，用户会以为「我的错题本空了」，这是会让人慌的误判。
+     * 而展示单条错题时，历史脏值只该让这一格显示成「未知」，不该让整页报错。
+     * 把处置权交给知道上下文的调用方。
+     *
+     * <p>为什么不兜底成 PENDING：兜底会把「已消解的题」显示成「待复习」，
+     * 用户会反复看到自己已经掌握的题，而这正是错题本最该避免的体验；
+     * 同时数据问题也被彻底藏住了。
+     *
+     * <p>执行步骤：
+     * <ol>
+     *     <li>先挡 null：GET 参数不传、数据库列为 NULL 都会以 null 进来，
+     *     不先判断就拆箱比较会 NPE；</li>
+     *     <li>遍历全部常量逐个比对，命中即返回；</li>
+     *     <li>走完仍未命中返回 null。</li>
+     * </ol>
+     *
+     * <p>容易踩的坑：{@code status.value == value} 能正确比较，是因为左边 int、
+     * 右边 Integer，比较前右边会自动拆箱；若字段改成 Integer，
+     * 同一个 {@code ==} 就变成比对象引用，只有缓存范围内的值碰巧相等。
+     *
+     * @param value 待翻译的取值，允许为 null；合法取值为 0 / 1
+     * @return 命中的枚举常量；传 null 或不是 0 / 1 时返回 null，调用方必须判空
      */
     public static QuizWrongStatusEnum of(Integer value) {
+        // ① 先挡 null：不判空就拆箱比较会 NPE，而 null 在这里是正常输入
         if (value == null) {
             return null;
         }
+        // ② 遍历全部常量：新增状态时这里不用改
         for (QuizWrongStatusEnum status : values()) {
+            // 左边 int、右边 Integer，比较的是数值而非对象引用
             if (status.value == value) {
                 return status;
             }
         }
+        // ③ 查不到返回 null：报错还是降级，由调用方按场景决定
         return null;
     }
 }

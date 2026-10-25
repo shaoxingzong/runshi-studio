@@ -1,17 +1,26 @@
 package com.bhu.runshistudioweb.constant;
 
 /**
- * 用户角色取值常量
+ * 用户角色常量
  *
- * 取值与 db/user.sql 中 user_role 的默认值及列注释保持一致（两处同源）：
- * user-普通注册用户 / member-工作室成员 / admin-管理员。
+ * <p>为什么角色既有常量类（本类）又有枚举（UserRoleEnum）：
+ * Sa-Token 的 @SaCheckRole("admin") 注解只接受<b>编译期常量</b>，
+ * 不能写枚举的方法调用（如 UserRoleEnum.ADMIN.getValue()）。
+ * 所以「注解里能用的字面量」放在本类，「取值字典与业务方法」放在枚举里。
  *
- * 为什么不直接把这些值写在 UserRoleEnum 里：Java 有两条硬性限制叠在一起——
- * - 枚举常量必须写在枚举体的最前面；
- * - 枚举常量的构造参数不能引用后面才声明的字段（编译报「非法的前向引用」），
- * 而 @SaCheckRole 的属性又必须是编译期常量（不能写 UserRoleEnum.USER.getValue()）。
- * 于是「枚举定义」和「注解引用」没法共用同一个常量。收敛到本类后，两边都引用它，
- * 取值只有一个来源；UserRoleEnum 负责「类型与校验」，本类负责「字面量」。
+ * <p>两处必须保持一致：本类的值 = UserRoleEnum 的 value = db/user.sql 里
+ * user_role 列的注释。改一处忘改另一处，后果是「明明给了角色却一直提示无权限」，
+ * 而且不会报错，只能靠比对发现。
+ *
+ * <p>三档角色的定位：
+ * <ul>
+ *     <li>{@code user}：普通注册用户。注册即得，能浏览官网、用 AI 咨询（有配额），
+ *     没有任何管理权限；</li>
+ *     <li>{@code member}：工作室成员。能发帖、签到、刷题。
+ *     注意这个角色<b>不单独生效</b>——成员功能的准入判据是 studio_member 表里有没有档案，
+ *     角色只是让前端知道该显示哪些入口；</li>
+ *     <li>{@code admin}：管理员。能进后台做全部增删改查与内容审核。</li>
+ * </ul>
  *
  * @author shaoshing
  */

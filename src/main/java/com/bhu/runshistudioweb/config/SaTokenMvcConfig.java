@@ -133,9 +133,39 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
     };
 
     /**
-     * 注册 Sa-Token 拦截器
+     * 注册 Sa-Token 的全局拦截器，并挂上白名单
      *
-     * @param registry Spring MVC 的拦截器注册表
+     * <p>为什么这样设计：Sa-Token 的 starter 只注册了三个过滤器（上下文、跨域、防火墙），
+     * 它<b>不会</b>自动注册 WebMVC 拦截器；而 {@code @SaCheckRole} / {@code @SaCheckLogin}
+     * 这些注解正是由 {@code SaInterceptor} 在 preHandle 里解析的。不注册拦截器，
+     * 注解会被<b>静默忽略</b>——不报错、不拦截、接口直接放行。这是接入 Sa-Token 时
+     * 最容易踩、也最危险的坑：代码看起来处处都有鉴权注解，实际上一个都没生效。
+     *
+     * <p>为什么采用「默认拒绝 + 白名单」而不是「默认放行 + 逐个加注解」：
+     * 新增接口时如果忘了加注解，前者最多是「没登录时访问不了」（很快会被发现），
+     * 后者则是「所有人可访问」（往往上线很久才被发现）。安全配置的默认值必须站在严格的一侧。
+     *
+     * <p>执行步骤：
+     * <ol>
+     *     <li>构造 {@code SaInterceptor} 并传入一个鉴权函数。这个函数先判断
+     *     handler 是不是静态资源处理器，是就放行；</li>
+     *     <li>其余情况一律 {@code StpUtil.checkLogin()}。注意这里<b>只做登录校验</b>，
+     *     角色校验交给接口上的 {@code @SaCheckRole} 注解——两者是叠加关系，
+     *     先确认「是谁」，再确认「能不能」；</li>
+     *     <li>用 {@code /**} 覆盖全部接口。路径不能写成 {@code /api/**}：
+     *     {@code server.servlet.context-path} 不参与拦截器匹配，
+     *     带上它会导致一条都匹配不上，等于没注册；</li>
+     *     <li>排除白名单里的精确路径。</li>
+     * </ol>
+     *
+     * <p>容易踩的坑：第 ① 步里对 {@code ResourceHttpRequestHandler} 的判断不能删。
+     * 不存在的路径（以及真正的静态资源）会被 Spring 交给静态资源处理器，
+     * 而它同样挂在 {@code /**} 上、同样会命中本拦截器。若无条件 checkLogin，
+     * 所有 404 都会被伪装成 A0201「未登录」：前端把 URL 写错时看到的是「请先登录」，
+     * 排查方向被彻底带偏，监控里也统计不到 404。
+     * 跳过它不产生越权风险——该处理器只能读静态文件，读不到任何业务接口。
+     *
+     * @param registry Spring MVC 的拦截器注册表，由框架注入；不需要也不应该自己 new
      */
     @Override
     public void addInterceptors(InterceptorRegistry registry) {

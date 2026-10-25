@@ -29,22 +29,22 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.List;
 
 /**
- * AI 咨询接口（全部要求登录）
+ * AI 咨询接口（HTTP 入口，全部要求登录）
  *
- * 访问门槛：AI 咨询不向游客开放——未登录一律 A0201。
- * 登录后：普通用户限 studio.ai.query-limit（默认 5 次），成员与管理员不限次。
- * 登录校验与配额都在 Service 层（见 AiChatServiceImpl）。
+ * <p>本类只做三件事：接参、调 Service、包响应。会话归属、配额、事务边界、
+ * 检索与模型调用全部在 Service 层（见 AiChatServiceImpl），
+ * 因此读本类时不必关心「回答怎么来的」，只需要看「参数从哪来、结果怎么包」。
  *
- * 本 Controller 各接口的鉴权：
- * 接口清单
- * 路径 | 鉴权
- * /ai/chat、/ai/chat/stream、/ai/chat/history、/ai/session/delete | 不在 Sa-Token 白名单里 → 默认要求登录（拦截器）；Service 层再兜一层
- * /ai/session/list | @SaCheckLogin（双保险）
+ * <p>访问门槛：AI 咨询不向游客开放，未登录一律 A0201。登录后普通用户受
+ * studio.ai.query-limit（默认 5 次）约束，成员与管理员不限次也不计数。
+ * 具体鉴权分工如下：
+ * <ul>
+ *     <li>/ai/chat、/ai/chat/stream、/ai/chat/history、/ai/session/delete：
+ *     不在 Sa-Token 白名单里，全局拦截器默认要求登录，Service 层再兜一层；</li>
+ *     <li>/ai/session/list：额外标 {@code @SaCheckLogin}，属于双保险。</li>
+ * </ul>
  *
- * 本 Controller 只做接参与包装：会话归属、配额、事务边界全在 Service 里
- * （见 AiChatServiceImpl 的类注释）。
- *
- * 接口地址前缀：server.servlet.context-path=/api，完整路径形如
+ * <p>接口地址前缀来自 server.servlet.context-path=/api，完整路径形如
  * http://localhost:8080/api/ai/chat。
  *
  * @author shaoshing
@@ -58,13 +58,30 @@ public class AiChatController {
     private final AiChatService aiChatService;
 
     /**
-     * AI 提问（需登录）
+     * AI 提问（同步）：一次返回完整回答
      *
-     * sessionId 可空：为空即新建会话，响应里会带回新的会话 ID；
-     * 前端把它存下来，下一轮带上即可续聊（不需要单独的「创建会话」接口）。
+     * <p>为什么这样设计：sessionId 允许为空，为空即新建会话，响应里带回新的会话 ID，
+     * 前端把它存下来、下一轮带上即可续聊——因此不需要单独一个「创建会话」接口。
+     * 少一个接口就少一次「会话建好了但提问失败了」的空会话垃圾。
+     * 本方法不加事务：事务边界在 Service 里，Controller 只负责把请求转过去。
      *
-     * @param aiChatRequest 提问请求（message 必填且 ≤500 字）
-     * @return 会话 ID 与 AI 回答
+     * <p>执行步骤：
+     * <ol>
+     *     <li>① 兜底判空：整个请求体为 null 时 {@code @Valid} 不会触发，
+     *     后面取值会抛空指针被兜成 B0001，这里提前给出 A0401；</li>
+     *     <li>② 调 Service 并包成统一响应体。异常（A0401 / A0402 / A0501 / C0200）
+     *     直接往外抛，由全局异常处理器转成响应，这里不做 try-catch。</li>
+     * </ol>
+     *
+     * <p>容易踩的坑：{@code @Valid} 只校验字段级约束（非空、长度），
+     * 它管不到「请求体本身是不是 null」。少了第 ① 步，一个空 body 的请求
+     * 会变成 500 而不是 400 语义的 A0401。
+     *
+     * @param aiChatRequest 提问请求：message 必填且不超过 500 字；
+     *                      sessionId 可空（为空即新建会话）
+     * @return 统一响应体，data 里是会话 ID、回答正文与本次引用的资料列表
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数不合法（A0401）、
+     * 会话不存在或无权访问（A0402）、提问次数超限（A0501）、AI 调用失败（C0200）时抛出
      */
     @PostMapping("/chat")
     @Operation(summary = "AI 提问", description = "需登录；sessionId 可空（为空则新建会话），失败返回 C0200")
@@ -75,12 +92,29 @@ public class AiChatController {
     }
 
     /**
-     * 查询会话历史（需登录）
+     * 查询会话历史（同步接口，一次返回最近 50 条）
      *
-     * 返回最近 50 条、时间正序（旧 → 新），与对话界面自上而下的顺序一致。
+     * <p>为什么这样设计：返回时间正序（旧 → 新），与对话界面自上而下的顺序一致，
+     * 前端拿到即可直接渲染，不需要再排一次序。上限固定 50 条：会话会随对话轮次
+     * 无限增长，一次全量返回会让前端一打开历史页就拉回整个会话。
      *
-     * @param sessionId 会话 ID（必填）
-     * @return 消息列表；会话不存在或无权访问返回 A0402
+     * <p>执行步骤：
+     * <ol>
+     *     <li>① 从查询参数取 sessionId。刻意声明 required = false，
+     *     让「没传参数」也进到 Service 里；</li>
+     *     <li>② 调 Service 并把列表包成统一响应体。越权与不存在都得到 A0402，
+     *     两种情况的提示完全相同，不暴露会话是否存在。</li>
+     * </ol>
+     *
+     * <p>容易踩的坑：这里的 required = false 不是「参数可选」，而是「参数缺失的报错
+     * 交给 Service 统一处理」。若写成 required = true，缺参数时 Spring 会抛
+     * MissingServletRequestParameterException，被全局处理器兜成 B0001「系统错误」——
+     * 明明是用户少传了一个参数，却报成后端故障。
+     *
+     * @param sessionId 会话 ID（必填，但用包装类型接收，缺失时由 Service 报 A0401）
+     * @return 统一响应体，data 里是消息列表（旧 → 新）；没有消息时是空列表
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 会话 id 缺失或非法（A0401）、
+     * 会话不存在或无权访问（A0402）、未登录（A0201）时抛出
      */
     @GetMapping("/chat/history")
     @Operation(summary = "AI 会话历史", description = "需登录；返回最近 50 条消息（时间正序）")
@@ -93,40 +127,41 @@ public class AiChatController {
     }
 
     /**
-     * AI 提问（SSE 流式，需登录）
+     * AI 提问（SSE 流式）：回答边生成边推送
      *
-     * 契约例外：本接口不返回 BaseResponse。SSE 的响应体是事件流，
-     * 套上 {code,data,message} 会让前端无法边收边渲染。
-     * 由此带来两个必须知道的后果：
-     * - HTTP 状态码恒为 200，包括参数错误、会话不存在、配额超限、AI 失败——
-     * 它们都以 error 事件返回（负载含业务码），前端必须监听 error 事件，
+     * <p>为什么这样设计：本接口是全项目唯一不返回统一响应体的地方。
+     * SSE 的响应体是事件流而不是一次性 JSON，套上 {@code {code,data,message}}
+     * 会让前端无法边收边渲染。由此带来两个必须知道的后果：
+     * 第一，HTTP 状态码恒为 200——参数错误、会话不存在、配额超限、AI 失败
+     * 都以 error 事件返回，业务码在事件负载里，前端必须监听 error 事件，
      * 不能再依赖「非 0 code 就报错」那套统一拦截逻辑；
-     * - 因此这里不加 @Valid：加了之后 Spring 会抛
+     * 第二，这里刻意不加 {@code @Valid}：加了之后 Spring 会抛
      * MethodArgumentNotValidException，被全局异常处理器包成 application/json 的 A0401 响应，
      * 与 text/event-stream 的内容类型混在一起。校验交给 Service，
-     * 失败时同样以 error 事件返回（见 AiChatService#chatStream）。
+     * 失败时同样以 error 事件返回。
      *
-     * 事件序列：meta(sessionId) → delta* → done / error。
+     * <p>执行步骤：
+     * <ol>
+     *     <li>① 直接把请求交给 Service，拿回一个发射器就立刻返回。
+     *     方法不等待回答生成完成——那样会把这个 HTTP 工作线程钉住几十秒；</li>
+     *     <li>② 真正的推流在 Service 的虚拟线程里进行，事件序列是
+     *     meta → sources → delta* → done / error。前端按事件名分派即可。</li>
+     * </ol>
      *
-     * @param aiChatRequest 提问请求（message 必填；sessionId 可空表示新建会话）
-     * @return SSE 发射器（异步推流）
+     * <p>容易踩的坑：{@code produces = text/event-stream} 不能省，也不能被
+     * 「统一响应体」的写法带偏。一旦返回类型写成 {@code BaseResponse<SseEmitter>}
+     * 或者加了 {@code @ResponseBody} 之外的包装，浏览器收到的就不是事件流，
+     * 前端 onmessage 一个字节都收不到。另外客户端断开后不要再发事件——
+     * 对已关闭的连接写数据会抛 IOException，由 Service 标记中止并跳过落库。
+     *
+     * @param aiChatRequest 提问请求：message 必填；sessionId 可空表示新建会话。
+     *                      这里不加 {@code @Valid}，非法参数会在流里以 error 事件返回
+     * @return SSE 发射器。方法立即返回，回答在后台线程中推送；
+     *         调用方不要对它做业务判断
      */
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @Operation(summary = "AI 提问（SSE 流式）",
             description = "需登录；事件序列 meta → delta* → done/error，失败以 error 事件返回（HTTP 恒 200）")
-    /**
-     * SSE 流式问答
-     *
-     * <p>本接口是全项目唯一不返回 BaseResponse 的地方：流的失败契约是
-     * 「HTTP 200 + 一个 error 事件」，无法用统一响应体表达。
-     * 因此它也在白名单里——若由拦截器拒绝，会返回 application/json 破坏流式契约，
-     * 登录校验因此下移到 Service。
-     *
-     * <p>事件顺序：meta → sources → delta → done；失败时只有一个 error。
-     *
-     * @param aiChatRequest 提问请求
-     * @return SSE 发射器
-     */
     public SseEmitter chatStream(@RequestBody AiChatRequest aiChatRequest) {
         return aiChatService.chatStream(aiChatRequest);
     }
@@ -134,17 +169,29 @@ public class AiChatController {
     // ==================== 会话管理 ====================
 
     /**
-     * 我的会话列表（需登录，不进白名单）
+     * 我的会话列表（分页）
      *
-     * 用户维度由服务端从登录态取，请求里没有 userId 参数——
+     * <p>为什么这样设计：用户维度由服务端从登录态取，请求里没有 userId 参数——
      * 否则「看别人的会话列表」就成了一个功能。
-     *
-     * 这里额外标 @SaCheckLogin 是纵深防御：本路径未进白名单，
-     * 全局拦截器本来就会要求登录；一旦将来有人误把它加进白名单，
+     * 这里额外标 {@code @SaCheckLogin} 是纵深防御（多层各拦一次，任一层失效仍有下一层）：
+     * 本路径未进白名单，全局拦截器本来就会要求登录；万一有人误把它加进白名单，
      * 注解仍能兜住——而「翻别人会话列表」这类问题一旦漏出就是数据泄露。
      *
-     * @param aiSessionQueryRequest 分页参数（current / pageSize），允许为空
-     * @return 会话分页结果（含 messageCount，按 updated_at 倒序）
+     * <p>执行步骤：
+     * <ol>
+     *     <li>① 接收分页参数。它不是 {@code @RequestBody}，因此由 Spring 按字段名
+     *     从查询参数绑定，一个都不传时对象字段全为 null；</li>
+     *     <li>② 调 Service 查分页并包响应。参数归一化（null 按第一页 10 条、上限 50）
+     *     在 Service 里做，Controller 不重复一遍，避免两处口径漂移。</li>
+     * </ol>
+     *
+     * <p>容易踩的坑：本方法不加 {@code @Valid} 是刻意的。分页参数非法（例如
+     * pageSize=-1）不该报错，Service 会把它归一成默认值；若加了校验注解，
+     * 一个手滑的负数就会变成 400，而用户只是想翻页。
+     *
+     * @param aiSessionQueryRequest 分页参数（current / pageSize），允许为 null 或字段全空
+     * @return 统一响应体，data 里是会话分页结果（含每个会话的消息条数，按最近活跃倒序）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 未登录时抛出（A0201）
      */
     @GetMapping("/session/list")
     @SaCheckLogin
@@ -154,13 +201,31 @@ public class AiChatController {
     }
 
     /**
-     * 删除会话及其全部消息（需登录，归属规则与提问完全一致）
+     * 删除会话及其全部消息
      *
-     * 删除方式是「双逻辑删」：会话与消息在同一事务内各自写 deleted_at，
-     * 数据可追溯。重复删除返回 A0402（第二次查不到已删除的会话）。
+     * <p>为什么这样设计：删除方式是「双逻辑删」——会话与消息在同一事务内
+     * 各自把 deleted_at 写成毫秒时间戳，数据可追溯、误删可恢复。
+     * 归属规则与提问完全一致，因此重复删除第二次会得到 A0402：
+     * 第一次删除后会话已被逻辑删除，按 ID 查不到，与「不存在」走同一条路径。
+     * 请求体用一个只有 sessionId 的 DTO 而不是查询参数，是为了与其它写接口保持一致
+     * （写操作统一走 POST + JSON body）。
      *
-     * @param aiSessionDeleteRequest 删除请求（sessionId 必填）
-     * @return true 表示删除成功
+     * <p>执行步骤：
+     * <ol>
+     *     <li>① 兜底判空：整个请求体为 null 时 {@code @Valid} 不触发，提前给 A0401；</li>
+     *     <li>② 取出 sessionId 交给 Service，由 Service 完成归属校验与事务内的双逻辑删。
+     *     Controller 不判 sessionId 是否为空——那是 Service 的职责，两处都判会让
+     *     「提示文案以哪一处为准」变得含糊。</li>
+     * </ol>
+     *
+     * <p>容易踩的坑：不要在这个方法上再套一层事务或 try-catch。删除失败时
+     * Service 已经抛了带业务码的异常，这里再捕获一次只会把具体原因
+     * （A0402 还是 B0002）压成一句笼统的失败提示。
+     *
+     * @param aiSessionDeleteRequest 删除请求：sessionId 必填；整个对象为 null 时得到 A0401
+     * @return 统一响应体，data 为 true。删除不成功一律抛异常，因此 true 是唯一可能的取值
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数不合法（A0401）、
+     * 会话不存在或无权访问（A0402）、未登录（A0201）时抛出
      */
     @PostMapping("/session/delete")
     @Operation(summary = "删除 AI 会话", description = "需登录；同事务逻辑删除会话与全部消息，重复删除返回 A0402")

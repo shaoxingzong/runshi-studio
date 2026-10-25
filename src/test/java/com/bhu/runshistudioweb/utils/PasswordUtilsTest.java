@@ -16,7 +16,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * @author shaoshing
  */
- */
 class PasswordUtilsTest {
 
     private static final String RAW = "Studio@2026";
