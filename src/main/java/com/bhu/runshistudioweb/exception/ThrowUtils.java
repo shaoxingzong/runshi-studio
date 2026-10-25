@@ -6,13 +6,15 @@ package com.bhu.runshistudioweb.exception;
  * 为什么需要它：业务代码里大量出现「条件成立就报错」的写法。手写 if 块会让校验逻辑
  * 占用大量行数，把真正的业务动作淹没。用本工具类可以压成一行：
  *
- * // 之前
+ * // 手写 if 块（占用 3 行，把业务动作淹没）
  * if (user == null) {
  *     throw new BusinessException(ErrorCode.NOT_FOUND_ERROR);
  * }
  *
- * // 现在
+ * // 用本工具类（1 行，业务动作一眼可见）
  * ThrowUtils.throwIf(user == null, ErrorCode.NOT_FOUND_ERROR);
+ *
+ * @author shaoshing
  */
 public class ThrowUtils {
 

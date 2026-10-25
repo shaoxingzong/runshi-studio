@@ -12,6 +12,8 @@ import java.io.Serializable;
  * 只带一个 postId：用户身份由 Sa-Token 的登录态给出（Controller 取
  * StpUtil.getLoginIdAsLong()），请求体里绝不接收 userId——
  * 否则「替别人点赞」就成了一个功能。
+ *
+ * @author shaoshing
  */
 @Data
 public class PostLikeRequest implements Serializable {

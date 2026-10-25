@@ -37,6 +37,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * - 关联管理：显式绑定冲突报错、解绑物理删除、重复解绑 A0402；
  * - 级联清理：删项目清项目关联；删成员清「成员-项目 + 成员-证书」两张表；
  * - tech_stack 的 JSON 边界：List ↔ JSON 往返、超长拦截、脏数据不炸接口。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc

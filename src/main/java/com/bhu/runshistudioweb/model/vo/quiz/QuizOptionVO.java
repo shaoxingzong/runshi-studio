@@ -14,6 +14,8 @@ import java.io.Serializable;
  *
  * 与入参 QuizOptionItem 字段一致但刻意分成两个类：
  * 入参未来可能加临时字段（如前端行 id），它们绝不该出现在响应里。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizOptionVO implements Serializable {

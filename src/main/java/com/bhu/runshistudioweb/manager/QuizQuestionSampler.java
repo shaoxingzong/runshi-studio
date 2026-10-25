@@ -25,6 +25,8 @@ import java.util.Random;
  * - 随机：候选是范围内全部启用题，本类负责洗牌后截断。
  * 也就是说：排序与过滤在 Service，截断与随机在本类。
  * 这个分工让本类不依赖任何数据库状态，也让 Service 的查询条件可以各自走索引。
+ *
+ * @author shaoshing
  */
 public final class QuizQuestionSampler {
 

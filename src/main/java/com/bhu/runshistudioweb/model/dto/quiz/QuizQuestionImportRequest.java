@@ -17,6 +17,8 @@ import java.io.Serializable;
  * 拿到解析结果与错误行号后展示预览；用户确认后再传 false 真正落库。
  * 这样「导入了一半发现第 12 行错了」的尴尬就不会发生——
  * 即使真正导入，也是整批全成功或全失败。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizQuestionImportRequest implements Serializable {

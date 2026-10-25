@@ -20,6 +20,8 @@ package com.bhu.runshistudioweb.model.enums;
  *
  * 取值必须与 DDL 中 studio_post.ai_audit_status 与
  * studio_post_comment.ai_audit_status 的列注释保持一致。
+ *
+ * @author shaoshing
  */
 public enum AiAuditStatusEnum {
 

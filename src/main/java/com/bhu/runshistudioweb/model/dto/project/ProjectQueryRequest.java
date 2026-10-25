@@ -21,6 +21,8 @@ import java.io.Serializable;
  * 按它筛选只能写 LIKE '%Java%'，既走不了索引又会误匹配
  * （搜 "Java" 命中 "JavaScript"）。DESIGN 3.3 的取舍是「不筛、不建索引」，
  * 将来若要按技术栈筛选，正确做法是拆标签表而不是加 LIKE 条件。
+ *
+ * @author shaoshing
  */
 @Data
 public class ProjectQueryRequest implements Serializable {

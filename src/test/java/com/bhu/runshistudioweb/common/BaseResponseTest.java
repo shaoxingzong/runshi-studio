@@ -21,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * 注意：Spring Boot 4 使用 Jackson 3，ObjectMapper 的包名为 tools.jackson.databind，
  * 写成 Jackson 2 的 com.fasterxml.jackson.databind.ObjectMapper 会直接编译不过。
+ *
+ * @author shaoshing
  */
 class BaseResponseTest {
 

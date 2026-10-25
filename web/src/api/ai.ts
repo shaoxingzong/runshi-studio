@@ -3,12 +3,12 @@ import type { AiSession, ApiResponse, ChatResponse, ChatMessage, KnowledgeSource
 
 // AI 咨询
 //
-// ⚠️ 流式接口不能用 EventSource：它无法携带自定义请求头，
+// 流式接口不能用 EventSource：它无法携带自定义请求头，
 // 而登录态就在 satoken 头里——用 EventSource 会让登录用户的提问退化成匿名（被 IP 限流）。
 // 因此这里用 fetch + ReadableStream 手动解析 SSE 帧。
 
 export const aiApi = {
-    // 非流式提问（⚠️ 当前无调用方）
+    // 非流式提问（当前无调用方）
     //
     // AI 页面统一走 chatStream（SSE，边收边渲染）；
     // 本方法保留给脚本化 / 非流式场景复用，新增调用前请先确认是否真的不需要流式。
@@ -20,7 +20,7 @@ export const aiApi = {
     },
     // 删除会话及其全部消息
     //
-    // ⚠️ 后端 DTO 的字段叫 sessionId，不是 id——
+    // 后端 DTO 的字段叫 sessionId，不是 id——
     // 字段名发错时参数绑不上，请求不报错但会话删不掉（「点了没反应」那类 bug）。
     deleteSession(id: string) {
         return http.post<boolean>('/ai/session/delete', { sessionId: id });
@@ -34,6 +34,13 @@ export const aiApi = {
         http.get<PageResult<AiSession>>('/ai/session/list', params),
 };
 
+/**
+ * 流式提问的回调集合（每个事件一个回调，全部可选）
+ *
+ * 为什么用回调而不是 AsyncGenerator：浏览器端的 SSE 只能靠 fetch + 手动解析流，
+ * 后端一次回答会被切成很多 delta；回调让「收到一段就渲染一段」变得直接，
+ * 也不必在页面里维护一个可暂停的迭代器。
+ */
 export interface StreamHandlers {
     onMeta?: (payload: { sessionId: string }) => void;
     onSources?: (sources: KnowledgeSource[]) => void;

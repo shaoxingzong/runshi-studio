@@ -16,6 +16,8 @@ import java.time.LocalDateTime;
  *
  * bizType / bizId 是跳转指针，允许悬空：来源被删后前端按
  * 「内容已失效」降级展示（不可点），通知本身的可读性不受影响。
+ *
+ * @author shaoshing
  */
 @Data
 public class NotificationVO implements Serializable {

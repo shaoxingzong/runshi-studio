@@ -23,6 +23,8 @@ import java.util.List;
  * 「哪些会话 ID 真实存在」的探测器。
  *
  * 约定与其它模块一致：参数不合法 / 业务不允许时抛 BusinessException，不返回错误码。
+ *
+ * @author shaoshing
  */
 public interface AiChatService {
 
@@ -87,7 +89,7 @@ public interface AiChatService {
      *
      * 注意与/19 的关联表清理对比：那两张关联表是物理删除
      * （关系解除即无业务意义），而这里父子两张表都是逻辑删除
-     * （对话是用户资产，误删需要可追溯）。两种机制的选择理由见 db/DESIGN.md 2.2。
+     * （对话是用户资产，误删需要可追溯）。两种机制的选择理由见「全局约定清单」。
      *
      * @param sessionId 会话 ID（必填）
      * @return true 表示删除成功

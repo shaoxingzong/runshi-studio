@@ -23,6 +23,8 @@ import java.util.List;
  *
  * 保留 status 是因为官网要按状态渲染标签（研发中 / 已上线 / 已结题），
  * 保留 techStack 是因为卡片上要展示技术栈标签——它们都属于「愿意给所有人看」的信息。
+ *
+ * @author shaoshing
  */
 @Data
 public class ProjectFrontVO implements Serializable {

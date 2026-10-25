@@ -32,6 +32,8 @@ import java.util.List;
  * 来源从配置读（ studio.web.allowed-origins）：
  * 本地演示、联调环境、将来真上线时的域名各不相同，写死在代码里等于每次改都要重新打包。
  * 默认值已覆盖本地两种回环地址，不配置也能直接用。
+ *
+ * @author shaoshing
  */
 @Configuration
 @RequiredArgsConstructor

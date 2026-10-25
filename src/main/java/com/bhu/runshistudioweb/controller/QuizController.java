@@ -55,6 +55,8 @@ import java.util.List;
  * 前提是这道题该用户已经做错过。
  *
  * 接口地址前缀 /api，完整路径形如 http://localhost:8080/api/quiz/catalog。
+ *
+ * @author shaoshing
  */
 @RestController
 @RequestMapping("/quiz")
@@ -82,7 +84,7 @@ public class QuizController {
     @SaCheckLogin
     @Operation(summary = "【成员】教材与章节树", description = "只统计启用题；章节随题目存在，空章节不会出现")
     public BaseResponse<List<QuizTextbookVO>> listCatalog() {
-        // 校验放在取数据之前：非成员连空列表都不该拿到
+        // 成员校验放在取数据之前：非成员连空列表都不该拿到
         quizPracticeService.requireActiveMemberId();
         return ResultUtils.success(quizQuestionService.listCatalog());
     }
@@ -112,6 +114,12 @@ public class QuizController {
     @SaCheckLogin
     @Operation(summary = "【成员】开始一轮刷题",
             description = "mode：0-顺序（须选教材+章节）, 1-错题重刷, 2-随机；返回的题目不含答案")
+    /**
+     * 开一批题（题目不含答案）
+     *
+     * @param request 开批请求
+     * @return 批次（含题目列表）
+     */
     public BaseResponse<QuizBatchVO> startBatch(@RequestBody @Valid QuizBatchRequest request) {
         // @Valid 只校验字段级约束，请求体整体为 null 时不会触发，兜一层防 NPE
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
@@ -131,6 +139,12 @@ public class QuizController {
     @SaCheckLogin
     @Operation(summary = "【成员】提交答案",
             description = "服务端判分；多选不给部分分；重复提交返回首次判定（幂等）")
+    /**
+     * 提交作答，由服务端判分
+     *
+     * @param request 作答请求
+     * @return 判定结果（含正确答案与解析）
+     */
     public BaseResponse<QuizVerdictVO> submitAnswer(@RequestBody @Valid QuizAnswerRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
         return ResultUtils.success(quizPracticeService.submitAnswer(request));
@@ -149,6 +163,12 @@ public class QuizController {
     @SaCheckLogin
     @Operation(summary = "【成员】跳过本题",
             description = "跳过不记错、不返回答案；下一轮顺序刷题仍会遇到它")
+    /**
+     * 跳过当前题
+     *
+     * @param request 跳过请求
+     * @return 是否成功
+     */
     public BaseResponse<Boolean> skipQuestion(@RequestBody @Valid QuizSkipRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
         return ResultUtils.success(quizPracticeService.skipQuestion(request));
@@ -164,6 +184,12 @@ public class QuizController {
     @SaCheckLogin
     @Operation(summary = "【成员】我的错题本",
             description = "只含待复习；列表不含答案，详情才含；已停用的题不显示")
+    /**
+     * 我的错题本（待复习）
+     *
+     * @param request 查询条件
+     * @return 分页结果
+     */
     public BaseResponse<Page<QuizWrongItemVO>> listMyWrong(QuizWrongQueryRequest request) {
         return ResultUtils.success(quizWrongService.listMyWrongByPage(currentUserId(), request));
     }

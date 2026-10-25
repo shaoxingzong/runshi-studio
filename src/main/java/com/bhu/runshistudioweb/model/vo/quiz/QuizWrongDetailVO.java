@@ -13,8 +13,10 @@ import java.util.List;
  * 列表 QuizWrongItemVO 则刻意不带答案（见它的类注释）。
  *
  * lastChosenLabels 是「你上次选了什么」，用于错题回顾时对照：
- * 只显示正确答案的话，用户不知道自己当时错在哪。
+ * 只显示正确答案的话，用户不知道自己错在哪。
  * 它取自该用户对该题最近一条 result=2 的记录。
+ *
+ * @author shaoshing
  */
 @Data
 @EqualsAndHashCode(callSuper = true)

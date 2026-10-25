@@ -35,6 +35,8 @@ import static org.mockito.Mockito.when;
  * Sa-Token 那 4 个用例的价值在于「防止被兜底吞掉」：
  * 它们都继承 RuntimeException，一旦处理器被误删，接口会返回 B0001，
  * 前端就无法判断该跳登录页还是该报服务器故障。
+ *
+ * @author shaoshing
  */
 class GlobalExceptionHandlerTest {
 

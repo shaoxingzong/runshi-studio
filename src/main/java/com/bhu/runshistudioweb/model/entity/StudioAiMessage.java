@@ -30,7 +30,9 @@ import java.time.LocalDateTime;
  * 因此查询一律追加 id 作为次级排序键（雪花 ID 单调递增，等价于时间序且唯一）。
  * 只按 created_at 排序会在「同一秒的两条消息」上出现随机顺序——表现为对话记录偶尔颠倒。
  *
- * 审计字段、逻辑删除、雪花主键三条全局约定与其它主表一致，见 db/DESIGN.md。
+ * 审计字段、逻辑删除、雪花主键三条全局约定与其它主表一致。
+ *
+ * @author shaoshing
  */
 @Data
 @TableName("studio_ai_message")

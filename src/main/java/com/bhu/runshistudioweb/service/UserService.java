@@ -31,6 +31,8 @@ import com.bhu.runshistudioweb.model.vo.user.UserVO;
  * 不返回错误码、不返回 null，由全局异常处理器统一转成标准响应
  * （例外：getLoginUserVO、getUserVO 是纯转换方法，
  * 入参为 null 时返回 null）。
+ *
+ * @author shaoshing
  */
 public interface UserService extends IService<SysUser> {
 

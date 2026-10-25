@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 验证两件事：
  * - 建表语句连续执行两次不报错：用例把从 db/user.sql 抽出的
  * CREATE TABLE 改写成 CREATE TABLE IF NOT EXISTS 后连跑两次，第二次静默跳过。
- * ⚠️ MySQL 没有 CREATE INDEX IF NOT EXISTS，
+ * MySQL 没有 CREATE INDEX IF NOT EXISTS，
  * 所以「索引写在建表语句内」是幂等的前提，不要把它们拆成独立的 CREATE INDEX；
  * - 四条高频 SQL 命中预期索引：分别覆盖三张表最典型的查询。
  *
@@ -32,6 +32,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 为什么不用 @Transactional 回滚：MySQL 的 DDL 会隐式提交，
  * 且本用例的目的正是「把表建出来供后续业务代码使用」，所以刻意不回滚。
  * 造的数据控制在固定 ID 段内，重复跑不会无限增长。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 class PostDdlVerifyTest {

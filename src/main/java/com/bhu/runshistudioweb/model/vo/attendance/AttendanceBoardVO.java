@@ -28,6 +28,8 @@ import java.time.LocalDateTime;
  * com.bhu.runshistudioweb.model.vo.user.LoginUserVO 同理：
  * 全局 JsonConfig 已把 Long 统一转字符串，这里再标一次是字段级兜底，
  * 保证即使哪天全局规则被调整，用户 ID 也不会退化成数字而被前端截断精度。
+ *
+ * @author shaoshing
  */
 @Data
 public class AttendanceBoardVO implements Serializable {

@@ -18,7 +18,7 @@ import java.time.LocalDateTime;
  * 字段与列的映射依赖 MyBatis-Plus 的「驼峰 ↔ 下划线」自动转换：
  * awardLevel → award_level、imageUrl → image_url，无需逐个写 @TableField。
  *
- * 本表最重要的设计：级别与类型是两个正交维度（ADR-5）：
+ * 本表最重要的设计：级别与类型是两个正交维度：
  * - award_level 级别：national / provincial / municipal
  * （见 com.bhu.runshistudioweb.model.enums.CertificateLevelEnum）；
  * - award_type 类型：competition / soft_copyright / patent / paper
@@ -30,7 +30,7 @@ import java.time.LocalDateTime;
  * 其它字段要点：
  * - award_date 是 date 类型，Java 侧必须用 LocalDate
  * （不是 LocalDateTime）。用错类型的典型症状是「时间字段莫名多了 00:00:00，
- * 或前端传 2026-09-30T10:00 时报错」；业务上还要求它不得晚于今天
+ * 或前端传「2026-09-30T10:00」这种带时分秒的值时报错」；业务上还要求它不得晚于今天
  * （还没发生的获奖日期没有意义，多半是填错）；
  * - image_url 是 NOT NULL：证书本身就是一张图，
  * 没有图的记录对官网展示毫无价值，因此必须在入参侧校验非空，
@@ -43,9 +43,11 @@ import java.time.LocalDateTime;
  * 这样排序与 idx_type_date / idx_level_date 的
  * (维度列, award_date DESC) 结构同向，按维度筛选时索引能直接提供有序结果，避免 filesort。
  *
- * 逻辑删除、时间填充、雪花主键三条全局约定与 SysUser、StudioMember 完全一致，
- * 见 db/DESIGN.md。注意：成员-证书关联表 studio_member_certificate 是物理删除，
+ * 逻辑删除、时间填充、雪花主键三条全局约定与 SysUser、StudioMember 完全一致。
+ * 注意：成员-证书关联表 studio_member_certificate 是物理删除，
  * 其实体不能带本类的 deletedAt 字段。
+ *
+ * @author shaoshing
  */
 @Data
 @TableName("studio_certificate")

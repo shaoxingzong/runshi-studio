@@ -18,6 +18,8 @@ import org.springframework.stereotype.Component;
  * 为什么全部给默认值、不做必填校验（与 AiProperties / AttendanceProperties
  * 同一纪律）：限流是附加防护，配置没写全时应用必须能正常启动；做成必填会让一个缺失的
  * 环境变量把整个站点搞得起不来——那是本末倒置。
+ *
+ * @author shaoshing
  */
 @Data
 @Component

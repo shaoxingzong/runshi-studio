@@ -17,6 +17,8 @@ import org.apache.ibatis.annotations.Mapper;
  * 唯一键 uk_user_question 带 deleted_at：
  * 否则「移出错题本后再答错」无法重新入本（全项目铁律）。
  * 应用层先查后插，该唯一键兜住并发下的重复插入。
+ *
+ * @author shaoshing
  */
 @Mapper
 public interface StudioQuizWrongMapper extends BaseMapper<StudioQuizWrong> {

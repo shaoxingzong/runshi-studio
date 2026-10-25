@@ -30,7 +30,9 @@ import java.time.LocalDateTime;
  * deleted_at——整份文档重建时先逻辑删除旧块再插新块，
  * 不带它的话第二次重建会直接撞唯一键。
  *
- * 审计字段、逻辑删除、雪花主键三条全局约定与其它 9 张表完全一致，见 db/DESIGN.md。
+ * 审计字段、逻辑删除、雪花主键三条全局约定与其它主表完全一致。
+ *
+ * @author shaoshing
  */
 @Data
 @TableName("studio_knowledge_chunk")

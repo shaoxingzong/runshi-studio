@@ -17,7 +17,7 @@ const routes: RouteRecordRaw[] = [
         children: [
             // 首页不配 meta.title：标题退回纯站点名（「首页 - 润石工作室」是冗余信息）
             { path: '', name: 'home', component: () => import('@/views/portal/Home.vue') },
-            // ⚠️ 官网没有成员页：业务规则「团队成员不对外展示」，
+            // 官网没有成员页：业务规则「团队成员不对外展示」，
             // 这里不注册 /members 路由（后端也没有对外成员接口）。
             // 成员信息对外唯一的出口是项目详情里的「参与成员」。
             {
@@ -47,7 +47,7 @@ const routes: RouteRecordRaw[] = [
                 component: () => import('@/views/portal/Posts.vue'),
                 meta: { title: '社区' },
             },
-            // ⚠️ 顺序有讲究：new 与 my 必须排在 ':id' 之前。
+            // 顺序有讲究：new 与 my 必须排在 ':id' 之前。
             // 路由按定义顺序匹配，写反了的话 /posts/new 会被当成 id=new 的详情页
             {
                 path: 'posts/new',

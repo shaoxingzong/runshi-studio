@@ -28,8 +28,10 @@ import java.util.List;
  * IPv4-mapped IPv6 的归一化规则：::ffff:a.b.c.d 这类地址在语义上
  * 就是 IPv4 地址（RFC 4291 的 IPv4-mapped 形式），因此本类把它降级成 4 字节的 IPv4。
  * 这是让「IPv6 监听下的 IPv4 客户端」也能正确匹配 IPv4 网段的关键一步。
- * 注意与之形近的 ::a.b.c.d（IPv4-compatible，已废弃）不做转换——
- * 它没有 ffff 标记，是另一个历史遗留形式，混进来会造成误判。
+ * 注意与之形近的 ::a.b.c.d（IPv4-compatible 形式）不做转换——
+ * 它没有 ffff 标记，混进来会造成误判。
+ *
+ * @author shaoshing
  */
 public final class IpUtils {
 
@@ -491,7 +493,7 @@ public final class IpUtils {
 
         // "::" 必须作为一个整体出现：左侧组之后、右侧组之前各补一个冒号，两侧都允许为空，
         // 因此不能靠「先 append 单冒号、最后裁掉尾部冒号」来实现。
-        // 早先正是那样写的，结果零段在开头（::1 → ":1"）或末尾（2001:db8:: → "2001:db8:"）
+        // 若那样写，零段在开头（::1 → ":1"）或末尾（2001:db8:: → "2001:db8:"）
         // 都会少一个冒号，产出的是一个无法再被本类解析的非法串。
         // 后果很具体：::1 是 trusted-proxies 的默认值之一，归一化一旦输出 ":1"，
         // 后续 isTrustedProxy(":1") 解析失败，IPv6 环回请求就永远不命中可信代理——

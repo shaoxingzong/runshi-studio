@@ -22,6 +22,8 @@ import java.io.Serializable;
  *
  * 没有分页字段：一名成员的证书、一张证书的署名成员都是十几条量级，
  * 一次性返回即可；真出现大列表时再按其它模块的套路加 current/pageSize。
+ *
+ * @author shaoshing
  */
 @Data
 public class MemberCertificateQueryRequest implements Serializable {

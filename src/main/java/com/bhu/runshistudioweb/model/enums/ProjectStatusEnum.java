@@ -3,7 +3,7 @@ package com.bhu.runshistudioweb.model.enums;
 /**
  * 项目状态枚举（studio_project.status，tinyint）
  *
- * 为什么用 tinyint 而不是 varchar（DESIGN.md 4.2 的判定标准）：
+ * 为什么用 tinyint 而不是 varchar：
  * 它是纯状态位——取值固定为三个、几乎不会扩展，且官网要按它做数值筛选
  * （「只看已上线的项目」 ?status=1）。数字存 + 枚举约束，既省空间也便于精确匹配。
  *
@@ -13,6 +13,8 @@ package com.bhu.runshistudioweb.model.enums;
  * 否则同一份代码会出现「DB 默认 1、Service 默认 0」两套口径。
  *
  * 与 TeamPositionEnum 一样：没有框架注解引用它的字面量，故不配套常量类。
+ *
+ * @author shaoshing
  */
 public enum ProjectStatusEnum {
 
@@ -46,6 +48,12 @@ public enum ProjectStatusEnum {
         return desc;
     }
 
+    /**
+     * 按取值查找枚举
+     *
+     * @param value 数据库 / 前端传来的取值
+     * @return 匹配的枚举；无匹配（含 null）时返回 null
+     */
     public static ProjectStatusEnum of(Integer value) {
         if (value == null) {
             return null;

@@ -19,6 +19,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 全角半角混杂、答案有的用星号有的用「答案：」、块之间可能没有空行。
  * 这些边界全在这里覆盖——它们的失败表现为「导入报错但看不出哪错了」，
  * 比业务逻辑出错更让人烦躁。
+ *
+ * @author shaoshing
  */
 class QuizImportParserTest {
 

@@ -50,6 +50,24 @@ function turn(delta: number) {
 }
 
 onMounted(load);
+
+/**
+ * 整行可点：表格里只有「查看」一个按钮可点时，用户习惯点标题行本身，
+ * 点不动会以为是页面卡了。这里把行点击接到详情。
+ *
+ * 只对「已通过」的行生效：待审与驳回的内容对外不存在（详情页会 404），
+ * 点进去只会看到一个错误页，比不可点更糟。驳回稿的可点区域仍留给「修改重投」按钮。
+ */
+function onRowClick(row: PostAudit) {
+    if (row.status === 1) {
+        router.push(`/posts/${row.id}`);
+    }
+}
+
+/** 可点的行给个手型光标，否则鼠标移到行上没有任何反馈，用户不知道能点 */
+function rowClassName({ row }: { row: PostAudit }) {
+    return row.status === 1 ? 'row-clickable' : '';
+}
 </script>
 
 <template>
@@ -68,7 +86,11 @@ onMounted(load);
             <el-empty v-if="result && result.records.length === 0" description="还没有发过帖子" />
 
             <template v-else>
-                <el-table :data="result?.records ?? []">
+                <el-table
+                    :data="result?.records ?? []"
+                    :row-class-name="rowClassName"
+                    @row-click="onRowClick"
+                >
                     <el-table-column label="标题" min-width="280">
                         <template #default="{ row }">
                             <div class="title-cell">
@@ -115,12 +137,15 @@ onMounted(load);
                     <el-table-column label="操作" width="110">
                         <template #default="{ row }">
                             <!-- 只有已通过的才看得进详情：待审与驳回的内容对外不存在。
-                                 驳回稿额外给「修改重投」入口（仅已驳回可改，后端同样校验） -->
+                                 驳回稿额外给「修改重投」入口（仅已驳回可改，后端同样校验）。
+
+                                 .stop 必须加：按钮在行内，行点击（@row-click）会冒泡上来。
+                                 不加的话点「修改重投」会先跳详情页再跳编辑页，两个都执行。 -->
                             <el-button
                                 v-if="row.status === 1"
                                 link
                                 type="primary"
-                                @click="router.push(`/posts/${row.id}`)"
+                                @click.stop="router.push(`/posts/${row.id}`)"
                             >
                                 查看
                             </el-button>
@@ -128,7 +153,7 @@ onMounted(load);
                                 v-else-if="row.status === 2"
                                 link
                                 type="primary"
-                                @click="router.push(`/posts/new?edit=${row.id}`)"
+                                @click.stop="router.push(`/posts/new?edit=${row.id}`)"
                             >
                                 修改重投
                             </el-button>
@@ -215,5 +240,17 @@ onMounted(load);
     justify-content: center;
     gap: 12px;
     margin-top: 18px;
+}
+
+/**
+ * 可点击行的视觉反馈。
+ *
+ * 必须用 :deep()：行是 el-table 内部渲染的 <tr>，不带本组件的 scope 属性，
+ * 普通 scoped 选择器选不中它。
+ * 背景色用 Element Plus 自己的 hover 变量，保证与主题一致、也不会盖掉
+ * 表格原本的斑马纹与 hover 高亮。
+ */
+:deep(.row-clickable) {
+    cursor: pointer;
 }
 </style>

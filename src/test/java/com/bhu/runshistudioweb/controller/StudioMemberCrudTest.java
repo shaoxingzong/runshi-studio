@@ -39,6 +39,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *
  * 测试直接插库造账号（不走注册接口，因为注册只会创建普通用户），
  * 再用真实登录接口换 token，权限链路上的每一环都是真的。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -151,7 +153,7 @@ class StudioMemberCrudTest {
 
         //「团队成员不对外展示」：对外的成员接口不存在（下面断言 404）。
         //
-        // ⚠️ 断言方式很关键（这是本次改动最容易踩的坑）：
+        // 断言方式很关键（这是本类最容易踩的坑）：
         // Sa-Token 的 MVC 拦截器只在「匹配到 handler」时才执行，
         // 接口被删掉后请求根本进不了拦截器链，于是拿到的是 404 且响应体为空。
         // 因此不能用 code(body) 判读（body 为空会 StringIndexOutOfBounds），
@@ -337,7 +339,6 @@ class StudioMemberCrudTest {
         assertTrue(idxTop >= 0 && idxMid > idxTop && idxZero > idxMid,
                 "默认排序应为 sort_order 倒序（100 → 50 → 0），实际响应：" + listBody);
 
-        // 原「C 端公开列表即使传 sortField 也必须忽略」那一段已随该接口下线删除。
         // 上面管理端那条断言已经守住了「默认排序 = sort_order 倒序」这个行为。
     }
 

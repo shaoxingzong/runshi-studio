@@ -10,7 +10,7 @@ import java.util.List;
 /**
  * 题目视图对象（C 端答题时使用）
  *
- * ⚠️ 本类结构上没有 correctLabels 与 analysis，
+ * 本类结构上没有 correctLabels 与 analysis，
  * 这是本模块的安全底线，任何「顺手加个字段」的改动都必须被拒绝。
  *
  * 理由：判分必须在服务端完成。一旦题目 VO 带上答案，
@@ -23,6 +23,8 @@ import java.util.List;
  *
  * inWrongBook 只表示「这题在我的错题本里」，不含任何答案信息——
  * 它是给前端做「这题你错过」标记用的，不能用来推断正确项。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizQuestionVO implements Serializable {

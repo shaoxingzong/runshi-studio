@@ -25,12 +25,14 @@ import lombok.Getter;
  *
  * 新增错误码的三条纪律：
  * - 先定大类（属于 A / B / C 哪一端），再在大类内 +1 取号，不要跨类复用；
- * - 不要往旧号段（4xxxx / 5xxxx）加新码，那是已废弃的 HTTP 风格号段；
+ * - 不要往 4xxxx / 5xxxx 号段加新码，那是 HTTP 风格的数字号段，与本项目的字母码不兼容；
  * - 错误码不体现版本号与错误等级——等级由日志级别和告警策略表达，
  * 版本号会让调用方的判断逻辑随版本漂移。
  *
  * 注意：这里的 code 是「业务状态码」，不是 HTTP 状态码，接口的 HTTP 状态一律是 200。
  * 前端拦截器只依赖它做分支判断（见 web/src/api/request.ts）。
+ *
+ * @author shaoshing
  */
 @Getter
 public enum ErrorCode {
@@ -98,10 +100,12 @@ public enum ErrorCode {
     /** 默认提示信息，可被 ResultUtils.error(errorCode, message) 覆盖 */
     private final String message;
 
-    // 枚举构造器（枚举的构造器天然是 private，外部无法 new，保证全局唯一）
-    //
-    // @param code 状态码（5 位：来源 + 4 位编号）
-    // @param message 默认提示信息
+    /**
+     * 枚举构造器（枚举的构造器天然是 private，外部无法 new，保证全局唯一）
+     *
+     * @param code 状态码（5 位：来源 + 4 位编号）
+     * @param message 默认提示信息
+     */
     ErrorCode(String code, String message) {
         this.code = code;
         this.message = message;

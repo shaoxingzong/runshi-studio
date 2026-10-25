@@ -37,6 +37,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * 为什么用 @Transactional：答题的写操作（作答记录 + 错题本）都在事务内，
  * 测试回滚即可撤销。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc

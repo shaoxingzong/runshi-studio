@@ -14,6 +14,8 @@ import org.springframework.stereotype.Component;
  * 注意：本类不能把字段声明成 final。
  * @ConfigurationProperties 的绑定依赖 setter 与无参构造，
  * 字段一旦 final 就会让配置绑定彻底失效——这与「依赖注入统一用构造器注入」是两回事。
+ *
+ * @author shaoshing
  */
 @Data
 @Component

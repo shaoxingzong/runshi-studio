@@ -26,6 +26,8 @@ import java.io.Serializable;
  * 原因有两个：一是这些参数用 GET 传递，校验失败抛的是 BindException，
  * 会落到全局异常处理器的兜底分支变成 B0001，体验很差；
  * 二是「页码传错」没必要让整个查询失败，纠正成合理值继续查更符合预期。
+ *
+ * @author shaoshing
  */
 @Data
 public class UserQueryRequest implements Serializable {

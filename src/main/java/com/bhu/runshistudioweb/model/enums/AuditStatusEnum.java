@@ -19,6 +19,8 @@ package com.bhu.runshistudioweb.model.enums;
  *
  * 与 MemberStatusEnum 的差别同 TeamPositionEnum：
  * 没有框架注解引用它的字面量，故不配套常量类。
+ *
+ * @author shaoshing
  */
 public enum AuditStatusEnum {
 

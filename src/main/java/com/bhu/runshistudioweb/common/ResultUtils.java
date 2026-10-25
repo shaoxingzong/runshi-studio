@@ -14,6 +14,8 @@ import com.bhu.runshistudioweb.exception.ErrorCode;
  * - 失败必须使用 ErrorCode 中定义的号段（A 用户端 / B 当前系统 / C 第三方服务），
  * 不要自己临时编号，否则前端没法按来源归类处理；
  * - 失败响应的 data 固定为 null，前端拿到 code 不为 00000 时无需再看 data。
+ *
+ * @author shaoshing
  */
 public class ResultUtils {
 

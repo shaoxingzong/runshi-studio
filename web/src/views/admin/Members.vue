@@ -109,8 +109,32 @@ async function save() {
         return;
     }
     /**
+     * 新增时未绑账号：**不阻止**，但必须让管理员知道后果
+     *
+     * <p>为什么不强制：{@code db/user.sql} 明确保留「可以有档案没账号（历史导入）」的能力，
+     * 先建档后开号也是合理流程。强制必填属于过度修正。
+     *
+     * <p>但也不能默默放过：成员功能的准入判据是「档案的 userId 命中当前登录账号」，
+     * 没绑定的档案永远不会生效——本人登录后看不到任何成员功能，
+     * 管理员却在列表里看到「这个人是成员」。所以这里给一次确认，
+     * 让「这条档案暂时不会生效」成为管理员**知道并接受**的选择。
+     */
+    if (!editing.value && !form.userId) {
+        try {
+            await ElMessageBox.confirm(
+                '没有绑定登录账号，这条成员档案不会对任何账号生效：' +
+                    '本人登录后看不到工作台与刷题入口。\n\n' +
+                    '如果只是先建档、稍后再绑定，可以继续；否则建议先选择要绑定的账号。',
+                '未绑定登录账号',
+                { type: 'warning', confirmButtonText: '仍然保存', cancelButtonText: '返回选择' },
+            );
+        } catch {
+            return;
+        }
+    }
+    /**
      * 未选账号时不带该字段：后端 @Positive 不接受空串，
-     * 而「null = 不修改绑定」是后端的既有语义——留空不等于解绑
+     * 而「null = 不修改绑定」是编辑时的既有语义——留空不等于解绑
      */
     const payload: Record<string, unknown> = { ...form };
     if (!payload.userId) {
@@ -233,7 +257,7 @@ onMounted(() => {
                 <el-form-item label="绑定登录账号">
                     <el-select
                         v-model="form.userId as string"
-                        placeholder="未绑定"
+                        :placeholder="editing ? '未绑定（留空表示不修改）' : '建议选择：不绑定则档案不生效'"
                         clearable
                         filterable
                         class="full"
@@ -250,8 +274,9 @@ onMounted(() => {
                         />
                     </el-select>
                     <div class="hint">
-                        绑定后，该账号登录即可发帖、使用工作台签到。
-                        <b>编辑时留空表示「不修改」现有绑定，不能用来解绑。</b>
+                        绑定后，该账号登录即可使用工作台（考勤）与刷题。
+                        <b v-if="!editing">不绑定的档案不会对任何账号生效。</b>
+                        <b v-else>编辑时留空表示「不修改」现有绑定，不能用来解绑。</b>
                     </div>
                 </el-form-item>
                 <el-form-item label="状态">

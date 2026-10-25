@@ -15,6 +15,8 @@ import java.time.LocalDateTime;
  *
  * 同样守 AttendanceBoardVO 的脱敏红线：不返回 ip / userAgent / userAccount，
  * 网络信息只以 inLan 布尔的形式出现。
+ *
+ * @author shaoshing
  */
 @Data
 public class AttendanceCheckInVO implements Serializable {

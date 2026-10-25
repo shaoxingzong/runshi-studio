@@ -23,6 +23,8 @@ import org.springframework.web.multipart.MultipartFile;
  * （匿名上传等于给攻击者一个免费的图床，极易被用来托管违规内容）。
  * 而上传成功后返回的 /uploads/** 访问路径是公开的——游客看得到图，
  * 但不能上传，这正是我们想要的边界。
+ *
+ * @author shaoshing
  */
 @Tag(name = "文件管理")
 @RestController

@@ -25,9 +25,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * 角色取值与默认角色验收测试
  *
  * 把「角色取值 = user / member / admin」这条约定钉在测试里：
- * 它同时存在于 db/user.sql 的列注释与默认值、db/DESIGN.md、
- * 以及 Java 常量三处，任何一处改了而其他两处没跟上，都会静默变成
- * 「明明给了角色却一直 A0301」。这里改一处、跑一次，就能发现不一致。
+ * 它同时存在于 db/user.sql 的列注释与默认值、Java 常量两处，
+ * 任何一处改了而另一处没跟上，都会静默变成「明明给了角色却一直 A0301」。
+ * 这里改一处、跑一次，就能发现不一致。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -66,7 +68,7 @@ class UserRoleTest {
             assertNotNull(role.getDesc(), role + " 缺少中文描述，错误提示与日志会不可读");
         }
         assertEquals("user / member / admin", UserRoleEnum.valuesText(),
-                "合法取值的提示文案变了，请同步检查 DDL 注释、DESIGN.md、前端与文档");
+                "合法取值的提示文案变了，请同步检查 DDL 注释、前端与文档");
     }
 
     @Test

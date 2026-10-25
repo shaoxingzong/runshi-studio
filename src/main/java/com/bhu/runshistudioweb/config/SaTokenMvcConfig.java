@@ -29,6 +29,8 @@ import org.springframework.web.servlet.resource.ResourceHttpRequestHandler;
  * 代价与纪律：新写一个「本来就要给游客看」的接口时，
  * 必须把它加进 EXCLUDE_PATHS，否则前端会拿到 A0201。
  * 因此新增公开接口时，请顺手更新这里的清单（并写清注释），别只加在 Controller 上。
+ *
+ * @author shaoshing
  */
 @Configuration
 public class SaTokenMvcConfig implements WebMvcConfigurer {
@@ -43,21 +45,21 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
             // ===== C 端公开接口（匿名可访问，产品要求游客也能用）=====
             "/user/register",   // 注册：还没有账号的人必须能访问
             "/user/login",      // 登录：未登录的人必须能访问
-            // ⚠️ 业务规则：团队成员不对外展示（成员档案只作为后台内部数据），
+            // 业务规则：团队成员不对外展示（成员档案只作为后台内部数据），
             // 这里不留任何 /member/* 路径。成员只通过管理端接口读取
             // （/member/list/page、/member/get），均要求 admin。
             //
             // 一处有意的例外：项目详情 /project/detail 仍返回参与成员（用于项目介绍，
             // 已由产品确认保留），因此匿名访客能通过项目页看到成员姓名/头像。
-            // 这是本规则下唯一的成员信息出口，已登记在 db/DESIGN.md 场景 L。
+            // 这是本规则下唯一的成员信息出口。
             // 荣誉证书列表：官网「荣誉墙」页（接口实现见 CertificateController）
             // 证书本身不含任何成员信息（CertificateFrontVO 只有 id/title/级别/类型/日期/图片），
-            // 因此可以对外；「某成员的证书」那条（带成员维度）已随成员页一起下线
+            // 因此可以对外；带成员维度的证书接口不对外，成员页也不再存在
             "/certificate/list",
             // 官网首页「大盘数字」：证书数与分布，游客进入首页就要看到。
-            // ⚠️ 成员人数（memberTotal / memberInTeam / memberGraduated）已随本规则移除，
-            // 首页大盘只剩证书维度。必须写精确路径——写成 /statistic/** 会把将来
-            // 可能新增的管理端统计接口（可能含敏感数据）一起放行。本期统计接口只有这一个
+            // 首页大盘刻意只做证书维度：成员人数同样属于「展示成员信息」。
+            // 必须写精确路径——写成 /statistic/** 会把将来可能新增的
+            // 管理端统计接口（可能含敏感数据）一起放行。当前统计接口只有这一个
             "/statistic/overview",
             // 官网「项目案例」页：列表与详情。两条都要精确登记：
             //   /project/list        → C 端列表（脱敏，不含 content）
@@ -67,7 +69,7 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
             // 通配符会把它们一起放行（/project/list 与 /project/list/page 只差一个后缀）
             "/project/list",
             "/project/detail",
-            // ⚠️ AI 咨询不再匿名开放：提问、历史、删除会话全部要求登录
+            // AI 咨询不匿名开放：提问、历史、删除会话全部要求登录
             // （普通用户限 studio.ai.query-limit 次，成员 / 管理员不限次）。
             // 因此这里不登记 /ai/chat、/ai/chat/history、/ai/session/delete——
             // 它们统一走「默认要求登录」，未登录由拦截器直接返回 A0201。
@@ -88,14 +90,14 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
             // 写路径仍走默认要求登录的规则
             "/post/comment/list",
             // 流量埋点：匿名可访问（游客的访问也要统计，只统计登录用户等于只看到冰山一角）。
-            // ⚠️ 只登记这一条精确路径，禁止 /traffic/**——管理端的统计接口挂在
+            // 只登记这一条精确路径，禁止 /traffic/**——管理端的统计接口挂在
             // /admin/traffic 下（另走 @SaCheckRole），通配符会把它们一起放行
             "/traffic/report",
             // 上传后的图片访问路径：官网展示成员头像/证书图片时游客必须能看到。
             // 注意这是「读」的路径；「写」的路径 /file/upload 不在这里，仍然要求登录
             "/uploads/**",
 
-            // ⚠️ 不要把前端静态资源路径加回来：前端是独立工程 web/，由 Nginx（生产）
+            // 不要把前端静态资源路径加进来：前端是独立工程 web/，由 Nginx（生产）
             // 或 Vite（开发 :5173）托管，请求根本不经过后端。
             // 这里只保留真正需要匿名访问的静态资源：上传的图片 /uploads/**。
 
@@ -113,14 +115,14 @@ public class SaTokenMvcConfig implements WebMvcConfigurer {
 
             // ===== 框架内部路径 =====
             // 说明：这里不需要 /error——不存在的路径并不是「forward 到 /error」，
-            // 而是被静态资源处理器（ResourceHttpRequestHandler）接管，拦截器在那之前就抛了 NotLoginException。
-            // 真正的修法见 addInterceptors 里对 handler 类型的判断。
+            // 而是被静态资源处理器（ResourceHttpRequestHandler）接管，拦截器会先抛 NotLoginException。
+            // 真正的解法见 addInterceptors 里对 handler 类型的判断。
 
             // ===== 运维探活 =====
-            // ⚠️ 重要（已实测）：actuator 端点由 WebMvcEndpointHandlerMapping 处理，
-            // InterceptorRegistry 注册的拦截器根本不作用于它——实测把 exposure 放宽后
-            // 匿名请求 /actuator/env 直接返回 200（含配置项），拦截器完全没生效。
-            // 因此下面这行不是"保护 actuator"的手段，它只是让意图更清晰而已。
+            // 注意：actuator 端点由 WebMvcEndpointHandlerMapping 处理，
+            // InterceptorRegistry 注册的拦截器根本不作用于它——把 exposure 放宽之后，
+            // 匿名请求 /actuator/env 会直接返回 200（含配置项），拦截器完全不生效。
+            // 因此下面这行不是「保护 actuator」的手段，它只是让意图更清晰而已。
             //
             // actuator 的真正安全边界在别处，三者缺一不可：
             //   1) management.endpoints.web.exposure.include 保持最小集（默认仅 health）——

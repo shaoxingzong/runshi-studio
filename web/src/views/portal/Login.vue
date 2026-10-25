@@ -45,7 +45,7 @@ async function submit() {
 <template>
     <div class="page wrap">
         <div class="card box">
-            <img src="/logo.png" alt="润石工作室" class="brand-logo" />
+            <img src="/logo.jpg" alt="润石工作室" class="brand-logo" />
             <h1>登录</h1>
             <p class="muted">
                 还没有账号？<router-link to="/register">立即注册</router-link>

@@ -21,6 +21,8 @@ import java.io.Serializable;
  * - 它只返回已通过的帖子——待审 / 已驳回的取不到，而管理员恰恰要改这类；
  * - 它会原子自增浏览量——管理员点开编辑一下，浏览量就 +1，
  * 这个计数是内容热度的依据，不能被管理动作污染。
+ *
+ * @author shaoshing
  */
 @Data
 @EqualsAndHashCode(callSuper = true)

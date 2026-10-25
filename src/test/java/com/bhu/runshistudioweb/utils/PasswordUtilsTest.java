@@ -11,7 +11,12 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** 密码工具类验收测试 */
+/**
+ * 密码工具类验收测试
+ *
+ * @author shaoshing
+ */
+ */
 class PasswordUtilsTest {
 
     private static final String RAW = "Studio@2026";
@@ -55,7 +60,7 @@ class PasswordUtilsTest {
     void matchesNeverThrows() {
         String validHash = PasswordUtils.encrypt(RAW);
 
-        // 各类非法哈希串（含历史遗留的 MD5 值、截断的 BCrypt、随机字符串）
+        // 各类非法哈希串（含 MD5 值、截断的 BCrypt、随机字符串）
         String[] invalidHashes = {
                 null,
                 "",

@@ -24,6 +24,8 @@ import java.io.Serializable;
  * chosenLabels 用字符串而不是数组：与库里的
  * correct_labels 同一形态（升序无分隔），判分时归一化后直接比较，
  * 不必做两边的集合转换。"AC" / "ca" / "C,A" 都会被归一化。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizAnswerRequest implements Serializable {

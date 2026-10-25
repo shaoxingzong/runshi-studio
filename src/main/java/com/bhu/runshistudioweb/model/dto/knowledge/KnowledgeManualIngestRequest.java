@@ -18,6 +18,8 @@ import java.io.Serializable;
  * 长度限制的理由都在「钱」上：正文上限 20000 字，再往上切出来的块会很多，
  * 每次重建都要重算全部向量——Embedding 调用既慢又按量计费，
  * 没有上限的接口等于把"一次误操作"变成"一笔账单"。
+ *
+ * @author shaoshing
  */
 @Data
 public class KnowledgeManualIngestRequest implements Serializable {

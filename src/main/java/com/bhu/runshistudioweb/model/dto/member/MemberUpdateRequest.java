@@ -22,6 +22,8 @@ import java.io.Serializable;
  *
  * gradeYear 与新增请求同一套区间（1950~2100）；
  * teamPosition / memberStatus 的合法性由 Service 用枚举校验。
+ *
+ * @author shaoshing
  */
 @Data
 public class MemberUpdateRequest implements Serializable {

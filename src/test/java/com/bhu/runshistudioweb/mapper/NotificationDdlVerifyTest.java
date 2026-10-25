@@ -27,6 +27,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 为什么不用 @Transactional 回滚：MySQL 的 DDL 会隐式提交，
  * 且本用例的目的正是「确认表能建出来」并留在库里供业务测试使用
  * （与刷题三张表同一工作方式），所以刻意不回滚。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 class NotificationDdlVerifyTest {

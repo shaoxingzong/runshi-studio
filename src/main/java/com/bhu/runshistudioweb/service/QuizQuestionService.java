@@ -41,6 +41,8 @@ import java.util.List;
  *
  * 约定：参数不合法 / 业务不允许时一律抛 BusinessException，
  * 不返回错误码、不返回 null。
+ *
+ * @author shaoshing
  */
 public interface QuizQuestionService extends IService<StudioQuizQuestion> {
 

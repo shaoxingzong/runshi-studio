@@ -20,6 +20,8 @@ import java.time.LocalDateTime;
  * 类型提醒：awardDate 用 LocalDate（与实体、DDL 的 date 一致）。
  * 若写成 LocalDateTime，BeanUtils.copyProperties 会因类型不匹配静默跳过，
  * 表现为管理端列表的获奖日期永远是 null，且不报任何错。
+ *
+ * @author shaoshing
  */
 @Data
 public class CertificateVO implements Serializable {

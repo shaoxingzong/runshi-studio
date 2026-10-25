@@ -33,6 +33,8 @@ import java.time.LocalDateTime;
  *
  * status 与帖子共用 com.bhu.runshistudioweb.model.enums.AuditStatusEnum：
  * 两者的状态机完全一致，不另建一套枚举。
+ *
+ * @author shaoshing
  */
 @Data
 @TableName("studio_post_comment")

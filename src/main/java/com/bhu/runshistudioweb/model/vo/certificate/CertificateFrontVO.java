@@ -20,6 +20,8 @@ import java.time.LocalDate;
  * 以后实体新增敏感字段时，只要不加进这个 VO，就自动被挡住。
  *
  * 将来官网要加展示字段时，先问一句「这个字段愿意给所有人看吗」，愿意才加到本类。
+ *
+ * @author shaoshing
  */
 @Data
 public class CertificateFrontVO implements Serializable {

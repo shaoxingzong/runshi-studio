@@ -4,7 +4,12 @@ import lombok.Data;
 
 import java.io.Serializable;
 
-/** 单个页面的流量（热门页面榜的一行） */
+/**
+ * 单个页面的流量（热门页面榜的一行）
+ *
+ * @author shaoshing
+ */
+ */
 @Data
 public class PageTrafficVO implements Serializable {
 

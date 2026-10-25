@@ -72,12 +72,24 @@ onMounted(load);
         <div v-loading="loading">
             <el-empty v-if="result && result.records.length === 0" description="没有符合条件的项目" />
             <div v-else class="grid cards-3">
-                <!-- 卡片本身不是链接：内部同时有「进详情」与「外链」，嵌套 <a> 会导致点击行为混乱 -->
+                <!--
+                  卡片整块可点：用「伸展式链接」（stretched link）实现，而不是把 <div> 换成 <router-link>。
+
+                  为什么不能直接换：卡片内部还有「在线体验 / 开源仓库」两个外链，
+                  嵌套 <a> 是非法 HTML，浏览器会把它们拆开，点击行为彻底混乱。
+
+                  做法：让标题链接的伪元素铺满整张卡片（见 .title::after），
+                  卡片内任意空白处点击都会命中这个覆盖层。
+                  外链用 position: relative + z-index 抬到覆盖层之上，
+                  保证点「在线体验」不会被卡片跳转吃掉。
+                -->
                 <div v-for="project in result?.records ?? []" :key="project.id" class="project-card">
-                    <router-link :to="`/projects/${project.id}`" class="cover">
+                    <!-- 封面不做独立链接：整卡点击已由标题的伸展式伪元素接管，
+                         再套一层 <router-link> 只会多出一个 Tab 停留点，键盘用户要按两次 -->
+                    <div class="cover">
                         <img v-if="project.coverImage" :src="project.coverImage" :alt="project.title" />
                         <span v-else class="cover-fallback">{{ project.title.slice(0, 1) }}</span>
-                    </router-link>
+                    </div>
                     <div class="body">
                         <div class="head">
                             <router-link :to="`/projects/${project.id}`" class="title">
@@ -141,6 +153,8 @@ onMounted(load);
     overflow: hidden;
     color: var(--text);
     transition: box-shadow 0.2s, transform 0.2s;
+    /* 伸展式链接的定位基准：标题的 ::after 以它为准铺满整张卡片 */
+    position: relative;
 }
 
 .project-card:hover {
@@ -148,10 +162,18 @@ onMounted(load);
     transform: translateY(-2px);
 }
 
+/* 键盘可达性：覆盖层让整卡成为热区，焦点环要落在卡片上而不是缩在标题里 */
+.project-card:has(.title:focus-visible) {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+}
+
 .cover {
     display: block;
     aspect-ratio: 16 / 9;
     background: #eff6ff;
+    /* 封面不参与点击（交给整卡覆盖层），但也不该挡住图片本身的拖拽/右键另存 */
+    flex-shrink: 0;
 }
 
 .cover img {
@@ -194,6 +216,22 @@ onMounted(load);
     color: var(--text);
 }
 
+/**
+ * 伸展式链接：这个伪元素铺满整张卡片，使卡片任意位置都能点进详情。
+ *
+ * 为什么不用「把卡片包进 <router-link>」：卡片里有 demoUrl / githubUrl 两个外链，
+ * 嵌套 <a> 非法，浏览器会拆标签。
+ * 为什么不用 onclick + router.push：那样中键 / Ctrl+点击「新标签打开」会失效，
+ * 而伪元素是真正的 <a>，浏览器的默认行为（新标签、右键「在新标签页打开」）全都保留。
+ */
+.title::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    /* 覆盖层只负责接收点击，本身不该有视觉表现 */
+    z-index: 1;
+}
+
 .title:hover {
     color: var(--brand);
     text-decoration: none;
@@ -216,6 +254,9 @@ p {
     gap: 14px;
     margin-top: 12px;
     font-size: 13px;
+    /* 抬到覆盖层之上，否则点「在线体验」会被卡片的跳转吃掉 */
+    position: relative;
+    z-index: 2;
 }
 
 .link {

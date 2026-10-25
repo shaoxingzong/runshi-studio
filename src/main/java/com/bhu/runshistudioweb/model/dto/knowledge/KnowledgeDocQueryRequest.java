@@ -17,6 +17,8 @@ import java.io.Serializable;
  *
  * 为什么用 POST + 请求体：与项目模块 /project/list/page 保持一致
  * （本项目后台分页接口一律 POST + JSON，避免把筛选条件拼进 URL 造成日志泄露与长度限制）。
+ *
+ * @author shaoshing
  */
 @Data
 public class KnowledgeDocQueryRequest implements Serializable {

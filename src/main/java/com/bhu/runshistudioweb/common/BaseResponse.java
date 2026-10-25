@@ -21,6 +21,9 @@ import java.io.Serializable;
  * 注意：前端只允许依赖 code 做逻辑判断，message 仅用于展示，
  * 不要在前端对 message 做字符串匹配。
  *
+ * @author shaoshing
+ *
+ *
  * @param <T> 业务数据的类型
  */
 @Data
@@ -30,8 +33,8 @@ public class BaseResponse<T> implements Serializable {
      * 序列化版本号：实现了 Serializable 就必须固定写死一个值
      *
      * 不写会怎样：JVM 会按类的结构（字段名、方法签名……）自动算一个 UID。
-     * 一旦以后给本类加一个字段，算出来的 UID 就变了——此时再去反序列化"旧版本"的数据，
-     * 会直接抛 InvalidClassException，而且这种错误只在「读旧数据」时才暴露，
+     * 一旦以后给本类加一个字段，算出来的 UID 就变了——此时再去反序列化「按旧结构写出的」数据，
+     * 会直接抛 InvalidClassException，而且这种错误只在「读历史数据」时才暴露，
      * 平时测试根本发现不了。
      *
      * 什么时候会真的踩到：响应对象被缓存在 Redis、或被另一个服务接收时，

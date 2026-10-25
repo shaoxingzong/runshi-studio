@@ -46,6 +46,8 @@ import java.util.Objects;
  * 队长不变量：studio_project.leader_id 是权威源，
  * 关联表里的队长行是同步结果（由 StudioProjectServiceImpl 在同一事务写入）。
  * 本类的 unbindMember 负责守卫它——当前队长不允许被解绑。
+ *
+ * @author shaoshing
  */
 @Service
 @RequiredArgsConstructor
@@ -66,6 +68,15 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
 
     // ==================== 写操作 ====================
 
+    /**
+     * 幂等地把成员加入项目（已存在则什么都不做）
+     *
+     * <p>「换队长」等场景需要的是「确保他在里面」而不是「再插一条」，
+     * 因此这里不报「重复绑定」，直接返回。
+     *
+     * @param projectId 项目 ID
+     * @param memberId 成员 ID
+     */
     @Override
     public void ensureMemberInProject(long projectId, long memberId) {
         ThrowUtils.throwIf(projectId <= 0, ErrorCode.PARAMS_ERROR, "项目 id 不合法");
@@ -88,6 +99,13 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
         }
     }
 
+    /**
+     * 绑定成员到项目
+     *
+     * @param projectId 项目 ID
+     * @param memberId 成员 ID
+     * @return true 表示绑定成功
+     */
     @Override
     public boolean bindMember(long projectId, long memberId) {
         ThrowUtils.throwIf(projectId <= 0, ErrorCode.PARAMS_ERROR, "项目 id 不合法");
@@ -112,6 +130,15 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
         }
     }
 
+    /**
+     * 解绑成员（会拦住「移除当前队长」）
+     *
+     * <p>若允许移除队长，就会出现「项目有队长、但成员列表里没有他」的破窗状态。
+     *
+     * @param projectId 项目 ID
+     * @param memberId 成员 ID
+     * @return true 表示解绑成功
+     */
     @Override
     public boolean unbindMember(long projectId, long memberId) {
         ThrowUtils.throwIf(projectId <= 0, ErrorCode.PARAMS_ERROR, "项目 id 不合法");
@@ -135,6 +162,12 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
 
     // ==================== 读操作 ====================
 
+    /**
+     * 项目的参与成员（管理端视图）
+     *
+     * @param projectId 项目 ID
+     * @return 成员列表；无成员时返回空列表
+     */
     @Override
     public List<MemberVO> listMembersByProject(long projectId) {
         ThrowUtils.throwIf(projectId <= 0, ErrorCode.PARAMS_ERROR, "项目 id 不合法");
@@ -142,6 +175,12 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
         return selectMembersOfProject(projectId).stream().map(this::toMemberVO).toList();
     }
 
+    /**
+     * 成员参与的项目（管理端视图）
+     *
+     * @param memberId 成员 ID
+     * @return 项目列表；无项目时返回空列表
+     */
     @Override
     public List<ProjectVO> listProjectsByMember(long memberId) {
         ThrowUtils.throwIf(memberId <= 0, ErrorCode.PARAMS_ERROR, "成员 id 不合法");
@@ -151,6 +190,12 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
 
     // ==================== C 端：脱敏视图（供官网详情页装配，）====================
 
+    /**
+     * 成员参与的项目（门户脱敏视图）
+     *
+     * @param memberId 成员 ID
+     * @return 项目列表；无项目时返回空列表
+     */
     @Override
     public List<ProjectFrontVO> listFrontProjectsByMember(long memberId) {
         ThrowUtils.throwIf(memberId <= 0, ErrorCode.PARAMS_ERROR, "成员 id 不合法");
@@ -160,6 +205,12 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
         return selectProjectsOfMember(memberId).stream().map(this::toProjectFrontVO).toList();
     }
 
+    /**
+     * 项目的参与成员（门户脱敏视图，项目详情页用）
+     *
+     * @param projectId 项目 ID
+     * @return 成员列表；无成员时返回空列表
+     */
     @Override
     public List<MemberFrontVO> listFrontMembersByProject(long projectId) {
         ThrowUtils.throwIf(projectId <= 0, ErrorCode.PARAMS_ERROR, "项目 id 不合法");
@@ -234,6 +285,12 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
 
     // ==================== 级联清理 ====================
 
+    /**
+     * 删除项目时清理其全部关联行（关联表是物理删除）
+     *
+     * @param projectId 项目 ID
+     * @return 删除的行数
+     */
     @Override
     public long removeByProjectId(long projectId) {
         ThrowUtils.throwIf(projectId <= 0, ErrorCode.PARAMS_ERROR, "项目 id 不合法");
@@ -243,6 +300,12 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
                 .eq(StudioMemberProject::getProjectId, projectId));
     }
 
+    /**
+     * 删除成员时清理其全部关联行（关联表是物理删除）
+     *
+     * @param memberId 成员 ID
+     * @return 删除的行数
+     */
     @Override
     public long removeByMemberId(long memberId) {
         ThrowUtils.throwIf(memberId <= 0, ErrorCode.PARAMS_ERROR, "成员 id 不合法");

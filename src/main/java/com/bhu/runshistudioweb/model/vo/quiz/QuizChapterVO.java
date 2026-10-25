@@ -13,6 +13,8 @@ import java.io.Serializable;
  * questionCount 只统计启用的题：它是给用户看「这一章有多少题可刷」的，
  * 把停用题算进去会让用户点进去发现题数对不上。管理端的章节列表用另一个口径
  * （含停用），两者刻意分开。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizChapterVO implements Serializable {

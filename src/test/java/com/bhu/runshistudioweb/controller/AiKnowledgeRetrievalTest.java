@@ -49,14 +49,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * - 无命中：消息原样、sources 空数组（字段恒存在）；
  * - 阈值与顺序：低于 min-score 的命中被过滤、命中按相似度降序；
  * - topK 配置化：条数上限跟随 studio.ai.rag-top-k；
- * - 悬挂容忍：块/文档被逻辑删除的命中静默跳过（R2 收口）；
+ * - 悬挂容忍：块/文档被逻辑删除的命中静默跳过；
  * - SSE：事件序列 meta → sources → delta → done，sources 恒发（含无命中空数组）且流式链路同样注入；
  * - 检索失败降级：Embedding 故障 → 照常回答、sources 空、配额正常 +1（不新增错误码）；
  * - 位置纪律：配额超限请求在检索之前被拦下（不产生多余的 Embedding 调用）。
  *
  * 本类刻意不加 @Transactional（同 AiChatStreamTest 的理由）：
  * 流式接口运行在虚拟线程上、写入是独立事务，测试事务里未提交的数据它看不到
- * （DESIGN 场景 J 已登记该现象）；因此本类数据真实提交、@AfterEach 按 T26 前缀清理。
+ * （流式写入在独立事务里，测试事务看不到）；因此本类数据真实提交、@AfterEach 按 T26 前缀清理。
  *
  * 向量隔离技巧：Stub 按文本里的记号 V{n}-{EXACT|NEAR|FAR} 把向量放进第 n 个
  * 二维平面：EXACT 与问题同向（余弦 1.0）、NEAR 夹角余弦 0.6、FAR 余弦 0.4（低于 0.5 阈值）；
@@ -64,6 +64,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *
  * 类名以 Ai 开头沿用排序约束（新建上下文的测试类必须排在 CertificateCrudTest 之前），
  * 详见 AiKnowledgeIngestTest 类注释。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -230,10 +232,10 @@ class AiKnowledgeRetrievalTest {
         registry.add("studio.ai.query-limit", () -> 3);
         // 刻意用非默认值（默认 5）：同时证明 topK 真的来自配置
         registry.add("studio.ai.rag-top-k", () -> 2);
-        // ⚠️ LangChain4j 的 minScore 语义是「相关度 relevance」而非裸余弦：relevance = (1 + cos) / 2
+        // LangChain4j 的 minScore 语义是「相关度 relevance」而非裸余弦：relevance = (1 + cos) / 2
         // （正交向量 = 0.5、EXACT(cos 1.0) = 1.0、NEAR(cos 0.6) = 0.8、FAR(cos 0.4) = 0.7）。
         // 因此这里配 0.75：恰好卡在「过滤正交与弱相关、保留接近及以上」的位置
-        // （线上默认 0.5 等于不过滤——正交命中也会以 0.5 通过，已在验收报告中登记）
+        // （线上默认 0.5 等于不过滤——正交命中也会以 0.5 通过）
         registry.add("studio.ai.rag-min-score", () -> 0.75);
     }
 

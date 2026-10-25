@@ -16,7 +16,7 @@ import com.bhu.runshistudioweb.model.vo.member.MemberVO;
  * addMember、updateMember、getMemberById、deleteMember、
  * listMemberByPage，调用方必须已通过 @SaCheckRole("admin") 校验，
  * 返回含内部字段的 MemberVO。
- * 原 C 端方法（官网成员列表 / 详情）已删除，成员档案只作为后台内部数据。
+ * 本接口不含 C 端方法（官网成员列表 / 详情）：成员档案只作为后台内部数据。
  *
  * getMemberFrontVO（脱敏转换）仍然保留：唯一的对外出处是项目详情
  * 里的「参与成员」（ /project/detail，产品确认保留），
@@ -25,6 +25,8 @@ import com.bhu.runshistudioweb.model.vo.member.MemberVO;
  *
  * 约定：所有方法在「参数不合法 / 业务不允许」时抛 BusinessException，
  * 不返回错误码、不返回 null，由全局异常处理器统一转成标准响应。
+ *
+ * @author shaoshing
  */
 public interface StudioMemberService extends IService<StudioMember> {
 
@@ -90,15 +92,12 @@ public interface StudioMemberService extends IService<StudioMember> {
      */
     Page<MemberVO> listMemberByPage(MemberQueryRequest memberQueryRequest);
 
-    // ==================== C 端：已随「团队成员不对外展示」删除 ====================
+    // ==================== C 端：只有一个脱敏转换方法 ====================
 
-    // 这里原有两个方法，已删除：
-    //   - listFrontMembers(MemberQueryRequest)  —— 官网成员列表（匿名）
-    //   - getFrontMemberDetail(long)            —— 官网成员详情（匿名，聚合证书与项目）
-    // 连同专用的 MemberDetailFrontVO 一并移除；白名单里对应的三条路径也已下线。
-    // 成员档案此后只经管理端读取（listMemberByPage / getMemberById，均要求 admin）。
+    // 本接口刻意没有「官网成员列表 / 官网成员详情」这类匿名方法：
+    // 成员档案只经管理端读取（listMemberByPage / getMemberById，均要求 admin）。
     //
-    //  getMemberFrontVO 保留：项目详情 /project/detail 仍需返回「参与成员」
+    // getMemberFrontVO 是唯一的 C 端出口：项目详情 /project/detail 仍需返回「参与成员」
     // （产品确认的例外），由 MemberProjectService#listFrontMembersByProject 调用。
 
     /**

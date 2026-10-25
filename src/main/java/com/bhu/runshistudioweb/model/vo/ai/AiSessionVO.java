@@ -25,6 +25,8 @@ import java.time.LocalDateTime;
  * 而且前端要拿它做展示（「共 12 条」），
  * 不能用 Long——会被全局的 Long → 字符串约定变成 "12"。
  * 一句话：主键出字符串，计数出数字（与 StatisticOverviewVO 同一口径）。
+ *
+ * @author shaoshing
  */
 @Data
 public class AiSessionVO implements Serializable {

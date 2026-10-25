@@ -32,6 +32,8 @@ import com.bhu.runshistudioweb.model.vo.post.PostAdminDetailVO;
  * updatePost）只被 AdminPostController 调用，Controller 层已有
  * @SaCheckRole(ADMIN)；Service 内仍各自校验登录态，
  * 与 audit 的做法一致——不把「调用方一定鉴权过」当作前提。
+ *
+ * @author shaoshing
  */
 public interface PostService extends IService<StudioPost> {
 
@@ -156,55 +158,61 @@ public interface PostService extends IService<StudioPost> {
      * 删除前把 updated_by 显式写成操作人作为痕迹。
      *
      * @param id 帖子 ID
-     * @return 本次删除的内容行数（帖子 1 + 其下评论数；点赞关系是物理删除，不计入）
+     * @return 删除的内容行数（帖子 1 + 其下评论数；点赞关系是物理删除，不计入）
      * @throws com.bhu.runshistudioweb.exception.BusinessException 未登录、帖子不存在、
      * 帖子尚在待审时抛出
      */
     int deletePost(long id);
 
-    // 置顶 / 取消置顶
-    //
-    // 只有已通过的帖子允许置顶：公开列表只返回已通过的内容，
-    // 置顶一篇待审帖在门户上没有任何效果——属于典型误操作，
-    // 因此在服务端挡掉并给出可读提示，而不是让用户点了没反应。
-    //
-    // 取消置顶不设状态限制：帖子被编辑后会重置为待审，但 pinned 仍为 1；
-    // 若此时不许取消置顶，管理员就卡在一个「改不回来」的状态里。恢复操作永远不该被拦住。
-    //
-    // @param id 帖子 ID
-    // @param pinned 1-置顶, 0-取消置顶（其它值拒绝）
-    // @throws com.bhu.runshistudioweb.exception.BusinessException 未登录、帖子不存在、
-    // 取值非法、对非已通过帖子置顶时抛出
+    /**
+     * 置顶 / 取消置顶
+     *
+     * 只有已通过的帖子允许置顶：公开列表只返回已通过的内容，
+     * 置顶一篇待审帖在门户上没有任何效果——属于典型误操作，
+     * 因此在服务端挡掉并给出可读提示，而不是让用户点了没反应。
+     *
+     * 取消置顶不设状态限制：帖子被编辑后会重置为待审，但 pinned 仍为 1；
+     * 若此时不许取消置顶，管理员就卡在一个「改不回来」的状态里。恢复操作永远不该被拦住。
+     *
+     * @param id 帖子 ID
+     * @param pinned 1-置顶, 0-取消置顶（其它值拒绝）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 未登录、帖子不存在、
+     * 取值非法、对非已通过帖子置顶时抛出
+     */
     void updatePinned(long id, int pinned);
 
-    // 编辑帖子（仅管理员），保存后非待审状态一律重置为待审重新送审
-    //
-    // 为什么不让作者自己改：编辑权只给管理员。「先审后发」意味着内容公开前
-    // 已过审，若作者能自由修改已通过的正文，等于给审核开了后门——改完的内容没人再看。
-    //
-    // 为什么编辑后重新送审：内容变了就必须重新过审，否则「先审后发」会被
-    // 编辑功能绕开。代价是改个别字也会让文章暂时下线，因此调用方必须提示
-    // 「已保存，修改内容将重新送审」。
-    //
-    // 编辑同时复用 addPost 的两条校验（正文长度、正文图片必须是
-    // /uploads/ 站内路径）与「异步交 AI 初判」的送审逻辑。
-    //
-    // @param request 编辑请求（id、标题、正文必填；摘要与封面选填，为空时兜底生成）
-    // @throws com.bhu.runshistudioweb.exception.BusinessException 未登录、帖子不存在、
-    // 正文过长、含外链图片时抛出
+    /**
+     * 编辑帖子（仅管理员），保存后非待审状态一律重置为待审重新送审
+     *
+     * 为什么不让作者自己改：编辑权只给管理员。「先审后发」意味着内容公开前
+     * 已过审，若作者能自由修改已通过的正文，等于给审核开了后门——改完的内容没人再看。
+     *
+     * 为什么编辑后重新送审：内容变了就必须重新过审，否则「先审后发」会被
+     * 编辑功能绕开。代价是改个别字也会让文章暂时下线，因此调用方必须提示
+     * 「已保存，修改内容将重新送审」。
+     *
+     * 编辑同时复用 addPost 的两条校验（正文长度、正文图片必须是
+     * /uploads/ 站内路径）与「异步交 AI 初判」的送审逻辑。
+     *
+     * @param request 编辑请求（id、标题、正文必填；摘要与封面选填，为空时兜底生成）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 未登录、帖子不存在、
+     * 正文过长、含外链图片时抛出
+     */
     void updatePost(PostUpdateRequest request);
 
-    // 作者修改自己被驳回的帖子（改完重新送审）
-    //
-    // 与 updatePost（管理员代改任何帖子）共用同一套改稿实现，
-    // 差别只在准入：本方法额外要求「是作者本人」且「状态为已驳回」。
-    // 待审帖不许作者改（审核对象会不断变化），已通过帖更不许（公开内容
-    // 作者随手改等于给审核开后门）——这两种情况都按「帖子不存在」同码返回，
-    // 不暴露存在性。
-    //
-    // @param request 改稿请求（id、标题、正文必填；摘要与封面选填）
-    // @throws com.bhu.runshistudioweb.exception.BusinessException 未登录、帖子不存在、
-    // 非本人、非已驳回状态、正文过长、含外链图片时抛出
+    /**
+     * 作者修改自己被驳回的帖子（改完重新送审）
+     *
+     * 与 updatePost（管理员代改任何帖子）共用同一套改稿实现，
+     * 差别只在准入：本方法额外要求「是作者本人」且「状态为已驳回」。
+     * 待审帖不许作者改（审核对象会不断变化），已通过帖更不许（公开内容
+     * 作者随手改等于给审核开后门）——这两种情况都按「帖子不存在」同码返回，
+     * 不暴露存在性。
+     *
+     * @param request 改稿请求（id、标题、正文必填；摘要与封面选填）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 未登录、帖子不存在、
+     * 非本人、非已驳回状态、正文过长、含外链图片时抛出
+     */
     void updateMyRejectedPost(PostUpdateRequest request);
 
     /**

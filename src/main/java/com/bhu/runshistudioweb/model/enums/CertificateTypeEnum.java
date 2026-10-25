@@ -7,11 +7,13 @@ package com.bhu.runshistudioweb.model.enums;
  * 类型回答「这是什么成果」。两者组合起来才能完整描述一条记录，例如
  * 「国家级 + 软著」「省级 + 竞赛」。
  *
- * 为什么用 varchar 而不是 tinyint 存类型（DESIGN.md 4.2 的判定标准）：
+ * 为什么用 varchar 而不是 tinyint 存类型：
  * - 取值会扩展——以后可能加「实用新型」「外观设计」「会议论文」等，
  * 用 varchar 只需加枚举值，不必改表结构，也不用担心数字含义失忆；
  * - 这些值要直接参与接口返回与筛选，排障时能一眼读懂。
  * 反过来，user_status、member_status 这类「取值固定、不对外展示」的状态位才用 tinyint。
+ *
+ * @author shaoshing
  */
 public enum CertificateTypeEnum {
 

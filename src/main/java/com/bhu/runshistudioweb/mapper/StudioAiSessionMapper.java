@@ -13,6 +13,8 @@ import org.apache.ibatis.annotations.Mapper;
  * 逻辑删除由 @TableLogic 驱动：所有查询自动追加 deleted_at = 0。
  * 这一点在会话场景格外重要——已删除的会话必须查不出来，
  * 否则用户凭旧 ID 还能继续往「已删除会话」里写消息。
+ *
+ * @author shaoshing
  */
 @Mapper
 public interface StudioAiSessionMapper extends BaseMapper<StudioAiSession> {

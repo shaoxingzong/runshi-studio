@@ -41,6 +41,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *
  * 类名不能以 Admin 开头：会排在 Ai* 测试之前，
  * 导致 Spring 上下文被 stop、后续登录类批量失败（见 PostManageTest 注释）。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc

@@ -14,6 +14,8 @@ import java.util.List;
  * errors 里带行号是刻意的：粘贴一大段文本时，
  * 「第 12 行多选题只标了 1 个正确项」能让人立刻定位；
  * 只说「有 3 个错误」等于没说。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizImportResultVO implements Serializable {
@@ -49,9 +51,18 @@ public class QuizImportResultVO implements Serializable {
         /** 可读原因（直接展示给管理员） */
         private String message;
 
+        /**
+         * 供 Jackson 反序列化使用
+         */
         public ImportError() {
         }
 
+        /**
+         * 构造一条导入错误明细
+         *
+         * @param line 出错行号（从 1 开始）
+         * @param message 失败原因
+         */
         public ImportError(Integer line, String message) {
             this.line = line;
             this.message = message;

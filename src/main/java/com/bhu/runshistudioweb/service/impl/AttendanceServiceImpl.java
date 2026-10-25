@@ -48,6 +48,8 @@ import java.util.Map;
  * 看板的性能纪律：三次聚合查询后在内存合并，
  * 绝不写成 for (成员 m : 列表) { countByUser(m.id) }——那是标准 N+1。
  * 成员规模目前只有几十人，将来若涨到几百人，这三次查询依然成立，而 N+1 会线性恶化。
+ *
+ * @author shaoshing
  */
 @Slf4j
 @Service

@@ -21,6 +21,8 @@ import java.io.Serializable;
  *
  * 类型全部是 Integer：它们是计数而不是 ID，
  * 必须让前端拿到数字（用 Long 会被全局配置序列化成 "5"）。
+ *
+ * @author shaoshing
  */
 @Data
 public class KnowledgeSyncAllVO implements Serializable {

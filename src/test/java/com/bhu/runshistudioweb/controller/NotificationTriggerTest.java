@@ -3,6 +3,9 @@ package com.bhu.runshistudioweb.controller;
 import com.bhu.runshistudioweb.constant.UserRoleConstant;
 import com.bhu.runshistudioweb.mapper.StudioMemberMapper;
 import com.bhu.runshistudioweb.mapper.SysUserMapper;
+import com.bhu.runshistudioweb.model.entity.StudioMember;
+import com.bhu.runshistudioweb.model.enums.MemberStatusEnum;
+import com.bhu.runshistudioweb.model.enums.TeamPositionEnum;
 import jakarta.annotation.Resource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -31,6 +34,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * （判定失败转人工），异步回调与人工审核的先后顺序两种都安全——
  * 人工先审（状态已离开发审），AI 后到（eq 待审更新 0 行），互不干扰。
  * 这也顺带验证了「通知挂在评论真正可见的那一刻」而非提交那一刻。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -86,6 +91,28 @@ class NotificationTriggerTest {
                 : "{\"ids\":[" + postId + "],\"action\":\"" + action + "\",\"rejectReason\":\"" + reason + "\"}";
         String body = support.postJson("/admin/post/audit", json, adminToken);
         assertEquals("00000", support.code(body), "审核失败：" + body);
+    }
+
+    /**
+     * 直接给账号建一条在队成员档案（绕过接口，只做测试前置）
+     *
+     * <p>为什么用 Mapper 直插而不走 {@code /member/add}：本类的关注点是
+     * 「通知有没有发」，不是「建档接口好不好使」——建档另有
+     * {@code StudioMemberCrudTest} 与 {@code MemberIdentityConsistencyTest} 覆盖。
+     * 前置条件越薄，用例的失败原因越集中在被测行为上。
+     *
+     * <p>用固定 ID 段 + 先删后插，保证重复执行不膨胀。
+     */
+    private void createMemberProfile(long userId, String name) {
+        jdbcTemplate.update("DELETE FROM studio_member WHERE user_id = ? AND deleted_at = 0", userId);
+        StudioMember member = new StudioMember();
+        member.setUserId(userId);
+        member.setName(name);
+        member.setGradeYear(2023);
+        member.setMemberStatus(MemberStatusEnum.IN_TEAM.getValue());
+        member.setTeamPosition(TeamPositionEnum.MEMBER.getValue());
+        member.setSortOrder(0);
+        studioMemberMapper.insert(member);
     }
 
     /** 在我的通知里找指定类型的那条（找不到返回 null） */
@@ -226,9 +253,16 @@ class NotificationTriggerTest {
     @Test
     @DisplayName("授予成员身份：用户收到 MEMBER_GRANTED；改资料不重复发")
     void memberGrantNotifiesOnce() {
-        // setUp 里 replier 是普通 user；把他提为 member
+        // setUp 里 replier 是普通 user；把他提为 member。
+        //
+        // 必须先建成员档案再改角色（这是后端新增的守卫）：
+        // 授予 member/admin 角色时，后端会校验「该账号必须有档案」，
+        // 否则拒绝并提示先去建档——这正是修掉「有角色没档案 → 功能不显示/报错」的措施。
+        // 真实流程也是如此：后台要么走「转为成员」（一步建档案 + 改角色），
+        // 要么先在「成员管理」建档绑定，再回来改角色。
         long replierId = Long.parseLong(
                 support.data(support.getBody("/user/current", replierToken)).get("id").asText());
+        createMemberProfile(replierId, "通知测试成员");
 
         String updateBody = support.postJson("/user/update",
                 "{\"id\":" + replierId + ",\"userRole\":\"" + UserRoleConstant.MEMBER + "\"}", adminToken);

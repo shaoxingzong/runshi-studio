@@ -21,6 +21,8 @@ import java.util.List;
  * （例外：两个 VO 转换方法是纯转换，入参为 null 时返回 null）；
  * - 不暴露 QueryWrapper：查询条件的拼装是实现细节，
  * 放到接口上等于允许调用方自己拼 SQL，会把「排序字段改成注入字符串」这类风险扩散出去。
+ *
+ * @author shaoshing
  */
 public interface CertificateService extends IService<StudioCertificate> {
 

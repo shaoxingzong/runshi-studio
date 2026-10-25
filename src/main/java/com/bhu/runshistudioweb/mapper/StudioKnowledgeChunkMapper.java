@@ -19,6 +19,8 @@ import org.apache.ibatis.annotations.Mapper;
  *
  * 逻辑删除由 @TableLogic 驱动：所有查询自动追加 deleted_at = 0，
  * 因此「文档已删、块还活着」这类孤儿数据不会出现在检索结果里。
+ *
+ * @author shaoshing
  */
 @Mapper
 public interface StudioKnowledgeChunkMapper extends BaseMapper<StudioKnowledgeChunk> {

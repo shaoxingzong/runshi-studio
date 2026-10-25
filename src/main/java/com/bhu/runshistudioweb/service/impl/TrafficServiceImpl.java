@@ -37,6 +37,8 @@ import java.util.Map;
  *
  * 为什么埋点失败不让用户感知：它挂在门户每个页面。统计是旁路，
  * 旁路故障不该影响主流程——这是与「RAG 检索失败降级」同一条纪律。
+ *
+ * @author shaoshing
  */
 @Slf4j
 @Service
@@ -57,13 +59,21 @@ public class TrafficServiceImpl extends ServiceImpl<StudioPageVisitMapper, Studi
 
     private final JdbcTemplate jdbcTemplate;
 
+    /**
+     * 记录一次页面访问（匿名可写）
+     *
+     * <p>路径在服务端再规范化一次：前端可能被旧缓存，也可能有人直接调接口。
+     * 匿名可写意味着这里必须足够宽容——埋点失败绝不能影响用户浏览。
+     *
+     * @param request 埋点请求（页面路径与访客标识必填）
+     */
     @Override
     public void report(TrafficReportRequest request) {
         // 请求体整体 null：@Valid 不覆盖这种情况，兜一层避免后面拆箱子 NPE
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
 
         StudioPageVisit visit = new StudioPageVisit();
-        // 路径规范化放服务端再做一次：前端可能被旧版本缓存，或有人直接调接口
+        // 路径规范化放服务端再做一次：前端代码可能是旧缓存，或有人直接调接口
         visit.setPagePath(normalizePath(request.getPagePath()));
         visit.setVisitorId(StrUtil.trim(request.getVisitorId()));
         visit.setReferrerHost(StrUtil.trimToNull(request.getReferrerHost()));
@@ -77,6 +87,12 @@ public class TrafficServiceImpl extends ServiceImpl<StudioPageVisitMapper, Studi
                 visit.getPagePath(), visit.getVisitorId(), visit.getUserId());
     }
 
+    /**
+     * 流量总览（PV / UV / 按天趋势 / 热门页面）
+     *
+     * @param days 统计天数
+     * @return 总览数据
+     */
     @Override
     public TrafficOverviewVO getOverview(int days) {
         int safeDays = days <= 0 ? DEFAULT_DAYS : Math.min(days, MAX_DAYS);

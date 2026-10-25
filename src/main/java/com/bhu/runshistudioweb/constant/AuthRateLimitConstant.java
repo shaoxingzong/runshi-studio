@@ -6,6 +6,8 @@ package com.bhu.runshistudioweb.constant;
  * 与游客提问限流（ studio:ai:rate:ip:）同一套命名规范：
  * studio:{模块}:rate:{业务}:ip:。按接口分开前缀，两个业务的计数互不占用——
  * 登录被限流不该连带堵死注册，反之亦然。
+ *
+ * @author shaoshing
  */
 public final class AuthRateLimitConstant {
 

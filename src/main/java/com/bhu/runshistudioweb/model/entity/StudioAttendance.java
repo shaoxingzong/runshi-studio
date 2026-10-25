@@ -37,6 +37,8 @@ import java.time.LocalDateTime;
  * 时间相关规定见 com.bhu.runshistudioweb.constant.AttendanceConstant：
  * 签到时刻与 attendance_date 的派生口径都固定取东八区，
  * 不用 ZoneId.systemDefault()，否则本地开发与生产部署会差 8 小时且不报错。
+ *
+ * @author shaoshing
  */
 @Data
 @TableName("studio_attendance")

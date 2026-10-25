@@ -40,6 +40,8 @@ import static org.mockito.Mockito.when;
  * - 键与 TTL：recordFailure 必须带账号名键与锁定时长换算出的秒数；
  * - 降级：Redis 故障时全部放行——锁定是防护手段，不能变成故障源；
  * - 开关：关闭时不碰 Redis。
+ *
+ * @author shaoshing
  */
 @ExtendWith(MockitoExtension.class)
 class AuthLockManagerTest {

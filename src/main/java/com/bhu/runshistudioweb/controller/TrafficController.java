@@ -27,6 +27,8 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * 本接口不返回数据：埋点是旁路，前端也不需要根据结果做什么。
  * 失败由全局异常处理器兜成错误码，前端静默（不影响页面使用）。
+ *
+ * @author shaoshing
  */
 @RestController
 @RequestMapping("/traffic")

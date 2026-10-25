@@ -65,13 +65,15 @@ import java.util.stream.Collectors;
  * - 修改是「用旧值补齐后整体校验」：否则「只改解析」会因为
  * 没传选项而报「选项不能为空」——这是最常见的误伤；
  * - 判定相关变更要重置错题连对进度：改答案 / 改题型 / 增删选项之后，
- * 用户之前「连对 1 次」的证据不再成立。但不动 status——
+ * 用户此前「连对 1 次」的证据不再成立。但不动 status——
  * 已消解的题不该因为管理员改了个字就退回待复习。
  *
  * 为什么注入两个 Mapper 而不是 Service：
  * 删除题目要清理错题条目、列表要统计作答数，这些是「按条件批量写/聚合读」，
  * 走 Mapper 最直接。反向注入 QuizWrongService 会形成循环依赖
- * （错题服务要读题目表），项目已全量改为构造器注入，成环会启动即失败。
+ * （错题服务要读题目表），项目全部使用构造器注入，成环会启动即失败。
+ *
+ * @author shaoshing
  */
 @Slf4j
 @Service
@@ -172,6 +174,12 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
 
     // ==================== 管理端：题目读写 ====================
 
+    /**
+     * 管理端题目列表（含答案与解析，只给管理员看）
+     *
+     * @param request 查询条件
+     * @return 分页结果
+     */
     @Override
     public Page<QuizQuestionAdminVO> listQuestionByPage(QuizQuestionQueryRequest request) {
         QuizQuestionQueryRequest query = request == null ? new QuizQuestionQueryRequest() : request;
@@ -214,6 +222,12 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
         return voPage;
     }
 
+    /**
+     * 管理端题目详情（含答案与解析）
+     *
+     * @param id 题目 ID
+     * @return 详情
+     */
     @Override
     public QuizQuestionAdminVO getQuestionById(long id) {
         ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "题目 id 不合法");
@@ -225,6 +239,15 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
     }
 
     @Override
+    /**
+     * 新增题目
+     *
+     * <p>校验全部走 validateAndNormalize：新增 / 修改 / 导入三条入口共用同一套规则，
+     * 任何一条分叉都会出现「导入能进、编辑不让改」这类难查的问题。
+     *
+     * @param request 新增请求
+     * @return 新题目 ID
+     */
     @Transactional(rollbackFor = Exception.class)
     public long addQuestion(QuizQuestionAddRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
@@ -256,6 +279,15 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
     }
 
     @Override
+    /**
+     * 修改题目（含「判定相关变更」的连锁处理）
+     *
+     * <p>改答案 / 改题型 / 增删选项会让历史判定失去依据，因此要把该题所有错题条目的
+     * 连对进度清零；但不动 status——已消解的题不该因为管理员改了个字就退回待复习。
+     *
+     * @param request 修改请求
+     * @return true 表示保存成功
+     */
     @Transactional(rollbackFor = Exception.class)
     public boolean updateQuestion(QuizQuestionUpdateRequest request) {
         ThrowUtils.throwIf(request == null || request.getId() == null,
@@ -279,7 +311,7 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
         // ② 整体校验（与新增共用同一套规则）
         NormalizedQuestion normalized = validateAndNormalize(newType, newStem, newOptions, newCorrect, newAnalysis);
 
-        // ③ 判定相关变更检测：必须在覆盖旧值之前算，否则永远相等
+        // ③ 判定相关变更检测：必须在覆盖旧值之前算，否则比较时永远相等
         boolean verdictChanged = isVerdictChanged(existing, normalized);
 
         // ④ 只 set 允许修改的字段：服务端写死的白名单，
@@ -302,7 +334,7 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
         update.setStatus(request.getStatus());
 
         // 注意：这里不判断 updateById 的返回值。
-        // MySQL 默认协议下「SET 的值与原来完全相同」会返回 0 行受影响，
+        // MySQL 默认协议下「SET 的值与原值完全相同」会返回 0 行受影响，
         // 而「管理员打开编辑框、什么都没改、点保存」是极常见的操作——
         // 把它当成失败会让用户看到一条莫名其妙的「更新失败」。
         // 存在性已在上面用 getById 校验过，因此 0 行受影响是安全的 no-op。
@@ -326,7 +358,7 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
         }
 
         // ⑥ 判定相关变更：重置该题所有用户错题条目的连对进度。
-        //    status 保持不变——已消解的不退回待复习（用户曾经掌握过，
+        //    status 保持不变——已消解的不退回待复习（用户确实掌握过，
         //    管理员改题不该否定这一点）；只把「连对几次」的证据作废
         if (verdictChanged) {
             resetWrongStreak(existing.getId());
@@ -335,6 +367,12 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
     }
 
     @Override
+    /**
+     * 删除题目（连带清理错题条目）
+     *
+     * @param id 题目 ID
+     * @return 删除的题目条数
+     */
     @Transactional(rollbackFor = Exception.class)
     public int deleteQuestion(long id) {
         ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "题目 id 不合法");
@@ -350,6 +388,15 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
     }
 
     @Override
+    /**
+     * 批量删除题目
+     *
+     * <p>语义是「把这些都删掉」：其中一条已被别人删掉不该让整批失败，
+     * 因此不存在的条目直接跳过，返回实际删除条数。
+     *
+     * @param ids 题目 ID 列表
+     * @return 实际删除条数
+     */
     @Transactional(rollbackFor = Exception.class)
     public int batchDeleteQuestions(List<Long> ids) {
         ThrowUtils.throwIf(ids == null || ids.isEmpty(), ErrorCode.PARAMS_ERROR, "请选择要删除的题目");
@@ -374,6 +421,16 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
         return deleted;
     }
 
+    /**
+     * 启用 / 停用题目
+     *
+     * <p>停用是可逆的下线：不再被抽到、不再出现在错题本里，
+     * 但历史作答与错题条目都保留——重新启用后一切自动回来。
+     *
+     * @param id 题目 ID
+     * @param status 0-停用，1-启用
+     * @return true 表示修改成功
+     */
     @Override
     public boolean updateStatus(long id, int status) {
         ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "题目 id 不合法");
@@ -390,6 +447,15 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
     }
 
     @Override
+    /**
+     * 批量导入题目（逐行解析，坏行只记录不中断）
+     *
+     * <p>一条坏行不该让整份文件白导：成功的照常入库，失败的按行号返回原因，
+     * 管理员改完那几行再导一次即可。
+     *
+     * @param request 导入请求（原始文本）
+     * @return 导入结果（成功条数 + 失败明细）
+     */
     @Transactional(rollbackFor = Exception.class)
     public QuizImportResultVO importQuestions(QuizQuestionImportRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
@@ -462,6 +528,11 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
 
     // ==================== 管理端：章节 / 教材批量操作 ====================
 
+    /**
+     * 管理端教材 / 章节树（含每章题数，停用的题也计入）
+     *
+     * @return 树形结构
+     */
     @Override
     public List<QuizChapterAdminVO> listChaptersForAdmin() {
         QueryWrapper<StudioQuizQuestion> wrapper = new QueryWrapper<>();
@@ -496,6 +567,14 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
     }
 
     @Override
+    /**
+     * 重命名章节（整章批量改名）
+     *
+     * <p>允许改成与另一章同名：报错会让管理员不得不先把两章改成不同名字再改回来，徒增操作。
+     *
+     * @param request 重命名请求
+     * @return 受影响的题目条数
+     */
     @Transactional(rollbackFor = Exception.class)
     public int renameChapter(QuizChapterRenameRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
@@ -531,6 +610,12 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
     }
 
     @Override
+    /**
+     * 移动章节到另一本教材下
+     *
+     * @param request 移动请求
+     * @return 受影响的题目条数
+     */
     @Transactional(rollbackFor = Exception.class)
     public int moveChapter(QuizChapterMoveRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
@@ -556,6 +641,12 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
     }
 
     @Override
+    /**
+     * 删除整章（连带该章题目与错题条目）
+     *
+     * @param request 删除请求
+     * @return 删除的题目条数
+     */
     @Transactional(rollbackFor = Exception.class)
     public int deleteChapter(QuizChapterDeleteRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
@@ -582,6 +673,12 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
     }
 
     @Override
+    /**
+     * 重命名教材（整本批量改名）
+     *
+     * @param request 重命名请求
+     * @return 受影响的题目条数
+     */
     @Transactional(rollbackFor = Exception.class)
     public int renameTextbook(QuizTextbookRenameRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
@@ -693,7 +790,7 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
      * 判定相关变更检测
      *
      * 三件事算「判定相关」：正确答案变了、题型变了、选项标签集合变了。
-     * 只改选项文字（标签集合不变）不算——「你当时选了 C」仍然指向同一个选项。
+     * 只改选项文字（标签集合不变）不算——「提交时选了 C」仍然指向同一个选项。
      *
      * @param existing 数据库里的旧值
      * @param normalized 校验后的新值
@@ -716,7 +813,7 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
      * 重置某题所有用户错题条目的连对进度
      *
      * 只重置 streak，不动 status：
-     * 已消解的题不该因为管理员改了个答案就退回待复习——用户曾经掌握过这件事仍然成立；
+     * 已消解的题不该因为管理员改了个答案就退回待复习——用户确实掌握过这件事仍然成立；
      * 而「连对几次」的证据确实作废了，必须归零。
      *
      * 用一条 UPDATE 批量完成（不逐条查改）：错题条目可能有几百条，

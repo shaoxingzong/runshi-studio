@@ -90,6 +90,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * 它是第一个使用默认 MockMvc 上下文的类，该上下文会被其后所有测试类共享，
  * 而静态 DAO 必须始终指向「当前正在使用的上下文」。
  * 本类若排到它之后，后续所有登录类测试都会 B0001 失败。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -425,7 +427,7 @@ class AiKnowledgeManageTest {
      *
      * 为什么需要它：直接断言 total == 3 会隐含假设「库是空的」。
      * 一旦库里有演示数据（db/demo-data.sql 的 15 条），total 就变成 18 而断言失败——
-     * 那是测试把环境当成了前提，不是产品缺陷。断言「基线条数 + 本次新增」才能让
+     * 那是测试把环境当成了前提，不是产品缺陷。断言「基线条数 + 用例新增」才能让
      * 验收测试与业务数据共存。
      */
     private int sourceCount() {
@@ -585,7 +587,7 @@ class AiKnowledgeManageTest {
         assertNotEquals(projectDocId, manualDocId);
 
         // 默认分页：本用例的 3 篇
-        // ⚠️ 必须带 title 过滤：不带过滤时 total 是全局文档数，
+        // 必须带 title 过滤：不带过滤时 total 是全局文档数，
         // 库里若有演示数据会把这个断言顶掉（那是测试把环境当成了前提，不是产品缺陷）。
         String body = postJson("/knowledge/doc/list/page",
                 "{\"current\":1,\"pageSize\":10,\"title\":\"T27-分页\"}", token);

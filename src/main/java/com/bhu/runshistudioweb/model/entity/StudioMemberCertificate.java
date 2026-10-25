@@ -27,6 +27,8 @@ import java.time.LocalDateTime;
  * created_at 是 NOT NULL 且数据库没有默认值，所以必须标
  * @TableField(fill = FieldFill.INSERT) 交给 MyMetaObjectHandler 填充，
  * 否则插入直接失败。
+ *
+ * @author shaoshing
  */
 @Data
 @TableName("studio_member_certificate")

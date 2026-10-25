@@ -16,8 +16,8 @@ import jakarta.annotation.PostConstruct;
 /**
  * 启动自检：把「配置坏了但服务照样起」堵死在启动期
  *
- * 为什么需要它（2026-10-18 上线前验证实测发现）：application-prod.yml
- * 的设计意图是「密钥类环境变量不给默认值，缺了就启动失败」。但实测三条全部落空——
+ * 为什么需要它：application-prod.yml 的设计意图是
+ * 「密钥类环境变量不给默认值，缺了就启动失败」。但 Spring 的实际行为三条全部落空——
  * - 缺 MYSQL_PASSWORD：应用正常启动，Hikari 的连接失败没有冒泡到启动流程
  * （Boot 4 数据源懒建连），第一个请求才 B0001；
  * - 缺 REDIS_PASSWORD：同理，登录 / 限流 / 配额在运行时才炸；
@@ -42,6 +42,8 @@ import jakarta.annotation.PostConstruct;
  * 与测试环境的兼容：MockMvc 上下文启动同样会执行本自检，而既有上下文测试
  * 本来就要求 MySQL / Redis 可达（否则业务断言全挂），不会新增约束；
  * AI 配置在测试里留空是刻意允许的本地态（空串不是字面量，不触发检测）。
+ *
+ * @author shaoshing
  */
 @Slf4j
 @Component
@@ -61,6 +63,14 @@ public class StartupSelfCheck {
 
     private final Environment environment;
 
+    /**
+     * 启动期自检：配置明显不可用时直接让启动失败
+     *
+     * <p>fail-fast 的意义：这些配置错了，应用照样能起来，但所有相关请求都会失败。
+     * 在启动期炸掉，问题当场可见；等到线上才发现，排查成本高一个数量级。
+     *
+     * @throws IllegalStateException 关键配置缺失或明显非法时抛出
+     */
     @PostConstruct
     public void checkOnStartup() {
         checkDatabase();

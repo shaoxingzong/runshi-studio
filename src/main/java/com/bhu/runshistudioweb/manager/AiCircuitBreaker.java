@@ -32,6 +32,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * 不计入熔断的情形：「未配置 base-url / api-key」是配置问题而非服务故障，
  * 调用方（ AiManager）对此不调用 recordFailure——
  * 否则本地没配 AI 也会被「熔断」，而那是启动时就已经知道的事。
+ *
+ * @author shaoshing
  */
 @Slf4j
 @Component

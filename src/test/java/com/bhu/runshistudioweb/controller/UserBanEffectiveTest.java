@@ -31,6 +31,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *
  * 登录用真实接口换 token（与 UserAdminCrudTest 同一模式），
  * 保证权限链路上的每一环都是真的，而不是 mock 的。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc

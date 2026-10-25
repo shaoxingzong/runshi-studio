@@ -27,6 +27,8 @@ import java.time.LocalDateTime;
  * 本表承载的核心约束：唯一键 uk_post_user(post_id, user_id)
  * 是「一人一赞」的根基。应用层会先查重，该唯一键兜住并发下的重复插入
  * （两个请求同时通过查重时，第二个会撞键失败并回滚）。
+ *
+ * @author shaoshing
  */
 @Data
 @TableName("studio_post_like")

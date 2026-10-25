@@ -34,6 +34,8 @@ import java.util.List;
  * /post/comment/add | 登录用户（不要求是成员，与发帖的门槛不同）
  *
  * 先审后发：评论提交后不会立刻出现在列表里，需审核通过。
+ *
+ * @author shaoshing
  */
 @RestController
 @RequestMapping("/post/comment")

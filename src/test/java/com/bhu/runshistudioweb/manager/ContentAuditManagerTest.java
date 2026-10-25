@@ -32,6 +32,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 而本模块有一条不能退让的底线——
  * 解析不出结论时必须转人工，绝不能把内容放行。
  * 那几条断言就是这条底线的守门员。
+ *
+ * @author shaoshing
  */
 class ContentAuditManagerTest {
 

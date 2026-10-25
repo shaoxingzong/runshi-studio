@@ -21,6 +21,8 @@ import java.util.List;
  *
  * 同样继承来的还有脱敏边界：父类没有 leaderId / sortOrder / 审计字段，
  * 因此详情也不会泄露它们——游客能看到的仍然只是「愿意公开」的那部分。
+ *
+ * @author shaoshing
  */
 @Data
 @EqualsAndHashCode(callSuper = true)

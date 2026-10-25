@@ -20,6 +20,8 @@ import java.io.Serializable;
  *
  * id 上的 JsonSerialize 与 LoginUserVO 同理：全局已把 Long
  * 序列化为字符串，这里再标一次是字段级兜底，防全局规则被调整后精度丢失。
+ *
+ * @author shaoshing
  */
 @Data
 public class UserAddResultVO implements Serializable {

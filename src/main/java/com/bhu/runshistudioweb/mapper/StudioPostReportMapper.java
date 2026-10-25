@@ -20,6 +20,8 @@ import org.apache.ibatis.annotations.Mapper;
  *
  * 待处理列表走 idx_status_time (status, created_at)：
  * WHERE status = 0 ORDER BY created_at。
+ *
+ * @author shaoshing
  */
 @Mapper
 public interface StudioPostReportMapper extends BaseMapper<StudioPostReport> {

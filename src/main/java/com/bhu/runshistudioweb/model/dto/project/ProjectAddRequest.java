@@ -26,6 +26,8 @@ import java.util.List;
  * status 不做注解白名单（理由与其它模块一致）：枚举一加取值注解就过期，
  * 合法性由 Service 用 com.bhu.runshistudioweb.model.enums.ProjectStatusEnum 校验，
  * 提示文案用 valuesText() 生成；不传时按 DDL 默认值 1（已上线）处理。
+ *
+ * @author shaoshing
  */
 @Data
 public class ProjectAddRequest implements Serializable {

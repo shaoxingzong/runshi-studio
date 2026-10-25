@@ -24,6 +24,8 @@ import java.time.LocalDateTime;
  * authorId / authorName 只服务管理端：管理员的帖子列表要能
  * 定位到「这是谁发的」，否则筛选与核实身份都无从下手。对外的 PostFrontVO
  * 只暴露 authorName，不给 ID——对外没必要知道作者的账号主键。
+ *
+ * @author shaoshing
  */
 @Data
 public class PostVO implements Serializable {

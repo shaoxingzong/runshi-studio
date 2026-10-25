@@ -35,6 +35,15 @@ function fullTitle(title: string): string {
     return title ? `${title} - ${SITE_NAME}` : SITE_NAME;
 }
 
+/**
+ * 声明当前页面的标题与描述（组件卸载时恢复）
+ *
+ * 为什么用 composable 而不是在每个页面里直接写 document.title：
+ * 标题要在数据加载完成后才确定（如「项目名 - 润石工作室」），
+ * 而 SPA 切换路由不会自动更新 title，忘记写就会出现「所有页面标题都一样」。
+ *
+ * @param meta 页面元信息；title 与 description 都支持传 ref/computed，数据到位后自动更新
+ */
 export function usePageMeta(meta: {
     // 页面标题（不带站点后缀，拼接规则见 fullTitle）；传 ref/computed 可随数据更新
     title: string | Ref<string>;

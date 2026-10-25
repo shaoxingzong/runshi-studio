@@ -16,6 +16,8 @@ import java.io.Serializable;
  * pinned 用 Integer 而不是 Boolean：与 studio_post.pinned
  * 的 tinyint 列、实体字段 StudioPost#pinned 三方保持一致，
  * 避免「布尔 ↔ 0/1」在契约上多一次隐式转换。
+ *
+ * @author shaoshing
  */
 @Data
 public class PinPostRequest implements Serializable {

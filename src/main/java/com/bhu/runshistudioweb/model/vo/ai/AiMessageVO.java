@@ -19,6 +19,8 @@ import java.time.LocalDateTime;
  *
  * createdAt 由全局 JsonConfig 统一序列化成 yyyy-MM-dd HH:mm:ss，
  * 前端不需要再处理 ISO-8601 的 "T"。
+ *
+ * @author shaoshing
  */
 @Data
 public class AiMessageVO implements Serializable {

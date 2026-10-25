@@ -52,6 +52,8 @@ import java.util.List;
  * 该题所有用户的错题连对进度会被重置（ correct_streak = 0），
  * 但 status 保持不变——已消解的题不会因为管理员改了个字就退回待复习。
  * 前端应在保存前提示「该题有 N 条作答，修改答案不会重算历史判定」。
+ *
+ * @author shaoshing
  */
 @RestController
 @RequestMapping("/admin/quiz")
@@ -75,6 +77,12 @@ public class AdminQuizController {
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】题目分页",
             description = "支持教材/章节/题型/关键词/状态筛选；附作答数与正确率")
+    /**
+     * 管理端题目分页列表
+     *
+     * @param request 查询条件
+     * @return 分页结果
+     */
     public BaseResponse<Page<QuizQuestionAdminVO>> listQuestion(QuizQuestionQueryRequest request) {
         return ResultUtils.success(quizQuestionService.listQuestionByPage(request));
     }
@@ -103,6 +111,12 @@ public class AdminQuizController {
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】新增题目",
             description = "单选恰好 1 个正确项；多选至少 2 个；选项标签须从 A 连续")
+    /**
+     * 新增题目
+     *
+     * @param request 新增请求
+     * @return 新题目 ID
+     */
     public BaseResponse<Long> addQuestion(@RequestBody @Valid QuizQuestionAddRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
         return ResultUtils.success(quizQuestionService.addQuestion(request));
@@ -120,6 +134,12 @@ public class AdminQuizController {
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】修改题目",
             description = "null 表示不修改；改答案/题型/选项标签会重置错题连对进度（不改变已消解状态）")
+    /**
+     * 修改题目（会重置判定相关的错题进度）
+     *
+     * @param request 修改请求
+     * @return 是否成功
+     */
     public BaseResponse<Boolean> updateQuestion(@RequestBody @Valid QuizQuestionUpdateRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
         return ResultUtils.success(quizQuestionService.updateQuestion(request));
@@ -137,6 +157,12 @@ public class AdminQuizController {
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】删除题目",
             description = "逻辑删除；同事务清理错题条目；作答记录保留。只想临时下线请用「停用」")
+    /**
+     * 删除题目
+     *
+     * @param request 删除请求
+     * @return 删除条数
+     */
     public BaseResponse<Integer> deleteQuestion(@RequestBody @Valid DeleteRequest request) {
         ThrowUtils.throwIf(request == null || request.getId() == null, ErrorCode.PARAMS_ERROR);
         return ResultUtils.success(quizQuestionService.deleteQuestion(request.getId()));
@@ -210,6 +236,11 @@ public class AdminQuizController {
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】章节列表",
             description = "含停用题；同时给出启用数，便于判断「共 50 题（启用 48）」")
+    /**
+     * 教材 / 章节树（含题数）
+     *
+     * @return 树形结构
+     */
     public BaseResponse<List<QuizChapterAdminVO>> listChapters() {
         return ResultUtils.success(quizQuestionService.listChaptersForAdmin());
     }
@@ -226,6 +257,12 @@ public class AdminQuizController {
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】章节改名/调序",
             description = "批量 UPDATE；改名到已存在的章节时自动合并")
+    /**
+     * 重命名章节
+     *
+     * @param request 重命名请求
+     * @return 受影响的题目条数
+     */
     public BaseResponse<Integer> renameChapter(@RequestBody @Valid QuizChapterRenameRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
         return ResultUtils.success(quizQuestionService.renameChapter(request));
@@ -241,6 +278,12 @@ public class AdminQuizController {
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】整章移到另一本教材",
             description = "目标教材下已有同名章节时合并；可同时指定新教材的顺序值")
+    /**
+     * 移动章节到另一本教材
+     *
+     * @param request 移动请求
+     * @return 受影响的题目条数
+     */
     public BaseResponse<Integer> moveChapter(@RequestBody @Valid QuizChapterMoveRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
         return ResultUtils.success(quizQuestionService.moveChapter(request));
@@ -258,6 +301,12 @@ public class AdminQuizController {
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】整章删除",
             description = "删除该章全部题目并清理对应错题条目；作答记录保留")
+    /**
+     * 删除整章
+     *
+     * @param request 删除请求
+     * @return 删除的题目条数
+     */
     public BaseResponse<Integer> deleteChapter(@RequestBody @Valid QuizChapterDeleteRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
         return ResultUtils.success(quizQuestionService.deleteChapter(request));
@@ -273,6 +322,12 @@ public class AdminQuizController {
     @SaCheckRole(UserRoleConstant.ADMIN)
     @Operation(summary = "【管理员】教材改名/调序",
             description = "批量 UPDATE；改名到已存在的教材时自动合并")
+    /**
+     * 重命名教材
+     *
+     * @param request 重命名请求
+     * @return 受影响的题目条数
+     */
     public BaseResponse<Integer> renameTextbook(@RequestBody @Valid QuizTextbookRenameRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
         return ResultUtils.success(quizQuestionService.renameTextbook(request));

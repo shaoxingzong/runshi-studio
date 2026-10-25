@@ -20,6 +20,8 @@ import java.time.LocalDateTime;
  * 内容已被 AI 分好类（安全 / 违规 / 灰色 / 判不了），
  * 他只需要处理「灰色」与「判不了」两类，安全与违规的早已被自动处置、不在队列里。
  * aiReason 给出机器的疑虑，管理员据此一眼就能拍板。
+ *
+ * @author shaoshing
  */
 @Data
 public class PostCommentAuditVO implements Serializable {

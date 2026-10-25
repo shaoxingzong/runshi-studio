@@ -18,6 +18,8 @@ import java.util.List;
  *
  * sessionId 用雪花 ID，按全局约定序列化成字符串（防 JS 精度丢失）。
  * 前端原样回传即可（见 AiChatRequest#sessionId 的说明）。
+ *
+ * @author shaoshing
  */
 @Data
 public class AiChatResponseVO implements Serializable {

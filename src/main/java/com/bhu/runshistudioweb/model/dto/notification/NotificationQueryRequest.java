@@ -12,6 +12,8 @@ import java.io.Serializable;
  *
  * 为什么支持按已读/未读过滤：通知积累后的高频操作是
  * 「只看没读过的」——全部已读的旧通知不该占着第一屏。
+ *
+ * @author shaoshing
  */
 @Data
 public class NotificationQueryRequest implements Serializable {

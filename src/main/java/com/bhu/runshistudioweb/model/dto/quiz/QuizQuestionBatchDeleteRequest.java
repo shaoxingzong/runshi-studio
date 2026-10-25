@@ -15,6 +15,8 @@ import java.util.List;
  * 项目里 DeleteRequest 的注释也写了「将来要扩展批量删除，
  * 只需把 id 换成 idList」——这里按那个约定单独建一个类，
  * 既保留了单条删除的清晰度，也没有破坏已有契约。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizQuestionBatchDeleteRequest implements Serializable {

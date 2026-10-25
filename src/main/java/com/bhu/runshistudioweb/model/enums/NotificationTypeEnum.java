@@ -11,6 +11,8 @@ package com.bhu.runshistudioweb.model.enums;
  * - DDL 列注释补上（保持「枚举是唯一事实来源」的可核对性）；
  * - 在触发点调用 NotificationService#notify——没有触发点的类型不该存在；
  * - 前端通知页的跳转映射补对应分支（见 Notifications.vue 的 bizRoute）。
+ *
+ * @author shaoshing
  */
 public enum NotificationTypeEnum {
 
@@ -37,10 +39,20 @@ public enum NotificationTypeEnum {
         this.desc = desc;
     }
 
+    /**
+     * 取值（落库与前端分支依据）
+     *
+     * @return 取值
+     */
     public String getValue() {
         return value;
     }
 
+    /**
+     * 中文描述（日志与提示用）
+     *
+     * @return 描述
+     */
     public String getDesc() {
         return desc;
     }

@@ -35,6 +35,8 @@ import java.util.List;
  * 路径前缀用 /member-certificate 而不是 /member/certificate：
  * 后者会被白名单里的 /member/list 之外的路径混淆视听（例如误以为
  * /member/certificate/... 也属公开），扁平且独立的模块前缀更不容易看错。
+ *
+ * @author shaoshing
  */
 @Tag(name = "成员证书关联", description = "管理员维护成员与证书的绑定关系")
 @RestController

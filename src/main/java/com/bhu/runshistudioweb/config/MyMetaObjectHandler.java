@@ -11,13 +11,15 @@ import java.time.LocalDateTime;
  *
  * 为什么用应用层填充而不是数据库的 DEFAULT CURRENT_TIMESTAMP：
  * 数据库默认值在 INSERT 之后无法回填到实体对象，接口就没法立刻返回带创建时间的完整数据；
- * 而且时区行为会分散在 MySQL 与 JVM 两处。统一走这里，一处可控（见 db/DESIGN.md ADR-2）。
+ * 而且时区行为会分散在 MySQL 与 JVM 两处。统一走这里，一处可控。
  *
  * 重要：created_at / created_by 等列在 DDL 中是 NOT NULL 且没有 DB 默认值，
  * 一旦本类失效（例如忘了加 @Component），所有插入都会失败，而不是悄悄写入 null。
  *
  * 填充规则由实体字段上的注解决定：@TableField(fill = FieldFill.INSERT) 才会在插入时填充，
  * 所以本类只负责「填什么值」，不负责「哪些字段要填」。
+ *
+ * @author shaoshing
  */
 @Component
 public class MyMetaObjectHandler implements MetaObjectHandler {

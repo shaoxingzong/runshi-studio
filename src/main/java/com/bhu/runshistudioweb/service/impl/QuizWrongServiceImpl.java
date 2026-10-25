@@ -50,6 +50,8 @@ import java.util.stream.Collectors;
  *
  * 列表与计数必须用同一个过滤条件，否则会出现
  * 「概览显示 9 条待复习、列表只有 7 条」这种自相矛盾的界面。
+ *
+ * @author shaoshing
  */
 @Slf4j
 @Service
@@ -82,6 +84,18 @@ public class QuizWrongServiceImpl extends ServiceImpl<StudioQuizWrongMapper, Stu
     // ==================== 状态机 ====================
 
     @Override
+    /**
+     * 作答后更新错题本状态机（唯一的状态迁移入口）
+     *
+     * <p>答错 → 加入或回到待复习；答对 → 累加连对次数，达到阈值才消解。
+     * 所有迁移都收敛在这里，避免「提交」与「手动标记」两条入口各写一套规则。
+     *
+     * @param userId 用户 ID
+     * @param questionId 题目 ID
+     * @param correct 本次是否答对
+     * @param resolveStreak 消解所需的连对次数
+     * @return 本次对错题本的影响（取值见 QuizVerdictVO#wrongBookAction）
+     */
     @Transactional(rollbackFor = Exception.class)
     public Outcome applyOutcome(long userId, long questionId, boolean correct, int resolveStreak) {
         StudioQuizWrong existing = findByUserAndQuestion(userId, questionId);
@@ -138,7 +152,7 @@ public class QuizWrongServiceImpl extends ServiceImpl<StudioQuizWrongMapper, Stu
      *
      * 不在错题本里就什么都不做：一道从来没做错过的题答对了，
      * 没有任何「状态」需要更新。给它建一条已消解的条目是错的——
-     * 那会让「已消解」变成「做对过的题数」，与它的语义（曾经错过、现在掌握了）不符。
+     * 那会让「已消解」变成「做对过的题数」，与它的语义（错过、之后掌握了）不符。
      */
     private Outcome handleCorrect(StudioQuizWrong existing, int resolveStreak) {
         if (existing == null) {
@@ -169,6 +183,13 @@ public class QuizWrongServiceImpl extends ServiceImpl<StudioQuizWrongMapper, Stu
 
     // ==================== 查询 ====================
 
+    /**
+     * 我的错题本（只列待复习的）
+     *
+     * @param userId 用户 ID
+     * @param request 查询条件
+     * @return 分页结果
+     */
     @Override
     public Page<QuizWrongItemVO> listMyWrongByPage(long userId, QuizWrongQueryRequest request) {
         QuizWrongQueryRequest query = request == null ? new QuizWrongQueryRequest() : request;
@@ -205,6 +226,16 @@ public class QuizWrongServiceImpl extends ServiceImpl<StudioQuizWrongMapper, Stu
         return voPage;
     }
 
+    /**
+     * 错题详情（含题干、选项、正确答案、解析、上次所选）
+     *
+     * <p>这里可以下发答案：用户已经答错过这道题，再藏着没有意义，
+     * 反而会让他无法复盘。
+     *
+     * @param userId 用户 ID
+     * @param id 错题条目 ID
+     * @return 详情
+     */
     @Override
     public QuizWrongDetailVO getMyWrongDetail(long userId, long id) {
         ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "错题 id 不合法");
@@ -226,6 +257,13 @@ public class QuizWrongServiceImpl extends ServiceImpl<StudioQuizWrongMapper, Stu
         return detail;
     }
 
+    /**
+     * 手动标记「已掌握」（直接把条目置为已消解）
+     *
+     * @param userId 用户 ID
+     * @param id 错题条目 ID
+     * @return true 表示标记成功
+     */
     @Override
     public boolean resolveManually(long userId, long id) {
         ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "错题 id 不合法");
@@ -247,6 +285,12 @@ public class QuizWrongServiceImpl extends ServiceImpl<StudioQuizWrongMapper, Stu
         return this.updateById(update);
     }
 
+    /**
+     * 待复习错题数
+     *
+     * @param userId 用户 ID
+     * @return 条数
+     */
     @Override
     public int countPending(long userId) {
         return Math.toIntExact(this.count(new LambdaQueryWrapper<StudioQuizWrong>()
@@ -256,6 +300,12 @@ public class QuizWrongServiceImpl extends ServiceImpl<StudioQuizWrongMapper, Stu
                 .inSql(StudioQuizWrong::getQuestionId, VISIBLE_QUESTION_SQL)));
     }
 
+    /**
+     * 已消解题数（当前状态，不是历史累计）
+     *
+     * @param userId 用户 ID
+     * @return 条数
+     */
     @Override
     public int countResolved(long userId) {
         return Math.toIntExact(this.count(new LambdaQueryWrapper<StudioQuizWrong>()
@@ -264,6 +314,17 @@ public class QuizWrongServiceImpl extends ServiceImpl<StudioQuizWrongMapper, Stu
                 .inSql(StudioQuizWrong::getQuestionId, VISIBLE_QUESTION_SQL)));
     }
 
+    /**
+     * 待复习错题的题目 ID（错题重刷模式的开批来源）
+     *
+     * <p>最久没复习的排在前面：错题本的价值在于「隔一段时间再考一次」，
+     * 总是先出最近错的那几道等于没复习。
+     *
+     * @param userId 用户 ID
+     * @param textbookName 教材名（可为空，表示不限）
+     * @param chapterName 章节名（可为空，表示不限）
+     * @return 题目 ID 列表；无错题时返回空列表
+     */
     @Override
     public List<Long> listPendingQuestionIds(long userId, String textbookName, String chapterName) {
         LambdaQueryWrapper<StudioQuizWrong> wrapper = new LambdaQueryWrapper<>();
@@ -321,7 +382,7 @@ public class QuizWrongServiceImpl extends ServiceImpl<StudioQuizWrongMapper, Stu
      * 该用户对某题最近一次答错时所选的标签
      *
      * 用于错题回顾时对照「你上次选了什么」——只显示正确答案的话，
-     * 用户不知道自己当时错在哪。
+     * 用户不知道自己错在哪。
      *
      * @return 所选标签；没有答错记录时返回 null
      */
@@ -385,7 +446,7 @@ public class QuizWrongServiceImpl extends ServiceImpl<StudioQuizWrongMapper, Stu
         return new Page<>(page, Math.min(size, QuizConstant.MAX_PAGE_SIZE));
     }
 
-    /** 计数为 null 时按 0 处理（老数据在加列之前可能没有值） */
+    /** 计数为 null 时按 0 处理（历史数据可能没有该列的值） */
     private static int safeInt(Integer value) {
         return value == null ? 0 : value;
     }

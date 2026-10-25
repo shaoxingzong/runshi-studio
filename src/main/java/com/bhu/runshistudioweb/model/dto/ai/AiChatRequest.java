@@ -23,6 +23,8 @@ import java.io.Serializable;
  *
  * @Size 只加在 message 上：长度限制属于业务策略，必须同时被
  * 「注解（Web 层第一道）+ Service 常量校验（非 Web 入口兜底）」覆盖，缺一不可。
+ *
+ * @author shaoshing
  */
 @Data
 public class AiChatRequest implements Serializable {

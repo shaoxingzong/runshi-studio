@@ -82,13 +82,15 @@ import static com.bhu.runshistudioweb.service.KnowledgeDocService.RetrievalResul
  * 如果反过来先删旧的，那么一次 Embedding 故障就会让这篇文档彻底查不到；
  * - 不用 EmbeddingStoreIngestor——它一条龙 ingest(document) 很省事，
  * 但不返回 embeddingId，而 chunk 表必须落 embedding_id
- * （场景 H 的回查全靠它把向量翻译成块的正文）。所以手写 split → embed → addAll 三步。
+ * （检索回查全靠它把向量翻译成块的正文）。所以手写 split → embed → addAll 三步。
  *
  * 关于失败时"要不要新建一条 status=2 的 doc 行"：
  * 只在已有文档时标记 status=2；新建失败时不建行。
  * 原因是幂等判定依赖 content_hash——如果给失败的新文档也写上新 hash，
  * 下次重试时会因为「hash 相同」被判定为无需重建而直接跳过，
  * 失败就永远修复不了（除非内容再变）。这条坑写在这里，改动时不要"顺手补上"。
+ *
+ * @author shaoshing
  */
 @Slf4j
 @Service
@@ -174,6 +176,15 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
+    /**
+     * 手工录入一篇知识文档并完成切分 / 向量化 / 入库
+     *
+     * <p>向量化是外部 HTTP 调用，必须放在数据库事务之外；
+     * 事务只包住「写块 + 更新文档」这一段纯数据库操作。
+     *
+     * @param request 录入请求（标题 + 正文）
+     * @return 入库结果（块数、是否跳过）
+     */
     @Override
     public KnowledgeIngestVO ingestManual(KnowledgeManualIngestRequest request) {
         // 请求体整体为 null 时 @Valid 不会触发，兜一层避免下面 getXxx() 抛 NPE 变成 500
@@ -189,6 +200,14 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
         return ingest(title, content, KnowledgeSourceTypeEnum.MANUAL.getValue(), null, null);
     }
 
+    /**
+     * 从业务源（项目 / 成员 / 证书）同步一篇文档
+     *
+     * <p>内容哈希未变就跳过：这是幂等的前提，也是避免重复烧 Embedding 额度的关键。
+     *
+     * @param request 同步请求（来源类型 + 来源 ID）
+     * @return 同步结果
+     */
     @Override
     public KnowledgeIngestVO sync(KnowledgeSyncRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
@@ -198,7 +217,7 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
         long sourceId = request.getSourceId() == null ? 0L : request.getSourceId();
         ThrowUtils.throwIf(sourceId <= 0, ErrorCode.PARAMS_ERROR, "来源 ID 不合法");
 
-        // ② 读源并拼正文：源不存在 → A0402，同时把已有文档标记为 status=2（收口 R2 的"源已删除"）
+        // ② 读源并拼正文：源不存在 → A0402，同时把已有文档标记为 status=2（记录「源已删除」）
         SourceContent source = readSource(sourceType, sourceId);
 
         // ③ 幂等判定：内容没变且已索引才零成本返回
@@ -210,7 +229,7 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
                     sourceType.getValue(), sourceId);
             return toVO(existing, true, false);
         }
-        // ⚠️ 「已索引」这个条件是必须的，不能只比 hash：
+        // 「已索引」这个条件是必须的，不能只比 hash：
         // 失败（status=2）时没有更新 content_hash（失败不写 hash 是幂等的护城河），
         // 于是源恢复且内容未变时会命中「hash 相同 → 跳过」，status 就永远停在 2，
         // 这篇文档再也修不回来。加上状态判断后，失败态即使 hash 相同也走一次复位重建。
@@ -294,7 +313,7 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
                     chunk.setChunkIndex(i);
                     chunk.setContent(segments.get(i).text());
                     // 向量 ID 与块一一对应（AiManager 已校验数量一致），
-                    // 它就是场景 H 里「命中向量 → 反查块正文」的桥
+                    // 它就是「命中向量 → 反查块正文」的桥
                     chunk.setEmbeddingId(embeddingIds.get(i));
                     ThrowUtils.throwIf(chunkMapper.insert(chunk) != 1,
                             ErrorCode.OPERATION_ERROR, "新增切分块失败");
@@ -312,7 +331,7 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
 
         // ⑥ 事务提交后再清理旧向量：此刻库里已经是新块，删旧向量不会造成检索空窗。
         // 放在提交后而不是事务内的原因：它是内存操作、无法回滚，
-        // 若放进事务里"假装"参与原子性，反而会误导后来人
+        // 若放进事务里"假装"参与原子性，反而会误导读代码的人
         knowledgeBaseManager.removeVectors(oldEmbeddingIds);
 
         StudioKnowledgeDoc saved = docMapper.selectById(docIdHolder[0]);
@@ -332,7 +351,7 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
      * 而不是回查出来的列表（回查结果是集合，顺序无意义）。
      *
      * 悬挂容忍：块或文档查不到时 continue 跳过——
-     * 向量清理是 best-effort，残留条目对应已删除数据是正常现象（R2 收口）。
+     * 向量清理是 best-effort，残留条目对应已删除数据是正常现象。
      */
     @Override
     public RetrievalResult retrieve(String question) {
@@ -531,7 +550,7 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
     /**
      * 重建单篇文档的向量
      *
-     * 顺序沿用入库管线（场景 I）：先向量化（HTTP，事务外）→ 事务内更新 embedding_id
+     * 顺序沿用入库管线：先向量化（HTTP，事务外）→ 事务内更新 embedding_id
      * → 提交后清理旧向量。
      *
      * @param docId 文档 ID
@@ -841,7 +860,7 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
     }
 
     /**
-     * 源数据已不存在：把已有文档标记为失败（R2「源已删除」的收口动作）
+     * 源数据已不存在：把已有文档标记为失败（记录「源已删除」）
      *
      * 为什么必须标记而不是无视：文档留着 status=1 会让检索命中一篇"源已删除"的内容，
      * 用户点进去溯源会查不到任何业务数据——那是比"查不到"更差的体验。

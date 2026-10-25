@@ -10,7 +10,7 @@ import java.io.Serializable;
  * 通用删除请求（按主键删除）
  *
  * 为什么用「POST + 请求体」而不是「DELETE + 路径参数」：
- * - 部分网关、代理、老版本 HTTP 客户端对带请求体的 DELETE 支持不好，
+ * - 部分网关、代理、HTTP 客户端对带请求体的 DELETE 支持不好，
  * 而删除接口的语义又必须明确（不能退化成 GET，否则会被浏览器/爬虫预取误删）；
  * - 用请求体传参，未来要扩展「批量删除」只需把 id 换成 idList，URL 契约不用变。
  *
@@ -20,6 +20,8 @@ import java.io.Serializable;
  * 放在 common 下语义才准确。
  *
  * 注意：@Positive 只是廉价的格式兜底，真正的权限与存在性校验在 Service 里。
+ *
+ * @author shaoshing
  */
 @Data
 public class DeleteRequest implements Serializable {

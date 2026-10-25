@@ -38,6 +38,8 @@ import java.util.List;
  *
  * 本模块没有 C 端接口：官网的「项目参与成员」暂不在本期展示范围内，
  * 将来若需要，按成员/证书模块的套路加一个精确白名单路径即可。
+ *
+ * @author shaoshing
  */
 @Tag(name = "成员项目关联", description = "管理员维护项目与参与成员的关联关系")
 @RestController

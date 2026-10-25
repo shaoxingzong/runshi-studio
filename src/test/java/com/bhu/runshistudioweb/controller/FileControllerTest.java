@@ -33,6 +33,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *
  * 存储目录同样指向系统临时目录，避免污染真实上传目录。
  * 上传根目录由 surefire 的 FILE_ROOT_DIR 统一注入（见 pom.xml），这里保持默认配置以便与其它测试共用同一个容器
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc

@@ -15,6 +15,8 @@ import java.io.Serializable;
  * 这里不校验长度：登录只做「能不能对上」的判断。
  * 如果在这里限制 8~20 位，历史密码规则变更后的老用户会直接被拦下，
  * 拿到的提示还是「参数错误」而不是「密码错误」，排查成本更高。
+ *
+ * @author shaoshing
  */
 @Data
 public class UserLoginRequest implements Serializable {

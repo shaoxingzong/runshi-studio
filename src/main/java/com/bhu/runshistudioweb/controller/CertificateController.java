@@ -43,6 +43,8 @@ import java.util.List;
  *
  * 返回的 VO 也分两套：管理端拿 CertificateVO（含置顶权重与审计时间），
  * C 端拿 CertificateFrontVO（脱敏）。二者都不含任何内部字段。
+ *
+ * @author shaoshing
  */
 @Tag(name = "证书模块", description = "荣誉证书的管理与官网展示")
 @RestController

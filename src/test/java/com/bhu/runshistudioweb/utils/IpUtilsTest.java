@@ -16,6 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 本类守的是「同一个地址必须归一成同一个字符串」这条底线。
  * 它一旦破，表现是「明明在工作室却被记为外网」，而且不报任何错——
  * 所以每个归一化分支都必须有对应用例，不能只测 happy path。
+ *
+ * @author shaoshing
  */
 class IpUtilsTest {
 

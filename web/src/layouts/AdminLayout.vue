@@ -60,7 +60,7 @@ function logout() {
     <el-container class="admin">
         <el-aside :width="narrow ? '132px' : '200px'" class="aside">
             <div class="brand">
-                <img src="/logo.png" alt="润石工作室" class="brand-logo" />
+                <img src="/logo.jpg" alt="润石工作室" class="brand-logo" />
                 <span class="brand-text">管理后台</span>
             </div>
             <el-menu :default-active="$route.path" router :class="{ narrow }">

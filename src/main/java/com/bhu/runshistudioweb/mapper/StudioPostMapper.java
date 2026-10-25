@@ -24,6 +24,8 @@ import org.apache.ibatis.annotations.Mapper;
  * 两个冗余列要在这里留意：comment_count 由评论审核通过 / 删除时维护，
  * summary 与 cover_image 在入库时按正文生成。
  * 它们都不能在读取时现算——列表页一次 20 条，现算就是 20 次额外查询或 20 次字符串处理。
+ *
+ * @author shaoshing
  */
 @Mapper
 public interface StudioPostMapper extends BaseMapper<StudioPost> {

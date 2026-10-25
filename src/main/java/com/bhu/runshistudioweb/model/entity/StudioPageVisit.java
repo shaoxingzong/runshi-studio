@@ -20,6 +20,8 @@ import java.time.LocalDateTime;
  * 隐私口径：记 visitorId（前端随机 uuid）而不记 IP / UA——
  * UV 去重只需要一个稳定标识，IP 属于个人数据，多存一份多一分泄露面。
  * referrerHost 与 pagePath 都刻意不含 query，避免 token 随埋点外泄。
+ *
+ * @author shaoshing
  */
 @Data
 @TableName("studio_page_visit")

@@ -1,6 +1,6 @@
 import { createPinia, setActivePinia } from 'pinia';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { tokenStore } from '@/api/request';
+import { tokenStore, AUTH_EXPIRED_EVENT } from '@/api/request';
 import { useUserStore } from './user';
 
 // 登录态 store 单测（纯逻辑）
@@ -102,6 +102,36 @@ describe('isMember：按档案不按角色', () => {
         store.setLogin('t', 'u', 'user');
         store.memberProfile = { id: 'm1', name: '张三' } as never;
         expect(store.isMember).toBe(true);
+    });
+});
+
+describe('登录失效事件：回收内存里的假登录态', () => {
+    it('收到 AUTH_EXPIRED_EVENT 后全清（只清 localStorage 会让界面假装已登录）', async () => {
+        const store = useUserStore();
+        store.setLogin('tok-xyz', 'alice', 'admin');
+        store.memberProfile = { id: 'm1', name: '张三' } as never;
+        await flush();
+
+        // 模拟 request.ts 的派发：token 过期时它清了 localStorage 并发这个事件
+        window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+
+        // 内存与持久化必须同时归零，否则导航栏仍显示已登录，而每个请求都会失败
+        expect(store.token).toBe('');
+        expect(store.account).toBe('');
+        expect(store.role).toBe('');
+        expect(store.memberProfile).toBeNull();
+        expect(store.isLogin).toBe(false);
+        expect(store.isAdmin).toBe(false);
+        expect(tokenStore.get()).toBe('');
+        expect(localStorage.getItem('user_account')).toBeNull();
+        expect(localStorage.getItem('user_role')).toBeNull();
+    });
+
+    it('未登录时收到事件也不报错（幂等）', () => {
+        const store = useUserStore();
+
+        expect(() => window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT))).not.toThrow();
+        expect(store.isLogin).toBe(false);
     });
 });
 

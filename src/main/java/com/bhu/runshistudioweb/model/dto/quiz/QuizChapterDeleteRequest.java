@@ -13,6 +13,8 @@ import java.io.Serializable;
  * 并在确认框里显示「该章有 N 道题，其中 M 道有作答记录」——
  * 删完之后错题本里对应条目也会一并清理（题目没了，条目无处可去），
  * 但作答记录保留（统计只读 result，不需要题目内容）。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizChapterDeleteRequest implements Serializable {

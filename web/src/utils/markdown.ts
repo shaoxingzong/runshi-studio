@@ -28,6 +28,12 @@ export interface TocItem {
     level: 2 | 3;
 }
 
+/**
+ * 渲染结果：正文 HTML + 目录
+ *
+ * 注意 html 是「清洗前」的产物，页面仍需过自己的 DOMPurify 白名单——
+ * 两层各管一段：这里负责 Markdown → HTML，页面负责决定哪些标签允许保留。
+ */
 export interface MarkdownResult {
     // 清洗前的 HTML（页面仍需过自己的 DOMPurify 白名单）
     html: string;

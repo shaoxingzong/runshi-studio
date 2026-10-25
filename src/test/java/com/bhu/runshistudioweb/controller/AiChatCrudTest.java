@@ -65,6 +65,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * - 返回体 Long 全字符串；
  * - 上下文窗口：Stub 收到的 messages = system + 最近 10 条 + 本次提问；
  * - 全量基线用例保持全绿。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -97,7 +99,7 @@ class AiChatCrudTest {
      * AI 熔断器
      *
      * 本类有「故意让 AI 失败」的用例，连续失败会打开熔断；而熔断器是进程内单例，
-     * 不重置的话同一 JVM 里后跑的 AI 测试会被快速失败成一批 C0200（2026-10-13 实测踩坑）。
+     * 不重置的话同一 JVM 里后跑的 AI 测试会被快速失败成一批 C0200。
      */
     @Resource
     private AiCircuitBreaker circuitBreaker;

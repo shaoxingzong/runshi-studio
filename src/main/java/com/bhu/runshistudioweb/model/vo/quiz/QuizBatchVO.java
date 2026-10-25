@@ -21,6 +21,8 @@ import java.util.List;
  * total 与 questions.size() 恒等，单独给一个字段是为了
  * 让前端不必写 questions.length（也便于将来做「只返回第一题 + 总数」
  * 的按需加载时，字段语义不变）。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizBatchVO implements Serializable {

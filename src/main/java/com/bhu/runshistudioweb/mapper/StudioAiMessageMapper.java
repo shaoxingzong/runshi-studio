@@ -14,6 +14,8 @@ import org.apache.ibatis.annotations.Mapper;
  * 提醒：created_at 只有秒级精度，同秒的两条消息时间相同，
  * 因此排序一定要追加 id 作为次级键（雪花 ID 单调递增）。
  * 只按时间排序会导致对话记录偶发颠倒。
+ *
+ * @author shaoshing
  */
 @Mapper
 public interface StudioAiMessageMapper extends BaseMapper<StudioAiMessage> {

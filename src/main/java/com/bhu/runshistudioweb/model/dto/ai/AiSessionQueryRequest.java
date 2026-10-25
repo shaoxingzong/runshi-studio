@@ -14,6 +14,8 @@ import java.io.Serializable;
  * 分页字段的写法与其它模块一致（普通参数载体 + 自己声明分页字段，
  * 由 Service 转成 MyBatis-Plus 的 Page）：
  * 页码 < 1 视为 1，pageSize < 1 视为 10、> 50 收敛到 50。
+ *
+ * @author shaoshing
  */
 @Data
 public class AiSessionQueryRequest implements Serializable {

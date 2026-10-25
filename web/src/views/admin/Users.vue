@@ -62,6 +62,33 @@ async function changeRole(row: AdminUser, value: unknown) {
     if (role === row.userRole) {
         return;
     }
+    /**
+     * 授予成员 / 管理员角色前，先确认该账号已有成员档案
+     *
+     * <p>为什么前端也要拦：成员功能的准入判据是「studio_member 档案的 userId 命中当前账号」，
+     * 而 userRole 只是权限标签。只改角色不建档案时，界面上的成员入口不会出现
+     * （导航也按档案判断），即使进了页面后端也会返回 A0301——
+     * 这正是「有时候不显示、有时候显示了也用不了」的根源。
+     *
+     * <p>后端已有同样的校验（UserServiceImpl#updateUser），这里提前拦是为了：
+     * ① 让管理员在改之前就知道还差一步；
+     * ② 直接引导他去用下面的「转为成员」功能，一步搞定两件事。
+     */
+    if (role === 'member' || role === 'admin') {
+        try {
+            await ElMessageBox.confirm(
+                `「${row.userAccount}」需要先有成员档案，成员功能才会真正生效。\n` +
+                    '如果该账号还没有档案，请先点列表里的「转为成员」按钮（会同时建档并改角色）。\n\n' +
+                    '确认该账号已经有成员档案，继续修改角色吗？',
+                '修改角色',
+                { type: 'warning', confirmButtonText: '继续', cancelButtonText: '取消' },
+            );
+        } catch {
+            // 用户取消：把下拉框拉回真实值，否则界面会停在「已改」的假象
+            await load();
+            return;
+        }
+    }
     try {
         await adminApi.userUpdate({ id: row.id, userRole: role });
         ElMessage.success(`已把「${row.userAccount}」设为${roleText(role)}`);

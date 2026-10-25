@@ -32,6 +32,8 @@ import java.util.List;
  *
  * 降级纪律与 IP 限流完全一致：Redis 不可用时全部放行（只告警）。
  * 锁定是防护手段，不能反过来变成故障源——为了防刷把自己的登录功能搞挂，是本末倒置。
+ *
+ * @author shaoshing
  */
 @Slf4j
 @Component

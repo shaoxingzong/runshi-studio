@@ -14,7 +14,7 @@ import java.time.LocalDate;
  *
  * 四个必填项对应本模块的四个考点：
  * - 级别与类型是两个字段（ awardLevel + awardType）——
- * 不允许只给一个「国家级竞赛」字符串（ADR-5）；
+ * 不允许只给一个「国家级竞赛」字符串——两个维度各自独立筛选与统计；
  * - awardDate 不得晚于今天：用 @PastOrPresent 在入口拦住，
  * 还没发生的获奖日期一定是填错了；
  * - imageUrl 必须非空：DDL 里该列是 NOT NULL，
@@ -26,6 +26,8 @@ import java.time.LocalDate;
  * com.bhu.runshistudioweb.model.enums.CertificateLevelEnum /
  * com.bhu.runshistudioweb.model.enums.CertificateTypeEnum 校验，
  * 提示文案用枚举的 valuesText() 生成，永远不会跟实际取值脱节。
+ *
+ * @author shaoshing
  */
 @Data
 public class CertificateAddRequest implements Serializable {

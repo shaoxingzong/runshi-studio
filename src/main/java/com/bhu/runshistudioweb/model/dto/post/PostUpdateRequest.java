@@ -24,6 +24,8 @@ import java.io.Serializable;
  *
  * summary 与 coverImage 都选填：为空时沿用
  * PostAddRequest 的兜底逻辑（正文前若干字 / 正文首图）——不填也能有列表展示效果。
+ *
+ * @author shaoshing
  */
 @Data
 public class PostUpdateRequest implements Serializable {

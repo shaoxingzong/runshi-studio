@@ -47,6 +47,8 @@ import java.util.stream.Collectors;
  * 再在内存里按 parentId 挂成树。
  * 绝不能写成「先查顶层，再对每条顶层查它的回复」——那是标准 N+1，
  * 一个热门帖子有 50 条顶层评论就是 50 次查询。
+ *
+ * @author shaoshing
  */
 @Slf4j
 @Service
@@ -83,6 +85,15 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
      */
     private final NotificationService notificationService;
 
+    /**
+     * 发表评论或回复（先审后发）
+     *
+     * <p>楼中楼只支持两层：回复的回复仍挂在同一个顶层评论下，不再继续嵌套。
+     * 这样列表组装只要「一次查询 + 内存分组」，不必递归。
+     *
+     * @param request 评论请求
+     * @return 新评论 ID
+     */
     @Override
     public long addComment(PostCommentAddRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR, "评论内容不能为空");
@@ -225,6 +236,12 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
                 "你的评论在《" + postTitle + "》下收到了新回复");
     }
 
+    /**
+     * 帖子的公开评论列表（只含已通过，含楼中楼分组）
+     *
+     * @param postId 帖子 ID
+     * @return 顶层评论列表（每条带 replies）；无评论时返回空列表
+     */
     @Override
     public List<PostCommentVO> listApprovedByPost(long postId) {
         ThrowUtils.throwIf(postId <= 0, ErrorCode.PARAMS_ERROR, "帖子 id 不合法");
@@ -263,6 +280,13 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
         return tops;
     }
 
+    /**
+     * 待审评论队列（先进先出）
+     *
+     * @param current 页码
+     * @param pageSize 每页条数
+     * @return 分页结果
+     */
     @Override
     public Page<PostCommentAuditVO> listPendingByPage(long current, long pageSize) {
         long safeCurrent = current < 1 ? 1 : current;
@@ -290,6 +314,14 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
         return voPage;
     }
 
+    /**
+     * 批量审核评论（通过 / 驳回），并给作者发通知
+     *
+     * <p>与帖子审核同一套路：一条 UPDATE 处理整批，更新条件带「待审」保证幂等。
+     *
+     * @param request 审核请求
+     * @return 实际处理的条数
+     */
     @Override
     public int audit(AuditRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR, "审核参数不能为空");
@@ -346,6 +378,15 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
         return rows;
     }
 
+    /**
+     * 删除评论（连带其下回复）
+     *
+     * <p>待审评论不能直接删：作者只知道「我提交了」，删掉他什么都收不到，
+     * 该走驳回把理由送到他眼前。删帖/删评论只服务于「已通过的要下线」与「已驳回的要清理」。
+     *
+     * @param id 评论 ID
+     * @return 删除的条数（含回复）
+     */
     @Override
     public int deleteComment(long id) {
         ThrowUtils.throwIf(!StpUtil.isLogin(), ErrorCode.NOT_LOGIN_ERROR, "未登录");

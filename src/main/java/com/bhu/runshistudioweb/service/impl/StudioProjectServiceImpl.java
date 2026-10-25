@@ -49,6 +49,8 @@ import java.util.Map;
  * 依赖方向：本类 → MemberProjectService（队长同步 + 级联清理）、
  * StudioMemberMapper（校验队长存在）。反方向不存在依赖
  * （ MemberProjectServiceImpl 只注入 Mapper），因此不会循环依赖。
+ *
+ * @author shaoshing
  */
 @Service
 @RequiredArgsConstructor
@@ -65,7 +67,7 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
     /**
      * 首页轮播展示的项目数
      *
-     * ⚠️ 必须与门户 ProjectSpotlight.MAX_COUNT 保持一致：
+     * 必须与门户 ProjectSpotlight.MAX_COUNT 保持一致：
      * 后台按它计算「首页 N」，门户按它决定渲染几条，两边对不上时
      * 后台显示的排名就是假的。
      */
@@ -99,6 +101,14 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
     // ==================== 管理端 ====================
 
     @Override
+    /**
+     * 新增项目（含队长的关联表落库）
+     *
+     * <p>主表写入与关联表写入必须在同一事务：否则会出现「项目建好了、队长却没绑上」的半成品。
+     *
+     * @param projectAddRequest 新增请求
+     * @return 新项目 ID
+     */
     @Transactional(rollbackFor = Exception.class)
     public long addProject(ProjectAddRequest projectAddRequest) {
         // 请求体整体为 null 时 @Valid 不会触发，兜一层避免后面 getXxx() 抛 NPE 变成 500
@@ -147,6 +157,15 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
     }
 
     @Override
+    /**
+     * 修改项目
+     *
+     * <p>换队长时只 ensure 新队长进关联表，不移除旧队长：卸任 ≠ 退出项目，
+     * 真要移除由管理员调解绑接口，而解绑守卫保证「当前队长不可被移除」。
+     *
+     * @param projectUpdateRequest 修改请求
+     * @return true 表示保存成功
+     */
     @Transactional(rollbackFor = Exception.class)
     public boolean updateProject(ProjectUpdateRequest projectUpdateRequest) {
         ThrowUtils.throwIf(projectUpdateRequest == null || projectUpdateRequest.getId() == null,
@@ -213,6 +232,14 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
     }
 
     @Override
+    /**
+     * 删除项目（同一事务内先清关联表，再逻辑删除主表）
+     *
+     * <p>顺序不能反：先删主表一旦清理失败，就会留下指向已删除项目的悬空关联。
+     *
+     * @param id 项目 ID
+     * @return true 表示删除成功
+     */
     @Transactional(rollbackFor = Exception.class)
     public boolean deleteProject(long id) {
         ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "项目 id 不合法");
@@ -227,6 +254,12 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
         return this.removeById(id);
     }
 
+    /**
+     * 管理端项目详情（含内部字段）
+     *
+     * @param id 项目 ID
+     * @return 详情
+     */
     @Override
     public ProjectVO getProjectById(long id) {
         ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "项目 id 不合法");
@@ -236,6 +269,12 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
         return this.getProjectVO(project);
     }
 
+    /**
+     * 管理端项目分页列表（全状态）
+     *
+     * @param projectQueryRequest 查询条件
+     * @return 分页结果
+     */
     @Override
     public Page<ProjectVO> listProjectByPage(ProjectQueryRequest projectQueryRequest) {
         ProjectQueryRequest query = projectQueryRequest == null ? new ProjectQueryRequest() : projectQueryRequest;
@@ -252,6 +291,15 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
 
     // ==================== C 端 ====================
 
+    /**
+     * 门户项目列表（游客可访问，只含已上线，且脱敏）
+     *
+     * <p>脱敏靠「VO 里没有这个字段」实现，而不是靠记得过滤——
+     * 少一个字段就少一处泄露风险。
+     *
+     * @param projectQueryRequest 查询条件
+     * @return 分页结果
+     */
     @Override
     public Page<ProjectFrontVO> listFrontProjects(ProjectQueryRequest projectQueryRequest) {
         ProjectQueryRequest query = projectQueryRequest == null ? new ProjectQueryRequest() : projectQueryRequest;
@@ -272,6 +320,14 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
         return toProjectFrontVOPage(entityPage);
     }
 
+    /**
+     * 门户项目详情（游客可访问，含 Markdown 正文与参与成员）
+     *
+     * <p>参与成员是本项目唯一的成员信息对外出口，属于产品确认保留的例外。
+     *
+     * @param id 项目 ID
+     * @return 详情
+     */
     @Override
     public ProjectFrontDetailVO getFrontProjectById(long id) {
         ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "项目 id 不合法");
@@ -287,6 +343,12 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
 
     // ==================== VO 转换 ====================
 
+    /**
+     * 实体 → 管理端 VO
+     *
+     * @param project 项目实体，允许为 null
+     * @return VO；入参为 null 时返回 null
+     */
     @Override
     public ProjectVO getProjectVO(StudioProject project) {
         if (project == null) {
@@ -300,6 +362,12 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
         return projectVO;
     }
 
+    /**
+     * 实体 → 门户脱敏 VO
+     *
+     * @param project 项目实体，允许为 null
+     * @return 脱敏 VO；入参为 null 时返回 null
+     */
     @Override
     public ProjectFrontVO getProjectFrontVO(StudioProject project) {
         if (project == null) {
@@ -500,7 +568,7 @@ public class StudioProjectServiceImpl extends ServiceImpl<StudioProjectMapper, S
      * 本页只是全量的一个子集，用子集内的名次会严重误导
      * （筛选结果里的「第 1 名」全局可能排第 20）。
      *
-     * ⚠️ HOME_SPOTLIGHT_COUNT 必须与门户 ProjectSpotlight.MAX_COUNT
+     * HOME_SPOTLIGHT_COUNT 必须与门户 ProjectSpotlight.MAX_COUNT
      * 保持一致：两边对不上时，后台显示的「首页 N」会是假的。
      */
     private void fillHomeRank(List<ProjectVO> records) {

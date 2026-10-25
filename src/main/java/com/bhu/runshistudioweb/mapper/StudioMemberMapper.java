@@ -20,6 +20,8 @@ import org.apache.ibatis.annotations.Mapper;
  *
  * 注意：@MapperScan 已在 MyBatisPlusConfig 中批量扫描本包，
  * 这里的 @Mapper 属于重复声明，与 SysUserMapper 保持一致保留。
+ *
+ * @author shaoshing
  */
 @Mapper
 public interface StudioMemberMapper extends BaseMapper<StudioMember> {

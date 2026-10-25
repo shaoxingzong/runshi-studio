@@ -40,6 +40,8 @@ import java.util.List;
  *
  * 降级纪律：Redis 不可用时，写退化为「直接 UPDATE DB」、读退化为「只认 DB 值」。
  * 计数可以短暂不准，但功能永远可用——这是「可用性优先于一致性」的明确取舍。
+ *
+ * @author shaoshing
  */
 @Slf4j
 @Component

@@ -13,7 +13,7 @@ import com.bhu.runshistudioweb.constant.UserRoleConstant;
  * 取值统一放在 UserRoleConstant：枚举负责「类型与校验」，
  * 常量类负责「字面量」（因为 @SaCheckRole 只接受编译期常量，两边无法共用枚举本身）。
  *
- * 三档角色的定位（与 db/user.sql 的列注释、db/DESIGN.md 一致）：
+ * 三档角色的定位（与 db/user.sql 的列注释一致）：
  * - user 普通注册用户——新注册用户的默认角色。注册只代表「有了账号」，
  * C 端基础功能（浏览官网、AI 咨询）可用，但没有任何管理权限；
  * - member 工作室成员——在 user 的基础上，可以维护自己的成员档案、证书与项目
@@ -23,6 +23,8 @@ import com.bhu.runshistudioweb.constant.UserRoleConstant;
  * 需要「成员或管理员都能访问」时要写
  * @SaCheckRole(value = {"member", "admin"}, mode = SaMode.OR)，
  * 只写 @SaCheckRole("member") 的话管理员也会被挡在外面。
+ *
+ * @author shaoshing
  */
 public enum UserRoleEnum {
 

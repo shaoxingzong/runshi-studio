@@ -27,6 +27,8 @@ import java.util.List;
  * 用户量小的时候完全够用；若某个接口 QPS 很高，可以在这里加 Redis 缓存
  * （key 形如 satoken:role:{userId}，TTL 取几十秒到几分钟，
  * 并在「修改用户角色」的地方主动删除该 key，否则角色变更后会继续拿着旧角色）。
+ *
+ * @author shaoshing
  */
 @Service
 @RequiredArgsConstructor

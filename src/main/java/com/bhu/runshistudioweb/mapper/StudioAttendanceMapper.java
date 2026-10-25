@@ -21,6 +21,8 @@ import org.apache.ibatis.annotations.Mapper;
  *
  * 注意：本表没有更新与删除的数据访问方法，也不应该有——
  * 签到是审计凭证，写进去就不再改动（应用层不提供入口）。
+ *
+ * @author shaoshing
  */
 @Mapper
 public interface StudioAttendanceMapper extends BaseMapper<StudioAttendance> {

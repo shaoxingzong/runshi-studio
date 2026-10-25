@@ -19,6 +19,8 @@ import java.io.Serializable;
  * 安全约束（都在 Service 侧执行）：
  * - userRole 必须是枚举中的合法取值，防止写进任意字符串导致权限判定失效；
  * - 不允许管理员把自己封禁（否则会立刻失去管理端权限，需要去数据库改数据才能恢复）。
+ *
+ * @author shaoshing
  */
 @Data
 public class UserUpdateRequest implements Serializable {

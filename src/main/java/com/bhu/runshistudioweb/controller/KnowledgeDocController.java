@@ -43,6 +43,8 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * Controller 依旧只做三件事：接参、调 Service、包响应。
  * 编排（切分 → 向量化 → 事务落库 → 清理旧向量）全在 KnowledgeDocService 里。
+ *
+ * @author shaoshing
  */
 @Tag(name = "知识库文档模块", description = "管理员手工录入与业务来源同步（RAG 入库）")
 @RestController

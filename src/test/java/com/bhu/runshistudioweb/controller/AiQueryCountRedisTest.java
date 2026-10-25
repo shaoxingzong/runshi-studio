@@ -55,6 +55,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *
  * 回刷周期被调成 1 小时：否则 @Scheduled 会在用例执行途中
  * 把 Redis 里的增量清掉，让「提问后 Redis 应为 1」这种断言变成偶发失败。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc

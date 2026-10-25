@@ -21,6 +21,8 @@ import java.util.List;
  * 正确项必须是已有选项、标签必须连续），注解表达不了。
  * 这类校验统一放在 QuizQuestionServiceImpl#validateQuestion，
  * 好处是「新增 / 修改 / 导入」三条入口共用同一套规则，不会各写一份。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizQuestionAddRequest implements Serializable {

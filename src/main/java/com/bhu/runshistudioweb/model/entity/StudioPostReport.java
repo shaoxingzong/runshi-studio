@@ -29,6 +29,8 @@ import java.time.LocalDateTime;
  * 与 uk_account_deleted、uk_userid_deleted 是同一套路。
  * 不带的话，一条举报被删除后同一人就无法再次举报同一内容了（唯一键冲突），
  * 而「误举报后撤销、看清问题再举报」是真实会发生的场景。
+ *
+ * @author shaoshing
  */
 @Data
 @TableName("studio_post_report")

@@ -23,6 +23,8 @@ import java.util.List;
  *
  * 约定：参数不合法 / 业务不允许时一律抛 BusinessException，
  * 不返回错误码、不返回 null，由全局异常处理器统一转成标准响应。
+ *
+ * @author shaoshing
  */
 public interface AttendanceService extends IService<StudioAttendance> {
 

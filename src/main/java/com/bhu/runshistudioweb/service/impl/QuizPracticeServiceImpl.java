@@ -73,6 +73,8 @@ import java.util.stream.Collectors;
  * 服务端不持久化批次内容（题目不含答案，整批交给前端即可），
  * 因此无法校验。最坏影响是用户给自己刷出脏的作答记录，不涉及越权或他人数据。
  * 若将来要支持「历史成绩单」，才需要引入会话表。
+ *
+ * @author shaoshing
  */
 @Slf4j
 @Service
@@ -100,6 +102,18 @@ public class QuizPracticeServiceImpl extends ServiceImpl<StudioQuizAnswerMapper,
 
     // ==================== 开批 ====================
 
+    /**
+     * 开一批题（三种模式：顺序 / 错题重刷 / 随机）
+     *
+     * <p>三种模式的职责必须不重叠，否则用户会在两个入口看到同一批题：
+     * 顺序模式跳过已作答的（错题归错题本管），错题模式只出待复习的，
+     * 随机模式在范围内随机抽。
+     *
+     * <p>批次 ID 由服务端生成：让前端传等于把「本轮是哪几题」的解释权交出去。
+     *
+     * @param request 开批请求（模式、范围、条数）
+     * @return 批次（含题目列表，但不含答案）
+     */
     @Override
     public QuizBatchVO startBatch(QuizBatchRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
@@ -214,6 +228,19 @@ public class QuizPracticeServiceImpl extends ServiceImpl<StudioQuizAnswerMapper,
     // ==================== 提交作答 ====================
 
     @Override
+    /**
+     * 提交作答并由服务端判分
+     *
+     * <p>为什么判分必须在服务端：题目 VO 里根本没有答案字段，前端拿不到正确答案，
+     * 判分逻辑只能在这里。这也是「展示数据与判定数据物理分离」的落点。
+     *
+     * <p>幂等靠唯一键：同一批同一题重复提交（断网重试、双击）会撞唯一键，
+     * 此时按「已经答过」原样返回首次判定，而不是报错——
+     * 让用户看到一条红条比看到判定结果更糟。
+     *
+     * @param request 作答请求（批次、题目、所选标签）
+     * @return 判定结果（含正确答案与解析）
+     */
     @Transactional(rollbackFor = Exception.class)
     public QuizVerdictVO submitAnswer(QuizAnswerRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
@@ -288,6 +315,15 @@ public class QuizPracticeServiceImpl extends ServiceImpl<StudioQuizAnswerMapper,
     // ==================== 跳过 ====================
 
     @Override
+    /**
+     * 跳过当前题（不判分、不碰错题本）
+     *
+     * <p>跳过会落一条 result = 3 的记录，但 chosen_labels 存 NULL 而不是空串：
+     * 「没选」与「选了空」是两件事，全局约定空值一律存 NULL。
+     *
+     * @param request 跳过请求（批次、题目）
+     * @return 恒为 true（重复跳过按幂等处理）
+     */
     @Transactional(rollbackFor = Exception.class)
     public boolean skipQuestion(QuizSkipRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
@@ -319,6 +355,14 @@ public class QuizPracticeServiceImpl extends ServiceImpl<StudioQuizAnswerMapper,
 
     // ==================== 概览 ====================
 
+    /**
+     * 学习概览（作答数、正确率、错题本待复习 / 已消解）
+     *
+     * <p>分母为 0 时正确率返回 null 而不是 0：0% 读起来像「全错」，
+     * 那是错误的信息，前端应当显示「暂无数据」。
+     *
+     * @return 概览
+     */
     @Override
     public QuizOverviewVO getOverview() {
         long userId = requireActiveMember();
@@ -334,6 +378,14 @@ public class QuizPracticeServiceImpl extends ServiceImpl<StudioQuizAnswerMapper,
         return vo;
     }
 
+    /**
+     * 一次查询同时取「作答总数」与「答对数」
+     *
+     * <p>跳过（result = 3）不计入分母：把跳过算进正确率会让它虚低。
+     *
+     * @param userId 用户 ID
+     * @return 长度 2 的数组：[作答总数, 答对数]
+     */
     @Override
     public int[] countAnsweredAndCorrect(long userId) {
         // 一条查询同时拿总数与正确数：两次 COUNT 是不必要的
@@ -351,6 +403,13 @@ public class QuizPracticeServiceImpl extends ServiceImpl<StudioQuizAnswerMapper,
         return new int[]{asInt(row.get("total")), asInt(row.get("correct_cnt"))};
     }
 
+    /**
+     * 按批次取本次作答记录（断网重连后恢复进度用）
+     *
+     * @param userId 用户 ID
+     * @param batchId 批次 ID
+     * @return 分页结果（按记录 ID 升序）
+     */
     @Override
     public Page<StudioQuizAnswer> listByBatch(long userId, long batchId) {
         LambdaQueryWrapper<StudioQuizAnswer> wrapper = new LambdaQueryWrapper<>();
@@ -371,7 +430,7 @@ public class QuizPracticeServiceImpl extends ServiceImpl<StudioQuizAnswerMapper,
         vo.setResult(answer.getResult());
         vo.setChosenLabels(answer.getChosenLabels());
         // 用记录里的快照，而不是当前题目的答案：断网重试时两者可能已经不同
-        // （管理员在这期间改了题），返回首次判定才符合「你当时看到的那道题」
+        // （管理员在这期间改了题），返回首次判定才符合「提交时看到的那道题」
         vo.setCorrectLabels(answer.getCorrectLabels());
         vo.setAnalysis(question.getAnalysis());
         vo.setWrongBookAction(action);
@@ -457,6 +516,15 @@ public class QuizPracticeServiceImpl extends ServiceImpl<StudioQuizAnswerMapper,
         return list.isEmpty() ? null : list.get(0);
     }
 
+    /**
+     * 校验当前登录用户是在队成员，返回其用户 ID
+     *
+     * <p>刷题只对工作室成员开放：判定认 studio_member 档案（认表），不认角色标签——
+     * 角色可能与档案不同步，按角色放行会绕开真正的准入规则。
+     *
+     * @return 当前登录用户的 ID
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 未登录或不是在队成员时抛出
+     */
     @Override
     public long requireActiveMemberId() {
         return requireActiveMember();

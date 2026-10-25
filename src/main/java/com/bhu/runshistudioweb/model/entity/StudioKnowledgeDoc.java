@@ -33,7 +33,9 @@ import java.time.LocalDateTime;
  * 0-待处理 / 1-已索引 / 2-失败（失败要能重试，所以必须落库）；
  * chunkCount 与 StudioKnowledgeChunk 的实际行数对齐，用于校验切分是否完整。
  *
- * 审计字段、逻辑删除、雪花主键三条全局约定与其它 8 张表完全一致，见 db/DESIGN.md。
+ * 审计字段、逻辑删除、雪花主键三条全局约定与其它主表完全一致。
+ *
+ * @author shaoshing
  */
 @Data
 @TableName("studio_knowledge_doc")

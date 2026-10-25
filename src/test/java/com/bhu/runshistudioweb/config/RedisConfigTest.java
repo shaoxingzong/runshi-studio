@@ -28,6 +28,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 配错了程序照常跑，只是 redis-cli 里全是二进制乱码、跨语言客户端读不了、重启后类型丢失。
  *
  * 注意：每个用例都自行清理写入的 key，不留垃圾数据（测试用的 Redis 往往和本地开发共用一个库）。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 class RedisConfigTest {

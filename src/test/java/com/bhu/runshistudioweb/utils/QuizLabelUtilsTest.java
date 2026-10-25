@@ -16,6 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 用户点的是选项、传上来的却是字符串，"AC" / "ca" / "C,A"
  * 都是同一个选择。如果规范化没做对，选对了也会被判错，
  * 而且这种错误极难复现——用户说他选的是 A 和 C，日志里存的是 "C,A"。
+ *
+ * @author shaoshing
  */
 class QuizLabelUtilsTest {
 

@@ -19,6 +19,8 @@ import org.apache.ibatis.annotations.Mapper;
  * com.bhu.runshistudioweb.config.MyMetaObjectHandler，不用自己 set 时间；
  * - 分页：必须用 selectPage，依赖 MyBatis-Plus 的分页拦截器
  * （见 com.bhu.runshistudioweb.config.MyBatisPlusConfig），自己 new Page 不会自动分页。
+ *
+ * @author shaoshing
  */
 @Mapper
 public interface SysUserMapper extends BaseMapper<SysUser> {

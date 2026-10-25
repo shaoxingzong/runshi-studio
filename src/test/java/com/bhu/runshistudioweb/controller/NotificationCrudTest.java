@@ -34,6 +34,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 夹具复用 QuizTestSupport（造账号 + 登录换 token），
  * 通知记录用 Mapper 直插——契约测试关心「接口读到什么」，不关心通知怎么产生的
  * （那部分由 NotificationTriggerTest 覆盖）。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc

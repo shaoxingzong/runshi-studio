@@ -16,6 +16,8 @@ import java.io.Serializable;
  * - 幂等键相同：两者都走 uk_user_batch_question，
  * 所以「先跳过、再回来答」在同一批里是不允许的——这是刻意的，
  * 否则用户可以先跳过看进度、再回头「第一次」作答。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizSkipRequest implements Serializable {

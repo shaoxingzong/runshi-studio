@@ -26,6 +26,8 @@ import java.io.Serializable;
  * 为什么同一个 DTO 服务两端：C 端与管理端的筛选条件集合完全相同
  * （届别 / 方向 / 状态 / 姓名……），两端只在对分页与排序的处置上有差别；
  * 分成两个 DTO 只会带来「加一个筛选项要改两处」的维护成本。
+ *
+ * @author shaoshing
  */
 @Data
 public class MemberQueryRequest implements Serializable {

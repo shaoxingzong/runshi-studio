@@ -20,6 +20,8 @@ import java.time.LocalDateTime;
  *
  * id 是错题本条目的主键，不是题目 ID——两者都要给：
  * 详情/消解用条目 ID，重新出题用题目 ID。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizWrongItemVO implements Serializable {

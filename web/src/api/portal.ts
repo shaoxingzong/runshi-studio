@@ -10,8 +10,8 @@ import type {
 /**
  * C 端公开接口（匿名可访问，全部只读）
  *
- * ⚠️ 这里没有成员列表 / 成员详情：业务规则「团队成员不对外展示」，
- * 对应的 `/member/list`、`/member/detail`、`/member/certificate/list` 已从后端删除
+ * 这里没有成员列表 / 成员详情：业务规则「团队成员不对外展示」，
+ * 后端不提供 `/member/list`、`/member/detail`、`/member/certificate/list`
  * （访问会得到 404）。成员信息对外唯一的出口是项目详情里的「参与成员」，
  * 由 `projectDetail` 一并返回。
  */

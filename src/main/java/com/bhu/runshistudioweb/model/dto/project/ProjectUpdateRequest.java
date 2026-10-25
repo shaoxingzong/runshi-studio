@@ -22,6 +22,8 @@ import java.util.List;
  *
  * 更新字段是服务端写死的白名单（见 Service）：
  * 绝不能直接把 DTO 转成实体 updateById，否则前端能改 deletedAt、审计字段等内部数据。
+ *
+ * @author shaoshing
  */
 @Data
 public class ProjectUpdateRequest implements Serializable {

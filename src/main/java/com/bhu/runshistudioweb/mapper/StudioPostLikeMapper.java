@@ -17,6 +17,8 @@ import org.apache.ibatis.annotations.Mapper;
  * 同时覆盖「某篇的点赞人数」这类反查；
  * - idx_user_created (user_id, created_at)：「我赞过哪些帖子」按时间倒序，
  * 为将来做「我的点赞列表」预留（本期没有该接口，先不删）。
+ *
+ * @author shaoshing
  */
 @Mapper
 public interface StudioPostLikeMapper extends BaseMapper<StudioPostLike> {

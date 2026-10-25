@@ -12,6 +12,8 @@ import org.springframework.boot.test.context.SpringBootTest;
  *
  * 注意：本测试会真实创建数据源、Redis 连接工厂等 Bean，
  * 因此运行前需要 MySQL 与 Redis 处于可用状态（否则会被 @SpringBootTest 的启动失败卡住）。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 class RunshiStudioWebApplicationTests {

@@ -11,6 +11,8 @@ package com.bhu.runshistudioweb.model.enums;
  * - 它不写错题本：这是「跳过不记错」的唯一实现点；
  * - 它不计入正确率：跳过不是错误，把分母算进去会让正确率虚低；
  * - 它的响应不含答案：否则跳过按钮就成了看答案按钮，顺序模式会被刷穿。
+ *
+ * @author shaoshing
  */
 public enum QuizAnswerResultEnum {
 

@@ -25,6 +25,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Spring Boot 的松散绑定只会把它当成一个没人读的属性静默忽略——
  * 表现就是「配置里明明写了 7 天有效期，实际还是默认 30 天」这种极难发现的问题。
  * 因此这里逐项断言关键配置是否真的绑到了 SaTokenConfig 上。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 class SaTokenConfigTest {

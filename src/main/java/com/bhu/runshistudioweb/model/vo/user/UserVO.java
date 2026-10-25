@@ -20,9 +20,11 @@ import java.time.LocalDateTime;
  * 遇到类型不一致会静默跳过（不报错、不提示），结果是管理端列表里时间列永远是空，
  * 并且必须联调时才会发现。现在统一为 LocalDateTime，与实体一致，拷贝才能生效。
  *
- * 字段命名与设计约定（呼应 db/DESIGN.md 4.3 的「时间字段统一 _at 后缀」）：
+ * 字段命名与设计约定（时间字段统一 _at 后缀）：
  * 数据库列是 created_at / updated_at，Java 侧统一叫 createdAt / updatedAt，
  * 不要再用 createTime / updateTime 这类别名，否则一个概念两个名字，联调时极易对错。
+ *
+ * @author shaoshing
  */
 @Data
 public class UserVO implements Serializable {

@@ -31,6 +31,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 为什么不用 @Transactional 回滚：MySQL 的 DDL 会隐式提交，
  * 且本用例的目的正是「确认表能建出来」，所以刻意不回滚。
  * 造的数据控制在固定 ID 段内，重复跑不会无限增长。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 class QuizDdlVerifyTest {

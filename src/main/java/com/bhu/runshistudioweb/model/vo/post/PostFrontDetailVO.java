@@ -18,6 +18,8 @@ import java.time.LocalDateTime;
  * 渲染链路必须是「marked → DOMPurify 白名单清洗 → v-html」，
  * 且清洗时要额外限制 img 的 src 只能是站内路径
  * （现有 ProjectDetail.vue 的清洗配置没有限制 src，帖子是成员发的、比管理员录入更不可信，需要补上这一步）。
+ *
+ * @author shaoshing
  */
 @Data
 public class PostFrontDetailVO implements Serializable {

@@ -45,6 +45,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * 最关键的两条用例是准入（非成员必须被拒）与脱敏（VO 结构上不允许出现 ip）：
  * 前者是产品明确要求的安全边界，后者一旦被破坏就是隐私泄露，所以都用断言钉死。
+ *
+ * @author shaoshing
  */
 class AttendanceServiceTest {
 

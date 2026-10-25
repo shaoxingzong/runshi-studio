@@ -3,7 +3,7 @@ package com.bhu.runshistudioweb.model.enums;
 /**
  * 成员状态枚举（studio_member.member_status）
  *
- * 为什么用 tinyint 而不是 varchar（DESIGN.md 4.2 的判定标准）：
+ * 为什么用 tinyint 而不是 varchar：
  * 它是纯状态位，取值只有「在读/在队」与「毕业/离队」两种、极少扩展，
  * 且官网需要按它做数值筛选（免费查询新增接口 ?memberStatus=0）。
  *
@@ -12,6 +12,8 @@ package com.bhu.runshistudioweb.model.enums;
  *
  * 与 UserRoleEnum 的差别同 TeamPositionEnum：
  * 没有框架注解引用它的字面量，故不配套常量类。
+ *
+ * @author shaoshing
  */
 public enum MemberStatusEnum {
 
@@ -42,6 +44,12 @@ public enum MemberStatusEnum {
         return desc;
     }
 
+    /**
+     * 按取值查找枚举
+     *
+     * @param value 数据库 / 前端传来的取值
+     * @return 匹配的枚举；无匹配（含 null）时返回 null
+     */
     public static MemberStatusEnum of(Integer value) {
         if (value == null) {
             return null;

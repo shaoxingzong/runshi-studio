@@ -27,6 +27,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * 「文件 → 模型」的全链路由 AiChatCrudTest 覆盖（它把 location 指向测试夹具，
  * 并断言模型收到的首条消息就是夹具内容）；文件缺失时的降级由 AiPromptFallbackTest 覆盖。
+ *
+ * @author shaoshing
  */
 class AiPromptLoadTest {
 

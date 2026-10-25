@@ -73,6 +73,8 @@ import java.util.concurrent.Executors;
  * 为什么用 TransactionTemplate 而不是 @Transactional：需要包进事务的
  * 只有「调用 AI 成功之后」那一小段。若把整个 chat 方法标上 @Transactional，
  * 那条外部 HTTP 请求就落进了事务里——这正是本任务要避免的事。
+ *
+ * @author shaoshing
  */
 @Slf4j
 @Service
@@ -128,10 +130,11 @@ public class AiChatServiceImpl implements AiChatService {
     private final AiManager aiManager;
 
     /**
-     * 提问配额计数（Redis INCR + 定时回刷，）
+     * 提问配额计数（Redis INCR + 定时回刷）
      *
-     * 它替代了原来的 UPDATE sys_user SET ai_query_count = ai_query_count + 1：
-     * 计数从「每次提问一次 DB 写」变成「Redis 内存自增 + 批量回刷」。
+     * 为什么不用 UPDATE sys_user SET ai_query_count = ai_query_count + 1：
+     * 那样每次提问都要写一次热点行，并发提问会在这行上排队；
+     * 改成「Redis 内存自增 + 定时批量回刷」后，数据库只承担周期性的合并写。
      */
     private final AiQueryCountManager aiQueryCountManager;
 
@@ -196,6 +199,16 @@ public class AiChatServiceImpl implements AiChatService {
         streamExecutor.shutdownNow();
     }
 
+    /**
+     * 同步问答（一次返回完整回答）
+     *
+     * <p>顺序是固定的：登录校验 → 配额预检 → 会话解析 → 用户消息落库 → 检索资料 →
+     * 调用模型 → 事务内落 assistant 消息 → 事务外计数。
+     * 检索放在配额预检之后，是为了让超限请求不产生任何 Embedding 开销。
+     *
+     * @param request 提问请求
+     * @return 回答（含会话 ID、引用来源、剩余配额）
+     */
     @Override
     public AiChatResponseVO chat(AiChatRequest request) {
         // 登录身份必须在这里（请求线程）取好：
@@ -212,7 +225,7 @@ public class AiChatServiceImpl implements AiChatService {
         // 而且前端往往已经把它渲染在界面上了
         insertMessage(prepared.sessionId(), AiMessageRoleEnum.USER, prepared.message());
 
-        // ⑤ 检索资料（RAG，）：位置刻意放在「配额预检与会话解析之后、模型调用之前」——
+        // ⑤ 检索资料（RAG）：位置刻意放在「配额预检与会话解析之后、模型调用之前」——
         // 检索失败不扣额度（扣额度发生在 persistAnswer），也不影响用户消息已落库
         KnowledgeDocService.RetrievalResult retrieval = retrieveSafely(prepared.message());
 
@@ -260,9 +273,9 @@ public class AiChatServiceImpl implements AiChatService {
         emitter.onTimeout(state::markAborted);
         emitter.onError(throwable -> state.markAborted());
 
-        // ⚠️ 登录身份必须在这里（请求线程）取好再传进去。
+        // 登录身份必须在这里（请求线程）取好再传进去。
         // 原因：Sa-Token 的登录态与 Spring 的 RequestContextHolder 都存在 ThreadLocal 里，
-        // 虚拟线程拿不到（实测表现为 StpUtil.isLogin() 直接抛异常，
+        // 虚拟线程拿不到（表现为 StpUtil.isLogin() 直接抛异常，
         // 于是流里只剩一个 error 事件、连 meta 都发不出来）。
         // 这一行是本类唯一依赖「请求线程」的地方，改动时务必保留。
         Long userId = currentUserIdOrNull();
@@ -271,6 +284,14 @@ public class AiChatServiceImpl implements AiChatService {
         return emitter;
     }
 
+    /**
+     * 会话历史（时间正序，最多最近若干条）
+     *
+     * <p>归属校验与提问完全一致：否则它会变成「探测某会话是否存在」的入口。
+     *
+     * @param sessionId 会话 ID
+     * @return 消息列表；无消息时返回空列表
+     */
     @Override
     public List<AiMessageVO> listHistory(String sessionId) {
         long parsedSessionId = parseSessionId(sessionId, "会话 id 不能为空");
@@ -280,6 +301,15 @@ public class AiChatServiceImpl implements AiChatService {
         return recentMessages(parsedSessionId, AiChatConstant.HISTORY_MESSAGE_LIMIT);
     }
 
+    /**
+     * 我的会话列表（按最近活跃排序）
+     *
+     * <p>按 last_active_at 排序而不是 join 消息表求 MAX：会话表自己维护这个冗余列，
+     * 「最近聊过什么」是一次单表查询。
+     *
+     * @param request 查询条件
+     * @return 分页结果
+     */
     @Override
     public Page<AiSessionVO> listSessions(AiSessionQueryRequest request) {
         Long userId = currentUserIdOrNull();
@@ -310,6 +340,15 @@ public class AiChatServiceImpl implements AiChatService {
         return voPage;
     }
 
+    /**
+     * 删除会话（逻辑删除父子两张表）
+     *
+     * <p>与关联表清理不同：对话是用户资产，误删需要可追溯，因此用逻辑删除。
+     * 先子后父，且在同一事务内。
+     *
+     * @param sessionId 会话 ID
+     * @return true 表示删除成功
+     */
     @Override
     public boolean deleteSession(String sessionId) {
         long parsedSessionId = parseSessionId(sessionId, "会话 id 不能为空");
@@ -321,9 +360,9 @@ public class AiChatServiceImpl implements AiChatService {
         assertSessionAccessible(parsedSessionId, userId);
 
         // 双逻辑删：父表（会话）与子表（消息）各自 UPDATE deleted_at，必须在同一事务内。
-        // 与/19 的关联表清理对比：那两张关联表是物理删除（关系解除即无业务意义），
+        // 与关联表清理对比：那两张关联表是物理删除（关系解除即无业务意义），
         // 而对话属于「用户资产」，误删需要可追溯，所以父子两张表都用逻辑删除——
-        // 两种机制的取舍见 db/DESIGN.md 2.2
+        // 取舍见「全局约定清单」里的逻辑删除一条
         transactionTemplate.executeWithoutResult(status -> {
             // 先子后父：与「先清关联、再删主表」的既有约定一致。
             // 若反序，父表删成功而子表删除失败时，会留下「会话已删、消息却还在」的孤儿数据
@@ -391,8 +430,8 @@ public class AiChatServiceImpl implements AiChatService {
         transactionTemplate.executeWithoutResult(status -> {
             messageIdHolder[0] = insertMessage(prepared.sessionId(), AiMessageRoleEnum.ASSISTANT, answer);
             touchSession(prepared.sessionId());
-            // ⚠️ 配额计数刻意不在这里：
-            // 计数已改为 Redis INCR，Redis 是外部系统——写它不属于数据库事务。
+            // 配额计数刻意不在这里：
+            // 计数走 Redis INCR，Redis 是外部系统——写它不属于数据库事务。
             // 若放在事务内，一旦事务回滚，Redis 里的 +1 却撤不回来，就变成了「没回答成功也扣了额度」
         });
 
@@ -445,7 +484,7 @@ public class AiChatServiceImpl implements AiChatService {
      * - system 消息应当稳定——它是「你是谁、怎么答」的行为约束，
      * 每次提问内容都不同，塞进去会让 system 随问题漂移；
      * - 把资料贴着问题放，模型更容易把它们当成当前问题的上下文，
-     * 而不是通用指令（实测对引用准确率有帮助）；
+     * 而不是通用指令（对引用准确率有明显帮助）；
      * - 历史消息里存的仍是用户原话（见 insertMessage），
      * 资料只是临时拼给本次调用的，不会污染上下文窗口。
      *
@@ -540,7 +579,7 @@ public class AiChatServiceImpl implements AiChatService {
                     .data(jsonMapper.writeValueAsString(payload)));
         } catch (Exception e) {
             // 客户端断开时这里会抛 IOException：标记中止，
-            // 让后续不再尝试写事件、也不再落库计数（等价于「失败」语义）
+            // 让后续停止写事件、也不落库计数（等价于「失败」语义）
             state.markAborted();
             log.warn("SSE 事件发送失败（客户端可能已断开）| event={}", eventName);
         }
@@ -682,8 +721,8 @@ public class AiChatServiceImpl implements AiChatService {
         return UserRoleConstant.MEMBER.equals(role) || UserRoleConstant.ADMIN.equals(role);
     }
 
-    // 配额 +1 已移到 AiQueryCountManager（Redis INCR，事务外执行）：
-    // 本类不再直接 UPDATE sys_user，理由见 persistAnswer 里的注释
+    // 配额 +1 统一由 AiQueryCountManager 负责（Redis INCR，事务外执行）：
+    // 本类不直接 UPDATE sys_user，理由见 persistAnswer 里的注释
 
     // ==================== 消息读写 ====================
 

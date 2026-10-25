@@ -49,7 +49,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * stop 紧邻的前一个上下文——若本类排在最前的 AI 类之前（ Admin < Ai），
  * 默认上下文就会被送到 AI 类面前停掉，后续所有登录类测试复用它时报
  * LettuceConnectionFactory has been STOPPED，成批 B0001 / A0201 失败
- * （2026-10-12 实测复现：改名 PostManageTest 后恢复）。
+ * （改成以 P 开头的类名后恢复正常）。
  * 同类约束见 AiKnowledgeManageTest 的类注释。
  *
  * 覆盖的规则（与产品口径一一对应）：
@@ -74,6 +74,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * 而该结论不改 status；且它跑在虚拟线程上，会先被本测试事务持有的行锁挡住，
  * 回滚后作用于一条已不存在的记录。因此断言只盯确定性字段（status / 标题 / 正文 /
  * 审核痕迹），不碰 ai_audit_status。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -442,7 +444,7 @@ class PostManageTest {
         setContent(postId, "T33-edit-before-content");
 
         // 先打上「已审过」的痕迹（模拟一篇正常流转过的帖子）。
-        // audit_by 随便填个非空值即可——本用例要证的是它被清空，不是它原来是谁
+        // audit_by 随便填个非空值即可——本用例要证的是它被清空，不是它原本是谁
         studioPostMapper.update(null, new LambdaUpdateWrapper<StudioPost>()
                 .eq(StudioPost::getId, postId)
                 .set(StudioPost::getPinned, 1)
@@ -459,7 +461,7 @@ class PostManageTest {
         assertEquals("T33-edit-after-content", after.getContent(), "正文应已更新");
         // 核心规则：内容变了就必须重新过审
         assertEquals(AuditStatusEnum.PENDING.getValue(), after.getStatus(), "已通过的帖子应重置为待审");
-        // 上一轮内容的审核痕迹全部作废（它们描述的是旧版本）
+        // 修改前那份内容的审核痕迹全部作废
         assertNull(after.getAuditBy(), "audit_by 应清空");
         assertNull(after.getAuditAt(), "audit_at 应清空");
         assertNull(after.getRejectReason(), "reject_reason 应清空");

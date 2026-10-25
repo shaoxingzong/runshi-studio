@@ -25,6 +25,8 @@ import java.time.LocalDateTime;
  *
  * 注意：Spring Boot 4 内置 Jackson 3，序列化器要选 GenericJacksonJsonRedisSerializer
  * （Jackson 3 版），而不是 Jackson 2 的 GenericJackson2JsonRedisSerializer。
+ *
+ * @author shaoshing
  */
 @Configuration
 public class RedisConfig {
@@ -59,7 +61,7 @@ public class RedisConfig {
     private GenericJacksonJsonRedisSerializer valueSerializer() {
         return GenericJacksonJsonRedisSerializer.builder()
                 // 必须开启「默认类型信息」（序列化时写入 @class 字段），否则值类型是 Object，
-                // 反序列化回来只能得到 LinkedHashMap，拿不回原来的实体对象。
+                // 反序列化回来只能得到 LinkedHashMap，拿不回实体对象本身。
                 // 这里用白名单校验器而不用 enableUnsafeDefaultTyping()：后者允许任意类型，
                 // 一旦 Redis 被写入恶意的 @class 内容就会触发反序列化漏洞。
                 .enableDefaultTyping(typeValidator())

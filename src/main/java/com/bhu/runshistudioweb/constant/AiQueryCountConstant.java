@@ -7,6 +7,8 @@ package com.bhu.runshistudioweb.constant;
  * 计数用的是 Redis 的前缀删除与扫描（回刷时按前缀找出所有待落库的 key），
  * 前缀一旦在两处写得不一致，回刷就会静默漏掉一部分用户——表现为「某些人的计数永远不涨」，
  * 而这种 bug 只有在对账时才会被发现。
+ *
+ * @author shaoshing
  */
 public final class AiQueryCountConstant {
 

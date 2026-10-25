@@ -36,6 +36,8 @@ import static org.mockito.Mockito.when;
  *
  * 覆盖重点：超限判定边界（等于上限放行、超过才拒）、双窗口各自的键与文案、
  * 拿不到 IP 放行、Redis 故障降级放行——降级是本类最重要的安全属性之一。
+ *
+ * @author shaoshing
  */
 @ExtendWith(MockitoExtension.class)
 class IpRateLimitManagerTest {

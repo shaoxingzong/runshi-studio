@@ -35,6 +35,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * 而漂移的表现是「某个用例莫名 401」。
  *
  * 类名以 Support 结尾，不符合 surefire 的 *Test 命名，不会被当成测试类。
+ *
+ * @author shaoshing
  */
 public class QuizTestSupport {
 

@@ -78,6 +78,8 @@ import java.util.function.Consumer;
  * 「AI 服务暂时不可用，请稍后重试」。
  *
  * 日志纪律：只记录 base-url / model / 异常，绝不记录 api-key。
+ *
+ * @author shaoshing
  */
 @Slf4j
 @Component
@@ -186,6 +188,9 @@ public class AiManager {
                 .baseUrl(aiProperties.getBaseUrl())
                 .apiKey(aiProperties.getApiKey())
                 .modelName(aiProperties.getModel())
+                // 输出上限：**推理模型必须设**，否则思考过程会吃光额度、正文为空，
+                // 表现为「AI 服务暂时不可用」（见 AiProperties#maxTokens 的说明）
+                .maxTokens(resolveMaxTokens())
                 .timeout(REQUEST_TIMEOUT)
                 .maxRetries(MAX_RETRIES)
                 // 刻意不开 logRequests / logResponses：前者会打出 Authorization 头（密钥），
@@ -199,6 +204,9 @@ public class AiManager {
                 .baseUrl(aiProperties.getBaseUrl())
                 .apiKey(aiProperties.getApiKey())
                 .modelName(aiProperties.getModel())
+                // 流式路径同样要设：SSE 接口是官网主用路径，
+                // 不设时推理模型的思考过程会把额度耗尽，前端只能看到「已结束但没内容」
+                .maxTokens(resolveMaxTokens())
                 .timeout(REQUEST_TIMEOUT)
                 .build();
 
@@ -212,9 +220,28 @@ public class AiManager {
                 .maxRetries(MAX_RETRIES)
                 .build();
 
-        log.info("AI 客户端初始化完成 | baseUrl={} | model={} | embeddingModel={} | timeout={}s | maxRetries={}",
+        log.info("AI 客户端初始化完成 | baseUrl={} | model={} | embeddingModel={} | timeout={}s | maxRetries={} | maxTokens={}",
                 aiProperties.getBaseUrl(), aiProperties.getModel(), aiProperties.getEmbeddingModel(),
-                REQUEST_TIMEOUT.toSeconds(), MAX_RETRIES);
+                REQUEST_TIMEOUT.toSeconds(), MAX_RETRIES, resolveMaxTokens());
+    }
+
+    /**
+     * 解析输出 token 上限；未配置或非法时返回 null（表示不传该参数）
+     *
+     * <p>为什么允许返回 null：换回非推理模型、想按服务商默认值走时可以把它配成 0 或留空。
+     * LangChain4j 的 builder 对 null 的语义就是「不设置」，正好对得上。
+     *
+     * <p>为什么非法值不报错而是回落成 null：这是「锦上添花」的调参项，
+     * 一个写错的数字不该让应用起不来（与 AiProperties 全字段有默认值是同一纪律）。
+     *
+     * @return 正数时返回该值；null / 非正数返回 null
+     */
+    private Integer resolveMaxTokens() {
+        Integer configured = aiProperties.getMaxTokens();
+        if (configured == null || configured <= 0) {
+            return null;
+        }
+        return configured;
     }
 
     /**
@@ -261,7 +288,7 @@ public class AiManager {
     /**
      * 带上下文调用 AI，返回回答正文
      *
-     * 为什么不再把 system 提示词当参数传：它启动时已从文件加载进字段
+     * 为什么 system 提示词不作为参数：它启动时已从文件加载进字段
      * systemPrompt，调用方不需要知道它从哪来。让调用方传，等于要求
      * 每个调用点都去 AiProperties 取值——那正是「提示词放哪」这个实现细节的泄露。
      *
@@ -373,7 +400,7 @@ public class AiManager {
      * 为什么不传播取消：客户端断开后，本方法仍会把模型的流读完
      * （LangChain4j 的流式接口没有暴露「按需中断」的句柄）。
      * 代价是断连后仍消耗一次模型调用；收益是代码简单、且不会出现「半截流已被计费但没落库」。
-     * 调用方通过「不再累积、不再落库、不计数」来表达中断语义（见 AiChatServiceImpl）。
+     * 调用方通过「停止累积、不落库、不计数」来表达中断语义（见 AiChatServiceImpl）。
      *
      * @param history 上下文消息（时间正序），可为空
      * @param userMessage 本次提问
@@ -461,7 +488,7 @@ public class AiManager {
      *
      * 为什么是批量而不是逐条：Embedding 接口一次可以收一批文本，
      * 逐条调用会把「一次 HTTP」放大成 N 次——网络往返与限流风险都翻 N 倍。
-     * 这也和本项目其它「批量」纪律同源（场景 E 的 messageCount、场景 H 的回查）。
+     * 这也和本项目其它「批量」纪律同源：能一次查完的，绝不循环逐条查。
      *
      * 返回顺序必须与入参一一对应：调用方要用第 i 个向量对应第 i 个切分块，
      * 因此这里额外校验了数量一致——数量对不上时宁可报错，

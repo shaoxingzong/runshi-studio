@@ -49,6 +49,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *
  * 本类不加 @Transactional：配额计数走 Redis INCR（外部系统），
  * 数据库事务回滚对它无效，因此数据真实提交、由 cleanUp 按记录的用户 id 清理。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc

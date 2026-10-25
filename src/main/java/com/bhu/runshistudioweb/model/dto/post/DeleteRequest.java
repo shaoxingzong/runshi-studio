@@ -11,6 +11,8 @@ import java.io.Serializable;
  *
  * 与 common/DeleteRequest 的区别：那个是通用 DTO，本类用于帖子模块的删除场景，
  * 语义上明确指向"删一条评论（会连带删除它的回复）"。
+ *
+ * @author shaoshing
  */
 @Data
 public class DeleteRequest implements Serializable {

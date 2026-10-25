@@ -22,6 +22,8 @@ import java.io.Serializable;
  *
  * 注意：本 DTO不接受 status，理由与 PostAddRequest 相同——
  * 审核状态由服务端决定，先审后发一律先落「待审」。
+ *
+ * @author shaoshing
  */
 @Data
 public class PostCommentAddRequest implements Serializable {

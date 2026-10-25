@@ -20,6 +20,8 @@ import java.io.Serializable;
  * /knowledge/doc/manual。这条校验由 Service 完成，
  * 而不是写在 DTO 的 @Pattern 里——合法取值属于「闭集」，
  * 提示文案要由 KnowledgeSourceTypeEnum.valuesText() 生成，才不会跟枚举脱节。
+ *
+ * @author shaoshing
  */
 @Data
 public class KnowledgeSyncRequest implements Serializable {

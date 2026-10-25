@@ -63,7 +63,7 @@ onMounted(load);
             </div>
         </div>
 
-        <!-- 口径说明常驻：UV 的精度边界必须在数字旁边，而不是写在文档里等人踩坑 -->
+        <!-- 口径说明常驻：UV 的精度边界必须在数字旁边，而不是写在文档里等人误读 -->
         <el-alert
             type="info"
             :closable="false"

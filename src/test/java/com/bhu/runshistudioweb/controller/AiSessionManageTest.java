@@ -57,6 +57,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * 会话数据通过提问接口自然创建（顺带验证「聊过就有会话」的集成路径），
  * 个别边界（空会话、批量计数对齐）用 Mapper 直插；断言一律以 SQL 直查为准，
  * 避免「用同一个 Service 的读方法验证它的写方法」。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -206,7 +208,7 @@ class AiSessionManageTest {
         // 未登录访问列表：A0201（该路径不进白名单）
         assertEquals("A0201", code(getBody("/ai/session/list", null)), "会话列表必须登录");
 
-        // 未登录访问删除接口：同样 A0201（AI 不再匿名开放）
+        // 未登录访问删除接口：同样 A0201（AI 接口要求登录）
         assertEquals("A0201", code(postJson("/ai/session/delete",
                 "{\"sessionId\":\"999999999999999999\"}", null)), "删除接口应要求登录");
 
@@ -337,7 +339,7 @@ class AiSessionManageTest {
         String cross = postJson("/ai/session/delete", "{\"sessionId\":\"" + aSid + "\"}", tokenB);
         assertEquals("A0402", code(cross));
         assertEquals("会话不存在", message(cross));
-        // 未登录删会话：A0201（AI 不再匿名开放，进不到「会话不存在」那一步）
+        // 未登录删会话：A0201（AI 接口要求登录，进不到「会话不存在」那一步）
         assertEquals("A0201", code(postJson("/ai/session/delete",
                 "{\"sessionId\":\"" + aSid + "\"}", null)), "匿名删除应 A0201");
         // A 本人可以删（没有被上面的越权尝试影响）
@@ -352,7 +354,7 @@ class AiSessionManageTest {
     @Test
     @DisplayName("参数：缺 sessionId / 空白 / 脏值 A0401；不存在 A0402")
     void paramValidation() throws Exception {
-        // 未登录访问删除接口：A0201（AI 不再匿名开放）
+        // 未登录访问删除接口：A0201（AI 接口要求登录）
         assertEquals("A0201", code(postJson("/ai/session/delete", "{}", null)), "匿名应 A0201");
 
         // 登录后才是参数校验逻辑
@@ -405,7 +407,7 @@ class AiSessionManageTest {
         assertEquals("A0201", code(getBody("/ai/chat/history?sessionId=1", null)), "匿名历史应 A0201");
         assertEquals("00000", code(chat(token, null, "T22-h 登录提问")), "登录用户提问应可用");
         assertEquals("A0201", code(getBody("/member/list/page", null)));
-        // 原「/member/list 仍可匿名访问」的断言已随「团队成员不对外展示」删除——
-        // 该接口现已整体移除，访问得到 404 且响应体为空，断言集中在 StudioMemberCrudTest。
+        // 「团队成员不对外展示」：对外的成员接口不存在，访问得到 404 且响应体为空，
+        // 该断言集中在 StudioMemberCrudTest。
     }
 }

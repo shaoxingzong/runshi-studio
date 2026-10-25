@@ -18,6 +18,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * 三种模式的边界全部在这里覆盖：刷完、题量不足、随机不重复、随机可复现。
  * 这些是「用户能不能顺利刷完一轮」的直接决定因素，比 CRUD 更值得写测试。
+ *
+ * @author shaoshing
  */
 class QuizQuestionSamplerTest {
 

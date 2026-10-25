@@ -16,6 +16,8 @@ import java.io.Serializable;
  * （页码 < 1 视为 1、pageSize 收敛到上限）。
  *
  * 字段语义：为 null 表示该条件不参与筛选，不是「查 null 值」。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizQuestionQueryRequest implements Serializable {

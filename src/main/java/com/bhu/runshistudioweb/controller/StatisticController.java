@@ -24,6 +24,8 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * 无入参：本期不做任何筛选（不按年份、不按届别）。
  * 将来要加参数时应当在 Service 方法上扩展，并保持「空库返回完整 key 集合」的口径。
+ *
+ * @author shaoshing
  */
 @Tag(name = "统计模块", description = "官网首页大盘数据（匿名可访问）")
 @RestController
@@ -36,7 +38,7 @@ public class StatisticController {
     /**
      * 官网首页大盘：证书数量，以及证书的级别 / 类型分布（供图表渲染）
      *
-     * ⚠️ 成员人数（总数 / 在读 / 已毕业）已随「团队成员不对外展示」移除——
+     * 刻意不含成员人数（总数 / 在读 / 已毕业）：
      * 本接口匿名可访问，对外暴露团队人数同样属于展示成员信息。
      *
      * @return 大盘统计；计数字段是 JSON 数字（VO 用 Integer，避开全局的 Long → 字符串规则）

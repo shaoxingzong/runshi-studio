@@ -5,7 +5,7 @@ package com.bhu.runshistudioweb.model.enums;
  *
  * 取值必须与 db/user.sql 中 source_type 的列注释保持一致：
  * manual-手工录入, project-项目案例, member-成员档案, certificate-荣誉证书。
- * 三处同源：DDL 列注释 = 本枚举 = db/DESIGN.md 的取值清单。
+ * 两处同源：DDL 列注释 = 本枚举。
  *
  * 写出这个枚举的直接理由，是它在三个地方会被当成「分支依据」：
  * - 拼正文：不同来源的正文模板不同（项目取标题/摘要/正文，成员取姓名/届别/…）；
@@ -14,6 +14,8 @@ package com.bhu.runshistudioweb.model.enums;
  * manual 必须走「手工录入」接口（它没有业务来源）。
  * 用魔法字符串写这三处，早晚出现「某个分支拼错一个字母，静默走 default」的事故——
  * 那正是本枚举要消灭的东西（与 AiMessageRoleEnum 同一套写法）。
+ *
+ * @author shaoshing
  */
 public enum KnowledgeSourceTypeEnum {
 

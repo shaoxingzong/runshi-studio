@@ -18,11 +18,13 @@ import static org.junit.jupiter.api.Assertions.assertNull;
  * SysUserMapper 验收测试
  *
  * 这是真连数据库的集成测试，验证的是「框架配置是否真的生效」，而不是业务逻辑：
- * - 主键是否回填（雪花 ID）、审计字段是否被自动填充 —— 对应 ADR-2；
- * - 逻辑删除是否生效、落库值是否为毫秒时间戳 —— 对应 ADR-1、ADR-7。
+ * - 主键是否回填（雪花 ID）、审计字段是否被自动填充；
+ * - 逻辑删除是否生效、落库值是否为毫秒时间戳。
  *
  * 注意：测试数据必须保证唯一（账号后缀用 System.nanoTime()），
  * 否则 (user_account, deleted_at) 唯一索引会让第二次运行直接失败。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 class SysUserMapperTest {

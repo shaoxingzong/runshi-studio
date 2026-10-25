@@ -17,6 +17,8 @@ import java.util.List;
  * 因此「同一人换设备 / 清缓存 / 用无痕模式」会算成多个 UV。
  * 这是轻量埋点的固有边界——要更准就得记登录用户 ID 或设备指纹，代价是隐私与复杂度，
  * 与本期「不记 IP / UA」的取舍一致。页面文案需注明这个口径。
+ *
+ * @author shaoshing
  */
 @Data
 public class TrafficOverviewVO implements Serializable {

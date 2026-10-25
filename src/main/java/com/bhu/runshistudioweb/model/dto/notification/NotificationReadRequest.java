@@ -11,6 +11,8 @@ import java.io.Serializable;
  *
  * 与 DeleteRequest 同一惯例：POST + 请求体（不用查询参数——
  * 语义上这是「对一个资源做动作」，且 19 位雪花 ID 放查询参数容易在日志里被截断展示）。
+ *
+ * @author shaoshing
  */
 @Data
 public class NotificationReadRequest implements Serializable {

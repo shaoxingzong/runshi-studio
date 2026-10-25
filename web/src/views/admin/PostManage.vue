@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { postApi } from '@/api/post';
+import { isRequestError } from '@/api/request';
 import ErrorRetry from '@/components/ErrorRetry.vue';
 import ImageUploader from '@/components/ImageUploader.vue';
 import type { PageResult, PostAdminDetail, PostAudit } from '@/api/types';
@@ -196,8 +197,11 @@ async function openEdit(row: PostAudit) {
         form.content = detail.content ?? '';
     } catch (e) {
         // 拉不到正文时给一句明确提示：否则弹窗里正文是空的，
-        // 用户会以为「这篇本来就没内容」而直接提交一篇空壳
-        ElMessage.error((e as Error).message || '正文加载失败，请重试');
+        // 用户会以为「这篇本来就没内容」而直接提交一篇空壳。
+        // 请求层已弹过就不再重复（notified），避免同一条错误弹两次
+        if (!isRequestError(e) || !e.notified) {
+            ElMessage.error((e as Error).message || '正文加载失败，请重试');
+        }
     } finally {
         editLoading.value = false;
     }

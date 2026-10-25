@@ -68,7 +68,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * - 同步项目（首次）：溯源字段完整、正文含「标题/摘要/正文」拼装；
  * - 同步幂等：内容未变 → skipped=true、零 Embedding、零写库（raw SQL 取证）；
  * - 重建：旧块逻辑删、新块替换、chunk_count 刷新、旧向量清理（向量库检索取证）；
- * - 源已删除：A0402 + 已有文档标 status=2 + 旧块保留（R2 收口）；
+ * - 源已删除：A0402 + 已有文档标 status=2 + 旧块保留；
  * - 同步参数校验：manual 被拒、非法 sourceType、sourceId 非法 → A0401；
  * - 权限：匿名 A0201、普通用户 A0301、admin 放行（白名单零改动）；
  * - 拼装规则：成员中文标签行；证书级别/类型转中文文案（不是库里的英文值）；
@@ -79,12 +79,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * 本类通过 @DynamicPropertySource 指向自己的本地 Embedding Stub（端口不同 → 属性集不同），
  * 会新建一个 Spring 测试上下文。而 Sa-Token 用静态 SaManager 持有 DAO，
  * 它总是绑定「最后创建的上下文」；Boot 4.1 的测试框架在类切换时还会 stop 先前上下文
- * （实测日志：DefaultLifecycleProcessor: Stopping beans...，
+ * （日志里能看到 DefaultLifecycleProcessor: Stopping beans...，
  * Bean 'redisConnectionFactory' completed its stop process）。
  * 因此「新建上下文的测试类」必须全部排在 CertificateCrudTest 之前——
  * 它是第一个使用默认 MockMvc 上下文的类，该上下文会被其后所有测试类共享，
  * 而静态 DAO 必须始终指向「当前正在使用的上下文」。
- * 本类若排到它之后，后续所有登录类测试都会 B0001 失败（本次验收已实测复现）。
+ * 本类若排到它之后，后续所有登录类测试都会 B0001 失败。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc

@@ -28,19 +28,23 @@ import java.util.List;
  * 与 StudioMemberServiceImpl（级联清理）依赖，而自己的实现只准注入 Mapper——
  * 一旦注入 StudioProjectService（例如为了读 leaderId）就构成循环依赖，
  * Spring Boot 默认禁止，启动直接失败。查 leader_id 请走 StudioProjectMapper。
+ *
+ * @author shaoshing
  */
 public interface MemberProjectService extends IService<StudioMemberProject> {
 
-    // 保证成员在项目成员列表中（幂等，供新增项目与换队长使用）
-    //
-    // 与 bindMember 的区别（务必看清）：
-    // - 已存在 → 直接返回，不报错；
-    // - 并发下撞唯一索引 uk_member_proj → 静默成功，
-    // 因为「已经在列表里」正是本方法想要的结果。
-    //
-    // @param projectId 项目 ID
-    // @param memberId 成员 ID（通常是队长）
-    // @throws com.bhu.runshistudioweb.exception.BusinessException 参数非法时抛出（A0401）
+    /**
+     * 保证成员在项目成员列表中（幂等，供新增项目与换队长使用）
+     *
+     * 与 bindMember 的区别（务必看清）：
+     * - 已存在 → 直接返回，不报错；
+     * - 并发下撞唯一索引 uk_member_proj → 静默成功，
+     * 因为「已经在列表里」正是本方法想要的结果。
+     *
+     * @param projectId 项目 ID
+     * @param memberId 成员 ID（通常是队长）
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数非法时抛出（A0401）
+     */
     void ensureMemberInProject(long projectId, long memberId);
 
     /**

@@ -28,6 +28,8 @@ import java.security.SecureRandom;
  *
  * 依赖说明：cn.hutool.crypto.digest.BCrypt 来自 hutool-crypto，
  * StrUtil 来自它传递引入的 hutool-core。
+ *
+ * @author shaoshing
  */
 public class PasswordUtils {
 
@@ -94,7 +96,7 @@ public class PasswordUtils {
     /**
      * 校验明文密码与库中哈希串是否匹配（登录时调用）
      *
-     * 已实测：正确的密码返回 true，错误的密码返回 false；
+     * 正确的密码返回 true，错误的密码返回 false；
      * 传入非法哈希串或空密码时也只会返回 false，不会抛异常，
      * 因此调用方不需要包 try-catch，登录接口不会因此返回 500。
      *

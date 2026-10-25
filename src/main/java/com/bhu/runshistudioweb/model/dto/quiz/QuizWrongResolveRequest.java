@@ -15,6 +15,8 @@ import java.io.Serializable;
  *
  * 幂等：已经是已消解时直接返回 true，不更新 resolved_at——
  * 重复点击不该把「什么时候掌握的」这个时间点改掉。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizWrongResolveRequest implements Serializable {

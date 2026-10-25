@@ -34,6 +34,8 @@ import java.util.Objects;
  * 为什么 notify 不加 @Transactional：它必须活在调用方的事务里
  * （与主业务同生共死），自己开事务反而破坏这一点。Spring 的事务是线程绑定的，
  * 调用方开着事务时，本方法的写自动加入同一事务，不需要任何注解。
+ *
+ * @author shaoshing
  */
 @Slf4j
 @Service
@@ -94,6 +96,12 @@ public class NotificationServiceImpl extends ServiceImpl<StudioNotificationMappe
 
     // ==================== 消费（C 端）====================
 
+    /**
+     * 我的通知列表（新的在前）
+     *
+     * @param request 查询条件（isRead 过滤 + 分页）
+     * @return 分页结果
+     */
     @Override
     public Page<NotificationVO> listMy(NotificationQueryRequest request) {
         long userId = currentUserId();
@@ -115,6 +123,11 @@ public class NotificationServiceImpl extends ServiceImpl<StudioNotificationMappe
         return toVOPage(entityPage);
     }
 
+    /**
+     * 我的未读通知数（铃铛红点）
+     *
+     * @return 未读条数
+     */
     @Override
     public long unreadCount() {
         LambdaQueryWrapper<StudioNotification> wrapper = new LambdaQueryWrapper<>();
@@ -123,6 +136,14 @@ public class NotificationServiceImpl extends ServiceImpl<StudioNotificationMappe
         return this.count(wrapper);
     }
 
+    /**
+     * 标记单条通知已读
+     *
+     * <p>只刷新第一次的 read_at：重复标记不覆盖，否则「什么时候读的」就没有意义了。
+     * 他人的通知一律按「不存在」处理，不暴露存在性。
+     *
+     * @param id 通知 ID
+     */
     @Override
     public void markRead(Long id) {
         ThrowUtils.throwIf(id == null || id <= 0, ErrorCode.PARAMS_ERROR, "通知 id 不合法");
@@ -145,6 +166,13 @@ public class NotificationServiceImpl extends ServiceImpl<StudioNotificationMappe
         this.update(null, updateWrapper);
     }
 
+    /**
+     * 全部标记已读
+     *
+     * <p>只更新未读的那些，因此重复调用第二次返回 0。
+     *
+     * @return 本次置为已读的条数
+     */
     @Override
     public int markAllRead() {
         long userId = currentUserId();

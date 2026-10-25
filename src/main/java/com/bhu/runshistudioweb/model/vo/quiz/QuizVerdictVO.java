@@ -17,6 +17,8 @@ import java.io.Serializable;
  * 前端据此给不同的提示（「已加入错题本」/「再答对 1 次即消解」/「已消解」）。
  * 它的取值是字符串而不是数字：前端拿它做 switch 分支，字符串可读性远好于魔法数字，
  * 且它不落库、不参与统计，没有「必须与 DDL 同源」的约束。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizVerdictVO implements Serializable {
@@ -49,7 +51,7 @@ public class QuizVerdictVO implements Serializable {
     /**
      * 本题对错题本的影响：
      * - added：首次答错，已加入错题本；
-     * - reopened：之前在错题本里已消解，这次又答错，已回到待复习；
+     * - reopened：此前已消解，这次又答错，已回到待复习；
      * - progress：在错题本里答对但还没达到消解阈值（前端提示「再答对 N 次即消解」）；
      * - resolved：在错题本里连对达标，已消解；
      * - none：不在错题本里，或答对但本来就不在错题本里（无副作用）。

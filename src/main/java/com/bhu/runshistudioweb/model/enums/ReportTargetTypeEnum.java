@@ -12,6 +12,8 @@ package com.bhu.runshistudioweb.model.enums;
  *
  * 取值必须与 DDL 中 studio_post_report.target_type 的列注释保持一致：
  * post-帖子, comment-评论。
+ *
+ * @author shaoshing
  */
 public enum ReportTargetTypeEnum {
 
@@ -58,6 +60,11 @@ public enum ReportTargetTypeEnum {
         return null;
     }
 
+    /**
+     * 所有合法取值的可读文案，用于错误提示
+     *
+     * @return 以「 / 」分隔的合法取值
+     */
     public static String valuesText() {
         StringBuilder text = new StringBuilder();
         for (ReportTargetTypeEnum type : values()) {

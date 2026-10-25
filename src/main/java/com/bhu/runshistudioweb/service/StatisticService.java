@@ -15,6 +15,8 @@ import com.bhu.runshistudioweb.model.vo.statistic.StatisticOverviewVO;
  * - 空库或某维度为空时，返回完整的 key 集合且值为 0。
  * 第 2 条的理由：统计接口是首页的「锦上添花」，不该因为一条脏数据让整个首页挂掉；
  * 第 3 条的理由：前端图表按固定维度渲染，key 缺失会导致维度错乱或渲染报错。
+ *
+ * @author shaoshing
  */
 public interface StatisticService {
 

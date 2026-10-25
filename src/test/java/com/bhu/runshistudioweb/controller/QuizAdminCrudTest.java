@@ -41,6 +41,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * 为什么用 @Transactional：所有写操作都在事务内，测试回滚即可撤销。
  * 用例里对错题条目的直接构造也会一并回滚，不污染开发库。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc

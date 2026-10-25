@@ -18,6 +18,8 @@ import java.util.List;
  * 「改名 / 合并」变成一条 UPDATE，不需要维护额外的 ID 映射。
  * 代价是改名后前端缓存的旧名字会失效——但教材改名极少发生，
  * 且前端每次进页面都会重新拉 catalog。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizTextbookVO implements Serializable {

@@ -84,7 +84,7 @@ export const adminQuizApi = {
 
     // 修改题目（部分更新：null 表示不修改）
     //
-    // ⚠️ 改动正确答案、题型或选项标签集合时，后端会重置该题所有用户的
+    // 改动正确答案、题型或选项标签集合时，后端会重置该题所有用户的
     // 错题连对进度（但保留「已消解」状态）。界面上应在保存前提示。
     questionUpdate: (body: { id: string } & Record<string, unknown>) =>
         http.post<boolean>('/admin/quiz/question/update', body),

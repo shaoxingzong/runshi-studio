@@ -23,6 +23,8 @@ import java.time.LocalDate;
  *
  * 安全要点：本 DTO 里的字段就是「允许修改的字段白名单」，
  * Service 侧必须显式 set 这些字段，绝不能把 DTO 整体转成实体 updateById。
+ *
+ * @author shaoshing
  */
 @Data
 public class CertificateUpdateRequest implements Serializable {

@@ -31,8 +31,8 @@ const bodyRef = ref<HTMLElement | null>(null);
 /**
  * 正文是 Markdown，渲染链路是：共享工具（renderMarkdown）→ 白名单清洗 → v-html
  *
- * ⚠️ 为什么必须清洗：marked 只负责「Markdown 转 HTML」，它 v15 起已移除内置的
- * sanitize——原文里的 ``、`onerror=` 会被原样保留。而 `v-html` 是直接写入
+ * 为什么必须清洗：marked 只负责「Markdown 转 HTML」，它 v15 起已移除内置的
+ * sanitize——原文里的 `<script>`、`onerror=` 会被原样保留。而 `v-html` 是直接写入
  * DOM，等于把正文作者当成了可信来源。
  *
  * 因此这里统一走 DOMPurify 白名单清洗：
@@ -170,7 +170,7 @@ usePageMeta({
                 <h2>参与成员（{{ detail.members.length }}）</h2>
                 <el-empty v-if="detail.members.length === 0" description="暂无成员" />
                 <div v-else class="grid cards-3">
-                    <!-- ⚠️ 成员信息「不对外展示」（业务规则）：这里只作为项目参与者的信息卡，**不做跳转**——
+                    <!-- 成员信息「不对外展示」（业务规则）：这里只作为项目参与者的信息卡，**不做跳转**——
                          官网没有成员详情路由，跳转会命中兜底路由静默回到首页 -->
                     <div v-for="member in detail.members" :key="member.id" class="member">
                         <div class="member-head">

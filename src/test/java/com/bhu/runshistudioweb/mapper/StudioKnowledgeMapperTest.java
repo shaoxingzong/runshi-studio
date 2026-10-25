@@ -26,13 +26,15 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
  * 覆盖四类事实：
  * - 插入：雪花主键回填 + 4 个审计字段自动填充（全局约定的延续）；
  * - 查询：按 doc_id 取块并按 chunk_index 升序 —— 检索命中后拼上下文的真实路径；
- * - 逻辑删除：查不到行 + deleted_at 落库为 13 位毫秒时间戳（ADR-7 对新表同样生效）；
+ * - 逻辑删除：查不到行 + deleted_at 落库为 13 位毫秒时间戳；
  * - 唯一键 uk_doc_chunk (doc_id, chunk_index, deleted_at) 的两个方向：
  * 同序号「未删除」块必须撞键失败；而「逻辑删旧块 → 插同序号新块」的重建路径必须成功
  * —— 这正是唯一键要带 deleted_at 的原因。
  *
  * 两张表没有业务唯一键（主键为雪花 ID），用例之间天然隔离；
  * 除毫秒时间戳取证外全部 @Transactional 自动回滚，无需手工清理。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 class StudioKnowledgeMapperTest {

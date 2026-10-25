@@ -17,6 +17,8 @@ import org.springframework.context.annotation.Configuration;
  * 注意：本类必须被 Spring 扫描到（放在启动类的子包下），
  * 否则拦截器不会被注册，分页会静默失效——查询不报错，只是 LIMIT 不生效，
  * 返回全表数据，是很难发现的问题。MyBatisPlusConfigTest 就是为此写的验收测试。
+ *
+ * @author shaoshing
  */
 @Configuration
 @MapperScan("com.bhu.runshistudioweb.mapper")

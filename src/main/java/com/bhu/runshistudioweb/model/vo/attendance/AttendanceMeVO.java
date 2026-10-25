@@ -17,6 +17,8 @@ import java.time.LocalDateTime;
  * 脱敏规则与看板完全一致：不含 ip / userAgent / userAccount。
  * 即便是查自己的记录也照样脱敏——因为这个接口的返回值同样会被前端缓存、
  * 被日志中间件采样打印，多一个敏感字段就多一处泄露面。
+ *
+ * @author shaoshing
  */
 @Data
 public class AttendanceMeVO implements Serializable {

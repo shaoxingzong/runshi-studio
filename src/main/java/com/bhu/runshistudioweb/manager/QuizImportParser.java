@@ -49,6 +49,8 @@ import java.util.regex.Pattern;
  *
  * 本类不依赖 Spring、不写库，因此 QuizImportParserTest 可以用
  * 极低成本覆盖全部边界。
+ *
+ * @author shaoshing
  */
 public final class QuizImportParser {
 
@@ -181,7 +183,7 @@ public final class QuizImportParser {
                 continue;
             }
 
-            // ⑥ 其它行：在选项开始之前算题干（题干可以换行），之后算无法识别
+            // ⑥ 其它行：还没遇到选项时算题干（题干可以换行），已经遇到选项就算无法识别
             if (current.options.isEmpty()) {
                 current.stemLines.add(line);
             } else {

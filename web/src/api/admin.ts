@@ -26,7 +26,7 @@ export const adminApi = {
     userUpdate: (body: { id: string } & Record<string, unknown>) => http.post<boolean>('/user/update', body),
     // 管理员直接建账号（不必让当事人去前台自助注册；前台注册只能得到普通 user 角色）。
     // userPassword 可省略：后端留空时生成随机初始密码（DTO 里是 @Size 选填）
-    // ⚠️ 返回的不是 id 而是 { id, initialPassword }：随机口令只随创建响应出现一次，
+    // 返回的不是 id 而是 { id, initialPassword }：随机口令只随创建响应出现一次，
     // 后端不存明文、查不回来——拿到后必须立即展示给管理员转交本人（见 Users.vue 的密码结果框）
     userAdd: (body: {
         userAccount: string;
@@ -38,11 +38,11 @@ export const adminApi = {
     userDelete: (id: string) => http.post<boolean>('/user/delete', { id }),
 
     // ===== 成员 =====
-    // ⚠️ 注意是 GET + 查询参数（后端的对象绑定），不是 POST。
+    // 注意是 GET + 查询参数（后端的对象绑定），不是 POST。
     // 写成 POST 会得到 405 Method Not Allowed——这类错误在浏览器控制台才看得见。
     // 成员分页
     //
-    // ⚠️ 返回的是 MemberVO（含 userId / sortOrder 等内部字段），
+    // 返回的是 MemberVO（含 userId / sortOrder 等内部字段），
     // 不是 C 端脱敏的 Member。用错类型就看不到
     // 「这条档案绑定了哪个登录账号」——而绑定关系正是「把注册用户转为成员」的关键信息。
     memberPage: (params: Record<string, unknown>) =>
@@ -85,7 +85,7 @@ export const adminApi = {
     // 手工录入文档
     //
     // 每次调用都新建一篇（不幂等），title ≤128、content ≤20000（后端 @Size 校验）。
-    // ⚠️ 后端会真实调用 Embedding，长文耗时可能超过请求层的 30 秒超时——
+    // 后端会真实调用 Embedding，长文耗时可能超过请求层的 30 秒超时——
     // 界面上要提示「录入中请勿关闭」，别让人以为卡死了。
     docManual: (title: string, content: string) =>
         http.post<IngestResult>('/knowledge/doc/manual', { title, content }),

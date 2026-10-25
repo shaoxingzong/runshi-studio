@@ -34,6 +34,8 @@ import java.util.List;
  *
  * 降级纪律：Redis 不可用时放行（可用性优先），只告警。
  * 限流是防护手段，不能反过来变成故障源——为了防刷把自己的服务搞挂，是本末倒置。
+ *
+ * @author shaoshing
  */
 @Slf4j
 @Component

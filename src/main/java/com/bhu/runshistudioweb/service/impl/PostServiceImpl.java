@@ -66,6 +66,8 @@ import java.util.stream.Collectors;
  * 列表页要显示作者名，需要「按一批 user_id 反查成员姓名」这种批量查询能力，
  * 而 Service 对外只提供「按单个 userId 查在队成员」。批量查由 Mapper 直接做最直接，
  * 且能保证是一次查询而不是 N+1（见 authorNames）。
+ *
+ * @author shaoshing
  */
 @Slf4j
 @Service
@@ -112,7 +114,7 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
      * 内容审核（AI 三分法）
      *
      * 只让它负责「判定」，落库由本类自己完成——依赖方向必须保持单向，
-     * 反过来让 Manager 写库就会形成循环依赖（本项目已全量改为构造器注入，成环会启动即失败）。
+     * 反过来让 Manager 写库就会形成循环依赖（本项目全部使用构造器注入，成环会启动即失败）。
      */
     private final ContentAuditManager contentAuditManager;
 
@@ -130,7 +132,7 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
      *
      * 注入 Mapper 而非 PostCommentService：删帖子时要按 post_id
      * 批量逻辑删除该帖的全部评论，这是单表批量能力，走 Mapper 最直接；
-     * 且 Service 之间互相依赖容易成环（本项目已全量改为构造器注入，成环会启动即失败）。
+     * 且 Service 之间互相依赖容易成环（本项目全部使用构造器注入，成环会启动即失败）。
      */
     private final StudioPostCommentMapper studioPostCommentMapper;
 
@@ -151,6 +153,21 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
      */
     private final SysUserMapper sysUserMapper;
 
+    /**
+     * 发布帖子（先审后发）
+     *
+     * <p>为什么准入只认 studio_member 表、不认角色标签：成员身份是管理员维护的档案，
+     * 角色只是权限标签，两者可能不同步。按角色放行会绕开真正的准入规则。
+     *
+     * <p>为什么一律先落「待审」：内容公开前必须有人（或 AI）看过。
+     * 提交后立刻返回 ID，作者在「我的发帖」里跟进状态，前端不必等待审核结果。
+     *
+     * <p>入库前先做 XSS 清洗，再校验图片、生成摘要与封面、送 AI 初判——
+     * 顺序不能换：后续每一步看到的都必须是清洗后的内容。
+     *
+     * @param request 发布请求（标题、正文必填）
+     * @return 新帖子 ID
+     */
     @Override
     public long addPost(PostAddRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR, "发帖内容不能为空");
@@ -305,11 +322,24 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         return toLong(this.getById(postId).getLikeCount());
     }
 
-    /** likeCount 为 null 时按 0 返回（老数据在加列之前可能没有值） */
+    /** likeCount 为 null 时按 0 返回（历史数据可能没有该列的值） */
     private static long toLong(Integer count) {
         return count == null ? 0L : count.longValue();
     }
 
+    /**
+     * 公开帖子列表（游客可访问）
+     *
+     * <p>只返回「已通过」：待审与已驳回的内容对公众等同于不存在。
+     * 排序是「置顶优先，再按创建时间倒序」——置顶是运营手段，必须压过时间。
+     *
+     * <p>作者名与「我赞过没」都在这里批量补全（各一次查询），
+     * 绝不能对每条帖子各查一次——那是标准的 N+1。
+     *
+     * @param current 页码
+     * @param pageSize 每页条数
+     * @return 分页结果
+     */
     @Override
     public Page<PostFrontVO> listApprovedByPage(long current, long pageSize) {
         LambdaQueryWrapper<StudioPost> wrapper = new LambdaQueryWrapper<>();
@@ -340,6 +370,15 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         return voPage;
     }
 
+    /**
+     * 帖子详情（游客可访问），并累加浏览量
+     *
+     * <p>浏览量用 SQL 表达式自增，而不是「读出来 +1 再写回」：
+     * 后者在并发下会互相覆盖，计数会偏小。
+     *
+     * @param id 帖子 ID
+     * @return 详情（含 Markdown 正文）
+     */
     @Override
     public PostFrontDetailVO getApprovedDetail(long id) {
         ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "帖子 id 不合法");
@@ -364,6 +403,16 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         return detailVO;
     }
 
+    /**
+     * 我的发帖：含待审与已驳回，供作者跟进审核状态
+     *
+     * <p>这是「先审后发」的配套出口——作者提交后看不到公开列表里的自己，
+     * 必须有一个地方能看到状态与驳回理由。
+     *
+     * @param current 页码
+     * @param pageSize 每页条数
+     * @return 分页结果
+     */
     @Override
     public Page<PostVO> listMyByPage(long current, long pageSize) {
         ThrowUtils.throwIf(!StpUtil.isLogin(), ErrorCode.NOT_LOGIN_ERROR, "未登录");
@@ -377,6 +426,16 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         return toVOPage(entityPage);
     }
 
+    /**
+     * 待审队列（先进先出）
+     *
+     * <p>按创建时间升序而不是倒序：审核是排队作业，先提交的应当先被处理，
+     * 否则老内容会被不断涌入的新内容压到队尾。
+     *
+     * @param current 页码
+     * @param pageSize 每页条数
+     * @return 分页结果
+     */
     @Override
     public Page<PostVO> listPendingByPage(long current, long pageSize) {
         LambdaQueryWrapper<StudioPost> wrapper = new LambdaQueryWrapper<>();
@@ -387,6 +446,18 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         return toVOPage(entityPage);
     }
 
+    /**
+     * 批量审核帖子（通过 / 驳回）
+     *
+     * <p>一条 UPDATE 处理整批，而不是循环逐条更新——批量审核的意义就在于此。
+     * 更新条件里带 status = 待审：已处理过的不会被重复处理，天然幂等。
+     *
+     * <p>更新之后再逐个发通知：一条 UPDATE 拿不到作者，所以先按同一条件查出
+     * 「实际会被处理的帖子」，只给它们发。审核失败会抛异常，走不到发通知这一步。
+     *
+     * @param request 审核请求（动作、帖子 ID 列表、驳回理由）
+     * @return 实际处理的帖子条数
+     */
     @Override
     public int audit(AuditRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR, "审核参数不能为空");
@@ -450,6 +521,16 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
 
     // ==================== 管理端：全量列表 / 删除 / 置顶 / 编辑 ====================
 
+    /**
+     * 管理端帖子列表（全状态，支持状态 / 标题 / 作者筛选）
+     *
+     * <p>作者关键词先解析成一批 userId 再按 author_id IN 过滤，
+     * 而不是写 JOIN：为一个模糊筛选维护手写 SQL 不值得，
+     * 且 sys_user 只有几百条，两次 IN 查询足够快。
+     *
+     * @param request 查询条件
+     * @return 分页结果
+     */
     @Override
     public Page<PostVO> listForAdmin(PostAdminQueryRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR, "查询参数不能为空");
@@ -623,7 +704,7 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
      * 编辑帖子（仅管理员），非待审状态一律重置为待审重新送审
      *
      * 重置时把上一轮内容的审核痕迹（AI 结论、审核人、审核时间、驳回理由）一并清掉：
-     * 它们描述的是旧版本的结论，留着会让管理员误以为新内容已经判过。
+     * 它们描述的是修改前那份内容的结论，留着会让管理员误以为新内容已经判过。
      * 清空后由本方法重新送 AI 初判，走的是与发帖完全相同的链路。
      */
     @Override
@@ -643,7 +724,7 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
      * 作者修改自己被驳回的帖子（改完重新送审）
      *
      * 为什么作者只能改「已驳回」的：待审帖正在队列里，让作者反复改会让
-     * 审核对象不断变化（管理员可能正看着旧版本）；已通过的帖子更不允许改——
+     * 审核对象不断变化（管理员可能正看着修改前的内容）；已通过的帖子更不允许改——
      * 那是公开内容，作者随手改等于给审核开后门（要改只能让管理员代改）。
      *
      * 改完与管理员代改走同一条链路：重置为待审、清掉上一轮审核痕迹、重新送 AI 初判。

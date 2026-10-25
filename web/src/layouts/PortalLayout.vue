@@ -14,7 +14,7 @@ const user = useUserStore();
 /**
  * 导航项
  *
- * ⚠️ 没有「团队成员」：业务规则「团队成员不对外展示」——
+ * 没有「团队成员」：业务规则「团队成员不对外展示」——
  * 官网成员页与后端三个成员接口（/member/list、/member/detail、/member/certificate/list）
  * 已一并下线（接口直接删除，访问得到 404）。
  * 成员信息唯一还会出现的地方是项目详情里的「参与成员」（产品确认保留）。
@@ -76,7 +76,7 @@ async function logout() {
  * 自定义高亮判断，不用 router-link 自带的 router-link-active。
  *
  * 原因：那是「前缀匹配」——`/` 是所有路径的前缀，于是首页会在每个页面都高亮
- * （实测：进入「项目案例」时首页与项目案例同时亮）。
+ * （进入「项目案例」时首页与项目案例会同时亮）。
  * 这里显式区分：首页要精确相等，其余允许 `/projects` 匹配 `/projects/{id}` 这类子路径。
  * 实际渲染的导航项：带 memberOnly 的项只在确认是成员后才出现
  *
@@ -125,7 +125,7 @@ function isActive(path: string): boolean {
         <header class="site-header">
             <div class="inner">
                 <router-link to="/" class="logo">
-                    <img src="/logo.png" alt="润石工作室" class="logo-img" />
+                    <img src="/logo.jpg" alt="润石工作室" class="logo-img" />
                     <span class="logo-text">润石工作室</span>
                 </router-link>
                 <nav class="nav">

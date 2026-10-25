@@ -21,6 +21,8 @@ import cn.dev33.satoken.annotation.SaCheckRole;
  * 为什么挂在 /admin 前缀：与其它管理端接口同一惯例，
  * 与匿名埋点接口（ /traffic/report）在路径上分开，
  * 避免将来有人为了省事把白名单写成 /traffic/** 把统计一起放出去。
+ *
+ * @author shaoshing
  */
 @RestController
 @RequestMapping("/admin/traffic")

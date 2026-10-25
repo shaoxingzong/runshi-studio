@@ -49,6 +49,8 @@ import org.springframework.web.bind.annotation.RestController;
  * 减负设计：审核接口都支持批量（传 id 数组），
  * 管理员面对的是队列而不是单条内容——勾选多条一次通过，
  * 是把人工审核成本压下来的直接手段（见 AuditRequest 的注释）。
+ *
+ * @author shaoshing
  */
 @RestController
 @RequestMapping("/admin/post")

@@ -18,6 +18,8 @@ import java.io.Serializable;
  * - 随机刷题：都可空（空 = 全库随机），传了就是「只抽这一范围」。
  * 这种「按模式决定必填性」的规则没法用注解表达，由 Service 校验，
  * 且提示要写清是哪个模式缺了哪个参数。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizBatchRequest implements Serializable {

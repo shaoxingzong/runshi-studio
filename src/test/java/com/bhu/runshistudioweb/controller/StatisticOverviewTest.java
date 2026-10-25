@@ -33,6 +33,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *
  * 数据直接用 Mapper 插入：本测试考的是"统计"而不是"增删改"（那两块的接口另有测试守着），
  * 用 Mapper 插入才能构造出"任意状态组合"的确定场景。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -118,8 +120,7 @@ class StatisticOverviewTest {
         int totalBefore = numData(body, "certificateTotal");
         assertTrue(totalBefore >= 1, "刚插入的证书应被统计：" + body);
 
-        // 逻辑删除一张证书：总数必须减 1
-        // （原「逻辑删除成员」的验证已随成员维度移除，这条口径的硬证据改由证书承担）
+        // 逻辑删除一张证书：总数必须减 1（「逻辑删除后计数立刻减少」这条口径的硬证据）
         studioCertificateMapper.deleteById(certId);
 
         String after = fetchOverview();

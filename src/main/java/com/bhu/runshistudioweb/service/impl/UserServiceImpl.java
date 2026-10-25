@@ -15,9 +15,11 @@ import com.bhu.runshistudioweb.manager.AuthLockManager;
 import com.bhu.runshistudioweb.manager.ClientIpManager;
 import com.bhu.runshistudioweb.manager.IpRateLimitManager;
 import com.bhu.runshistudioweb.mapper.SysUserMapper;
+import com.bhu.runshistudioweb.mapper.StudioMemberMapper;
 import com.bhu.runshistudioweb.model.dto.user.UserAddRequest;
 import com.bhu.runshistudioweb.model.dto.user.UserQueryRequest;
 import com.bhu.runshistudioweb.model.dto.user.UserUpdateRequest;
+import com.bhu.runshistudioweb.model.entity.StudioMember;
 import com.bhu.runshistudioweb.model.entity.SysUser;
 import com.bhu.runshistudioweb.model.enums.NotificationTypeEnum;
 import com.bhu.runshistudioweb.model.enums.UserRoleEnum;
@@ -56,6 +58,8 @@ import java.util.Objects;
  * 注意：涉及多写的操作（注册）应保证原子性。当前注册只有一次 insert 是安全的；
  * 若以后注册还要写成员档案等第二张表，必须加 @Transactional，
  * 否则中途失败会留下「有账号无档案」的脏数据。
+ *
+ * @author shaoshing
  */
 @Slf4j
 @Service
@@ -127,6 +131,17 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
      * 否则形成循环依赖，Spring 启动即失败。
      */
     private final NotificationService notificationService;
+
+    /**
+     * 成员档案 Mapper：用于「授予成员角色前确认档案存在」
+     *
+     * <p><b>为什么注入 Mapper 而不是 {@code StudioMemberService}</b>：
+     * 项目全局约定「关联服务的实现类只准注入 Mapper，不准反向注入主表 Service」
+     * （见 HELP.md 第 9 条）——{@code StudioMemberServiceImpl} 已经注入了
+     * {@code SysUserMapper}，这里若再注入它就会形成循环依赖，启动即失败。
+     * 而且本处只需要一个「按 user_id 数一下档案是否存在」的查询，用 Mapper 最直接。
+     */
+    private final StudioMemberMapper studioMemberMapper;
 
     // ==================== C 端：用户自己 ====================
 
@@ -361,7 +376,7 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         UserRoleEnum role = resolveRole(userAddRequest.getUserRole(), UserRoleEnum.USER);
 
         // 初始密码：管理员指定则用他指定的，留空则随机生成。
-        // 随机化替代了此前的固定默认口令——固定值意味着任何知道本系统的人
+        // 随机化而不是固定默认口令——固定值意味着任何知道本系统的人
         // 都能登录所有未及时改密的账号；随机口令只随返回值出现一次，攻击者无法预知。
         // 字符集剔除 0/O/1/l/I（见 PasswordUtils.generateRandomPassword），转告时不会听错
         String initialPassword = StrUtil.isNotBlank(userAddRequest.getUserPassword())
@@ -417,6 +432,25 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         // 角色合法性校验：非法值一旦入库，权限判定会静默失效（拿不到任何角色却也不报错）
         ThrowUtils.throwIf(userRole != null && UserRoleEnum.of(userRole) == null,
                 ErrorCode.PARAMS_ERROR, "用户角色不合法，仅支持 " + UserRoleEnum.valuesText());
+
+        // 授予成员角色前，必须确认该账号已有成员档案。
+        //
+        // 为什么必须拦：成员功能的准入判据是「studio_member 档案的 user_id 命中当前账号」，
+        // 而 user_role 只是权限标签。只把角色改成 member、却没有档案时，
+        // 界面上的成员入口不会出现（前端也按档案判断），
+        // 即使从别处进了页面，后端接口也会返回 A0301「仅工作室成员可用」。
+        // 这正是「有时候不显示、有时候显示了也报错」的一个来源。
+        //
+        // 提示里明确告诉管理员下一步该做什么（去「成员管理」建档），
+        // 而不是只说「不行」——管理员卡在这里往往就是不知道还有第二步。
+        if (UserRoleEnum.MEMBER.getValue().equals(userRole)
+                || UserRoleEnum.ADMIN.getValue().equals(userRole)) {
+            boolean hasProfile = studioMemberMapper.exists(
+                    new LambdaQueryWrapper<StudioMember>()
+                            .eq(StudioMember::getUserId, id));
+            ThrowUtils.throwIf(!hasProfile, ErrorCode.PARAMS_ERROR,
+                    "该账号还没有成员档案，授予成员/管理员身份前请先到「成员管理」为他建档并绑定此账号");
+        }
 
         // 防锁死守卫：管理员不能把自己封禁、也不能把自己降级。
         // 权限判定每次都查库（见 StpInterfaceImpl），一旦自己失去 admin 角色会立刻无法管理，

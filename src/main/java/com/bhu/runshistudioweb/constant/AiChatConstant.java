@@ -13,6 +13,8 @@ package com.bhu.runshistudioweb.constant;
  *
  * 注意：query-limit（提问次数上限）不在这里——
  * 它属于运行期可调的配置（见 studio.ai.query-limit），放在配置里才能不改代码就调整。
+ *
+ * @author shaoshing
  */
 public final class AiChatConstant {
 

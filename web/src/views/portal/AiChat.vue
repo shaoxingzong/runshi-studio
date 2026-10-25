@@ -3,6 +3,7 @@ import { nextTick, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { aiApi, chatStream } from '@/api/ai';
+import { isRequestError } from '@/api/request';
 import { useUserStore } from '@/stores/user';
 import type { AiSession, KnowledgeSource } from '@/api/types';
 
@@ -175,7 +176,10 @@ async function loadHistory() {
         messages.value = history.map((item) => ({ role: item.role as 'user' | 'assistant', content: item.content }));
         void scrollBottom();
     } catch (e) {
-        ElMessage.error((e as Error).message);
+        // 请求层已弹过提示（notified）就不再重复，否则同一条错误弹两次
+        if (!isRequestError(e) || !e.notified) {
+            ElMessage.error((e as Error).message);
+        }
     }
 }
 

@@ -8,11 +8,13 @@ import com.bhu.runshistudioweb.model.enums.AiAuditStatusEnum;
  * 它是判定与落库之间的那道边界：Manager 只产出结论，
  * 由 Service 决定把它写进哪张表、要不要顺带维护冗余列。
  * 这条边界的意义是依赖单向——Manager 不认识任何 Service，
- * 否则就会形成循环依赖（本项目已全量改为构造器注入，成环会启动即失败）。
+ * 否则就会形成循环依赖（本项目全部使用构造器注入，成环会启动即失败）。
  *
  * reason 的两种用途不要混：
  * - 判为违规时，它会被写进 reject_reason 给用户看；
  * - 判为灰色或失败时，它写进 ai_reason 给管理员参考。
+ *
+ * @author shaoshing
  */
 public record AuditResult(AiAuditStatusEnum status, String reason) {
 

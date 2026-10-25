@@ -28,9 +28,11 @@ import java.time.LocalDateTime;
  *
  * 三个 *_seq 的语义与全站 sort_order 相反：
  * 这里是「数值越小越靠前」（教材顺序），而 sort_order 是「数值越大越靠前」（置顶权重）。
- * 同名会让后来的人按错方向排序，故另起名。
+ * 同名会让人按错方向排序，故另起名。
  *
  * 逻辑删除、时间填充、雪花主键三条全局约定与其它主表一致，见 db/user.sql 文件头。
+ *
+ * @author shaoshing
  */
 @Data
 @TableName("studio_quiz_question")

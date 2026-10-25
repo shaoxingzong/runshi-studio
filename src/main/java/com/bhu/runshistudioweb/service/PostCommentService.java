@@ -23,6 +23,8 @@ import java.util.List;
  * 楼中楼只支持两层：回复依附于顶层评论，不再继续嵌套。
  * 读取时一次查完整个帖子的评论后在内存里挂成树（见实现的 listApprovedByPost），
  * 返回的是顶层列表，每条自带 children。
+ *
+ * @author shaoshing
  */
 public interface PostCommentService extends IService<StudioPostComment> {
 

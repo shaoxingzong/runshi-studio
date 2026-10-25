@@ -8,6 +8,8 @@ package com.bhu.runshistudioweb.model.enums;
  * 「已消解」不是「永久移除」：它只表示「连续答对达到阈值」或「用户手动标记掌握」。
  * 同一道题再答错时，条目会自动回到待复习（ resolved_at 清空），
  * 不需要任何「重开」代码——这是把状态机放在一张表里换来的简洁。
+ *
+ * @author shaoshing
  */
 public enum QuizWrongStatusEnum {
 
@@ -38,6 +40,12 @@ public enum QuizWrongStatusEnum {
         return desc;
     }
 
+    /**
+     * 按取值查找枚举
+     *
+     * @param value 数据库 / 前端传来的取值
+     * @return 匹配的枚举；无匹配（含 null）时返回 null
+     */
     public static QuizWrongStatusEnum of(Integer value) {
         if (value == null) {
             return null;

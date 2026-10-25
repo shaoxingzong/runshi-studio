@@ -42,6 +42,8 @@ import org.springframework.web.bind.annotation.RestController;
  * 与 /project/list/page（管理端，要求 admin，返回全字段）。
  * 白名单里只登记前者，且必须写精确路径——写成 /project/**
  * 会把管理端接口一起放行。
+ *
+ * @author shaoshing
  */
 @Tag(name = "项目案例模块", description = "官网项目展示（匿名可访问）与管理员项目管理")
 @RestController

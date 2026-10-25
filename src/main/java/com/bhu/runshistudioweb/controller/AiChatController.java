@@ -46,6 +46,8 @@ import java.util.List;
  *
  * 接口地址前缀：server.servlet.context-path=/api，完整路径形如
  * http://localhost:8080/api/ai/chat。
+ *
+ * @author shaoshing
  */
 @Tag(name = "AI 咨询模块", description = "官网 AI 咨询：提问与历史记录（匿名可访问）")
 @RestController
@@ -112,6 +114,19 @@ public class AiChatController {
     @PostMapping(value = "/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @Operation(summary = "AI 提问（SSE 流式）",
             description = "需登录；事件序列 meta → delta* → done/error，失败以 error 事件返回（HTTP 恒 200）")
+    /**
+     * SSE 流式问答
+     *
+     * <p>本接口是全项目唯一不返回 BaseResponse 的地方：流的失败契约是
+     * 「HTTP 200 + 一个 error 事件」，无法用统一响应体表达。
+     * 因此它也在白名单里——若由拦截器拒绝，会返回 application/json 破坏流式契约，
+     * 登录校验因此下移到 Service。
+     *
+     * <p>事件顺序：meta → sources → delta → done；失败时只有一个 error。
+     *
+     * @param aiChatRequest 提问请求
+     * @return SSE 发射器
+     */
     public SseEmitter chatStream(@RequestBody AiChatRequest aiChatRequest) {
         return aiChatService.chatStream(aiChatRequest);
     }

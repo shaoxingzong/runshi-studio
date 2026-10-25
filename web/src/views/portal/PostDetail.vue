@@ -46,7 +46,7 @@ const bodyRef = ref<HTMLElement | null>(null);
  * 正文渲染：共享工具（renderMarkdown）→ 白名单清洗 → v-html
  *
  * 为什么必须清洗：marked 只负责「Markdown 转 HTML」，它 v15 起已移除内置 sanitize——
- * 正文里的 ``、`onerror=` 会被原样保留，而 `v-html` 是直接写 DOM，
+ * 正文里的 `<script>`、`onerror=` 会被原样保留，而 `v-html` 是直接写 DOM，
  * 等于把发帖人当成了可信来源。
  *
  * 比项目详情页更严一步：帖子是成员自己提交的，

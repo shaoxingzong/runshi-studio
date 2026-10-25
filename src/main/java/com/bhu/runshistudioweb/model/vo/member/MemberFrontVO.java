@@ -21,6 +21,8 @@ import java.io.Serializable;
  *
  * id 仍需序列化为字符串（雪花 ID 19 位超 JS 安全整数范围），
  * 前端用它与 /member/... 详情/证书接口对接。
+ *
+ * @author shaoshing
  */
 @Data
 public class MemberFrontVO implements Serializable {

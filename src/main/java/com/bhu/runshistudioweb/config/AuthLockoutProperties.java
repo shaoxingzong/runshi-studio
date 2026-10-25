@@ -19,6 +19,8 @@ import org.springframework.stereotype.Component;
  *
  * 默认值全部可缺省（与 AuthRateLimitProperties 同一纪律）：锁定是附加防护，
  * 配置没写全时应用必须能正常启动。
+ *
+ * @author shaoshing
  */
 @Data
 @Component
@@ -51,7 +53,7 @@ public class AuthLockoutProperties {
      * 续期方案下攻击者只要每 14 分钟试一次就能把账号永久锁死（DoS），
      * 固定窗口最坏也在 15 分钟后自动恢复。持续失败维持锁定的问题由 IP 限流兜
      * （单 IP 持续失败会先撞 10 次/分钟的限流），分布式慢速本就该由验证码类方案
-     * 进一步收口，属于后续增强。
+     * 进一步拦住，属于后续增强。
      */
     private Integer lockMinutes = 15;
 }

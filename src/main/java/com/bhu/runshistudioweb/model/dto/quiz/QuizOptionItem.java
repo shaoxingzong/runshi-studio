@@ -20,6 +20,8 @@ import java.io.Serializable;
  * 它的读侧对应 QuizOptionVO（同样没有 isCorrect），
  * 两者字段完全一致但刻意分成两个类：
  * 入参未来可能加「临时 id」之类的东西，而它们绝不该出现在响应里。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizOptionItem implements Serializable {

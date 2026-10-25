@@ -19,6 +19,8 @@ import java.io.Serializable;
  * （原文没有落库，也没有可回读的业务主键）。从 chunk 拼回来的正文会丢失原有切分意图，
  * 拼错一次就是永久性的脏数据。因此明确拒绝并引导到「删除后重新手工录入」，
  * 而不是静默拼接——静默的错比重试的麻烦贵得多。
+ *
+ * @author shaoshing
  */
 @Data
 public class KnowledgeRebuildRequest implements Serializable {

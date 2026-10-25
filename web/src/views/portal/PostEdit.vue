@@ -5,6 +5,7 @@ import { ElMessage } from 'element-plus';
 import { MdEditor } from 'md-editor-v3';
 import 'md-editor-v3/lib/style.css';
 import { postApi, uploadPostImage } from '@/api/post';
+import { isRequestError } from '@/api/request';
 import { useUserStore } from '@/stores/user';
 
 /**
@@ -61,8 +62,11 @@ async function loadDraft(postId: string) {
         form.coverImage = detail.coverImage ?? '';
         form.content = detail.content ?? '';
     } catch (e) {
-        // 读不到（不是本人 / 不是待审或已驳回）：说明入口不合法，回列表并说明
-        ElMessage.error((e as Error).message || '原稿加载失败');
+        // 读不到（不是本人 / 不是待审或已驳回）：说明入口不合法，回列表并说明。
+        // 请求层已弹过一次提示（notified），这里只在它没弹的情况下补一句，避免双弹窗
+        if (!isRequestError(e) || !e.notified) {
+            ElMessage.error((e as Error).message || '原稿加载失败');
+        }
         router.replace('/posts/my');
     } finally {
         loadingDraft.value = false;
@@ -138,7 +142,7 @@ async function insertImages(files: File[]) {
  * md-editor-v3 没有暴露 paste 事件（`EditorEmits` 里没有它），
  * 但 contenteditable 区域内的 paste 会冒泡到外层容器，因此在这里统一接管。
  *
- * ⚠️ `preventDefault` 必须在同步阶段调用：等 `await` 之后再调就无效了
+ * `preventDefault` 必须在同步阶段调用：等 `await` 之后再调就无效了
  * （事件已分发完毕，默认的「插入文本」行为早已发生）。
  */
 async function onPaste(event: ClipboardEvent) {
@@ -154,7 +158,7 @@ async function onPaste(event: ClipboardEvent) {
  * 拖拽图片到编辑器
  *
  * md-editor-v3 用 `onDrop` prop 透传拖拽事件。
- * ⚠️ 必须 `preventDefault`：浏览器默认会把拖入的图片当作「打开文件」直接导航走，
+ * 必须 `preventDefault`：浏览器默认会把拖入的图片当作「打开文件」直接导航走，
  * 正文里什么都不会留下。
  */
 async function onDrop(event: DragEvent) {

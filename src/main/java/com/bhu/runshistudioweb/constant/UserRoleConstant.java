@@ -3,8 +3,7 @@ package com.bhu.runshistudioweb.constant;
 /**
  * 用户角色取值常量
  *
- * 取值与 db/user.sql 中 user_role 的默认值及列注释、
- * 以及 db/DESIGN.md 保持一致，三处同源：
+ * 取值与 db/user.sql 中 user_role 的默认值及列注释保持一致（两处同源）：
  * user-普通注册用户 / member-工作室成员 / admin-管理员。
  *
  * 为什么不直接把这些值写在 UserRoleEnum 里：Java 有两条硬性限制叠在一起——
@@ -13,6 +12,8 @@ package com.bhu.runshistudioweb.constant;
  * 而 @SaCheckRole 的属性又必须是编译期常量（不能写 UserRoleEnum.USER.getValue()）。
  * 于是「枚举定义」和「注解引用」没法共用同一个常量。收敛到本类后，两边都引用它，
  * 取值只有一个来源；UserRoleEnum 负责「类型与校验」，本类负责「字面量」。
+ *
+ * @author shaoshing
  */
 public final class UserRoleConstant {
 

@@ -19,6 +19,8 @@ import java.time.format.DateTimeFormatterBuilder;
  * 为什么用 Customizer 而不自己 new 一个 ObjectMapper：Spring MVC 的 HttpMessageConverter
  * 使用的是 Spring 容器里的 JsonMapper，自己 new 出来的实例不会被使用，只有注册 Customizer
  * 才能真正改写全局序列化行为。
+ *
+ * @author shaoshing
  */
 @Configuration
 public class JsonConfig {
@@ -67,7 +69,7 @@ public class JsonConfig {
         module.addSerializer(Long.class, ToStringSerializer.instance);
         module.addSerializer(Long.TYPE, ToStringSerializer.instance);
 
-        // LocalDateTime 默认输出 ISO-8601（2026-09-27T10:30:05），与前端约定格式不一致
+        // LocalDateTime 默认输出 ISO-8601（形如 2026-09-27T10:30:05），与前端约定的格式不一致
         module.addSerializer(LocalDateTime.class, new LocalDateTimeSerializer(DATE_TIME_FORMATTER));
         module.addDeserializer(LocalDateTime.class, new LocalDateTimeDeserializer(LENIENT_DATE_TIME_PARSER));
 

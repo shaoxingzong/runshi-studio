@@ -15,6 +15,8 @@ import java.io.Serializable;
  *
  * 注意：本类的接口必须挂在 @SaCheckRole("admin") 之下（见 UserController），
  * DTO 里的字段再宽松，只要入口是管理员专属的，就不会被普通用户利用。
+ *
+ * @author shaoshing
  */
 @Data
 public class UserAddRequest implements Serializable {

@@ -49,12 +49,15 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * 事务说明：单条 insert / update 是一次写，数据库自身的原子性已足够，因此不加事务；
  * 而 deleteMember 是「清理关联表 + 逻辑删除主表」两次写，
- * 已加 @Transactional(rollbackFor = Exception.class)（DESIGN.md 2.2）。
+ * 加了 @Transactional(rollbackFor = Exception.class)。
  * 写 rollbackFor = Exception.class 的原因：Spring 默认只回滚 RuntimeException，
  * 受检异常（如 SQLException 的包装）不回滚，显式声明才能覆盖全部情况。
+ *
+ * @author shaoshing
  */
 @Service
 @RequiredArgsConstructor
+@lombok.extern.slf4j.Slf4j
 public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, StudioMember>
         implements StudioMemberService {
 
@@ -110,6 +113,16 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
         ThrowUtils.throwIf(memberAddRequest == null || StrUtil.isBlank(memberAddRequest.getName()),
                 ErrorCode.PARAMS_ERROR, "成员姓名不能为空");
 
+        // 注意：userId 仍允许为空（历史导入 / 先建档后开号，见 db/user.sql 的注释）。
+        // 但 user_id 为 NULL 的档案**永远不会生效**（准入判据是「档案 user_id 命中当前账号」），
+        // 所以这里留一条 warn：出问题时能顺着日志找到「为什么这个人用不了功能」。
+        // 真正的防线在 UserServiceImpl#updateUser——授予 member/admin 角色时要求档案必须存在，
+        // 那条才是「有角色没档案」坏状态的入口
+        if (memberAddRequest.getUserId() == null) {
+            log.warn("新增成员未绑定登录账号，该档案不会对任何账号生效 | name={}",
+                    memberAddRequest.getName());
+        }
+
         // 入学年份：DTO 的 @NotNull/@Min/@Max 已拦一道，这里再拦一道——
         // Service 也可能被其他入口（定时任务、测试）直接调用，不能只依赖 Web 层校验
         assertGradeYearValid(memberAddRequest.getGradeYear());
@@ -134,7 +147,7 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
         // 置顶权重不传按 0：显式赋值比依赖 DDL 默认值更直观，避免以后 DDL 变更时行为漂移
         member.setSortOrder(memberAddRequest.getSortOrder() == null
                 ? DEFAULT_SORT_ORDER : memberAddRequest.getSortOrder());
-        // userId 可为 null（表示尚未开通登录账号），直接赋值即可
+        // userId 可为 null（历史导入 / 先建档后开号），此时该档案不会对任何账号生效
         member.setUserId(memberAddRequest.getUserId());
 
         boolean saveResult;
@@ -238,7 +251,7 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
      *
      * 两次写（清理关联表 + 逻辑删除主表）必须在同一事务内完成：
      * 如果先清关联、主表删除失败，成员还在但证书关系没了（数据静默丢失）；
-     * 如果先删主表、清理失败，就留下指向已删除成员的悬空关联（DESIGN.md 2.2 明确禁止）。
+     * 如果先删主表、清理失败，就留下指向已删除成员的悬空关联。
      *
      * @param id 成员 ID
      * @return true 表示删除成功
@@ -249,7 +262,7 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
         StudioMember existing = this.getById(id);
         ThrowUtils.throwIf(existing == null, ErrorCode.NOT_FOUND_ERROR, "成员不存在");
 
-        // 同一事务内先清关联，再逻辑删除主表（DESIGN.md 2.2）。
+        // 同一事务内先清关联，再逻辑删除主表。
         // 注意这里是两张关联表：成员-证书与成员-项目，
         // 必须都清——只清一张就会留下指向已删除成员的悬空关联，
         // 表现为「某个已删除的成员还出现在项目参与人列表里」。
@@ -284,15 +297,12 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
         return toMemberVOPage(entityPage);
     }
 
-    // ==================== C 端：游客可访问 ====================
+    // ==================== 列表聚合的性能纪律 ====================
 
-    // ==================== C 端：已随「团队成员不对外展示」删除 ====================
-
-    // 原 listFrontMembers(...)（官网成员列表）与 getFrontMemberDetail(...)（官网成员详情聚合）
-    // 两个实现已删除，配套的接口方法、白名单路径与 MemberDetailFrontVO 同步移除。
-    // 成员档案此后只由管理端方法读取（listMemberByPage / getMemberById）。
+    // 本类刻意没有「官网成员列表 / 官网成员详情」的实现：
+    // 成员档案只由管理端方法读取（listMemberByPage / getMemberById）。
     //
-    // 这里保留一条原来的性能纪律（对将来任何列表聚合都适用）：
+    // 但下面这条纪律对将来任何列表聚合都适用：
     // 若要让「成员列表」显示每人证书数，绝不能写成
     //  for (成员 m : 列表) { countByMember(m.id) }（标准 N+1，一页 50 条 = 50 次查询），
     // 正确做法是一次  SELECT member_id, COUNT(*) ... WHERE member_id IN (...) GROUP BY member_id，

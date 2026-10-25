@@ -37,6 +37,8 @@ import java.util.UUID;
  *
  * 存储目录结构：{root-dir}/yyyy/MM/{uuid}.{ext}，按月分目录是为了避免单目录文件过多
  * （NTFS 下同一目录文件上万后，列举与删除都会明显变慢）。
+ *
+ * @author shaoshing
  */
 @Component
 @RequiredArgsConstructor

@@ -32,7 +32,9 @@ import java.time.LocalDateTime;
  *
  * 字段与列的映射依赖 MyBatis-Plus 的「驼峰 ↔ 下划线」自动转换
  * （ authorId → author_id），无需逐个写 @TableField。
- * 逻辑删除、时间填充、雪花主键三条全局约定与 SysUser 完全一致，见 db/DESIGN.md。
+ * 逻辑删除、时间填充、雪花主键三条全局约定与 SysUser 完全一致。
+ *
+ * @author shaoshing
  */
 @Data
 @TableName("studio_post")

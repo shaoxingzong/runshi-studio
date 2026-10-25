@@ -17,6 +17,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 本测试不执行任何 SQL，只验证拦截器是否真的注册进了 Spring 容器。
  * 这类「静默失效」是 MP 最典型的坑：漏写 @Bean 时程序照常启动、查询照常返回，
  * 只是 LIMIT 不生效（返回全表），等数据量上来才发现，成本很高。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 class MyBatisPlusConfigTest {

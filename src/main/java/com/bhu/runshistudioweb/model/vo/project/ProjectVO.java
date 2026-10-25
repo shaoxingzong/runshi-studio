@@ -25,6 +25,8 @@ import java.util.List;
  * id 与 leaderId 显式标注 Jackson 3 的 ToStringSerializer：
  * 雪花 ID 是 19 位、超出 JS Number 安全整数范围，序列化为字符串避免前端精度丢失
  * （全局 JsonConfig 已统一处理，这里是字段级兜底）。
+ *
+ * @author shaoshing
  */
 @Data
 public class ProjectVO implements Serializable {

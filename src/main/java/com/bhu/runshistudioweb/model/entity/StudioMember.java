@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
  * 字段与列的映射依赖 MyBatis-Plus 的「驼峰 ↔ 下划线」自动转换：
  * gradeYear → grade_year、userId → user_id，无需逐个写 @TableField。
  *
- * 与 sys_user 的关系是本表最需要理解的一点（DESIGN.md 2.1）：
+ * 与 sys_user 的关系是本表最需要理解的一点：
  * 成员档案与登录账号是可选 1:1—— user_id 可为 NULL，表示「这个人还没开通登录账号」。
  * 官网展示数据以本表为唯一权威源，不反向同步 sys_user；
  * 数据库侧靠 uk_userid_deleted (user_id, deleted_at) 保证一个账号最多绑定一条成员记录
@@ -33,7 +33,9 @@ import java.time.LocalDateTime;
  * - sort_order 是官网展示置顶权重（数值越大越靠前），
  * 列表默认排序以它为准，而不是 id 倒序。
  *
- * 逻辑删除、时间填充、雪花主键三条全局约定与 SysUser 完全一致，见 db/DESIGN.md。
+ * 逻辑删除、时间填充、雪花主键三条全局约定与 SysUser 完全一致。
+ *
+ * @author shaoshing
  */
 @Data
 @TableName("studio_member")

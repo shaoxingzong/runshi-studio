@@ -32,6 +32,8 @@ import org.springframework.web.bind.annotation.RestController;
  * 与列表分页分开——轮询不该拉整页数据，未读数是 COUNT(*) 走索引，毫无压力。
  *
  * 接口地址前缀 /api，完整路径形如 http://localhost:8080/api/notification/page。
+ *
+ * @author shaoshing
  */
 @RestController
 @RequestMapping("/notification")

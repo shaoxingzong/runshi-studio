@@ -21,6 +21,8 @@ import java.util.List;
  * action 用字符串而不是枚举：它是接口契约的一部分，
  * 枚举一加取值注解就过期；合法性由 Service 校验，
  * 并把允许的取值写在提示里（与项目其它模块的枚举校验方式一致）。
+ *
+ * @author shaoshing
  */
 @Data
 public class AuditRequest implements Serializable {

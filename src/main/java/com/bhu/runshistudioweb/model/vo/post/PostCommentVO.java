@@ -20,11 +20,13 @@ import java.util.List;
  * 脱敏（与其它 VO 同一套路，靠「本类没有这些字段」实现）：
  * 不含 status、rejectReason、auditBy/auditAt、
  * deletedBy 以及审计字段。
- * 公开接口只返回「已通过」的评论，所以前端拿到的每条都是可展示的，
+ * 公开接口只返回「已通过」的评论，所以前端拿到的每条都可直接展示，
  * 不需要再根据状态过滤一遍。
  *
  * 为什么保留 authorId：前端要能点击作者、或做「我的评论」高亮。
  * 它是用户 ID（sys_user.id）而非内部档案主键，属于可公开的信息。
+ *
+ * @author shaoshing
  */
 @Data
 public class PostCommentVO implements Serializable {

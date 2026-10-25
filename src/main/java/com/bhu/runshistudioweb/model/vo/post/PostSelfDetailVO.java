@@ -16,6 +16,8 @@ import java.io.Serializable;
  * 覆盖范围：只返回本人且待审或已驳回的帖子——
  * 已通过的帖子走公开详情接口（ /post/detail）即可，不需要本类。
  * 因此本 VO 的调用方一定是「想改驳回稿」或「想预览自己待审稿」的作者。
+ *
+ * @author shaoshing
  */
 @Data
 @EqualsAndHashCode(callSuper = true)

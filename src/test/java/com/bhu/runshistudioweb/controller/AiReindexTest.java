@@ -43,14 +43,16 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * 向量强制重建（观察项 e /）验收测试
  *
- * 验证的核心场景：向量库是进程内内存，应用重启后 chunk 行还在但向量全没了
- * （场景 I 已登记）。此时 sync-all 会因为内容哈希未变而全部 skipped，
+ * 验证的核心场景：向量库是进程内内存，应用重启后 chunk 行还在但向量全没了。
+ * 此时 sync-all 会因为内容哈希未变而全部 skipped，
  * 检索一直 0 命中——只有 reindex-all 能恢复，而且它对手工录入（manual）
  * 的文档同样有效（那些文档没有业务源可读，sync 救不了它们）。
  *
  * 这里用「清空向量库」来等价模拟重启：重启的本质就是向量消失、chunk 行保留。
  *
  * 类名以 Ai 开头：新建 Spring 测试上下文，排序约束见 AiKnowledgeManageTest 类注释。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc

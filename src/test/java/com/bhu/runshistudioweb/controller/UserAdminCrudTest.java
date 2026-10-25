@@ -31,6 +31,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *
  * 测试直接插库造管理员账号（不走注册接口，因为注册只会创建普通用户），
  * 再用真实登录接口换 token，这样权限链路上的每一环都是真的。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc

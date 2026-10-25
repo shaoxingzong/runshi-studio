@@ -10,6 +10,8 @@ package com.bhu.runshistudioweb.model.enums;
  * 自动消解意味着用户确实答对了，手动标记只是用户「觉得自己会了」。
  * 将来若要做「掌握度」评估或错题推荐，这个字段就是区分依据；
  * 而它只占一个 tinyint，不留会永远拿不回来。
+ *
+ * @author shaoshing
  */
 public enum QuizResolveTypeEnum {
 

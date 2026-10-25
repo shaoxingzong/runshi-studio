@@ -15,6 +15,8 @@ import org.apache.ibatis.annotations.Mapper;
  * - uk_receiver_biz：幂等的数据库层保证，同一事件重复投递撞键即已知存在；
  * - idx_receiver_read：列表（receiver + is_read 等值 + 创建时间倒序）
  * 与未读计数一条索引全覆盖，ORDER BY 不走 filesort。
+ *
+ * @author shaoshing
  */
 @Mapper
 public interface StudioNotificationMapper extends BaseMapper<StudioNotification> {

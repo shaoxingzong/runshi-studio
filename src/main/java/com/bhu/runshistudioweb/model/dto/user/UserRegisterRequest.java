@@ -22,6 +22,8 @@ import java.io.Serializable;
  * 否则会出现「DTO 说 16 位、Service 说 20 位」两套标准。当前已统一：
  * 长度区间以 UserServiceImpl 顶部的 MIN_ACCOUNT_LENGTH 等常量为准，
  * DTO 注解与 Service 校验引用同一组数值（改规则时两边都要改，别只改一处）。
+ *
+ * @author shaoshing
  */
 @Data
 public class UserRegisterRequest implements Serializable {

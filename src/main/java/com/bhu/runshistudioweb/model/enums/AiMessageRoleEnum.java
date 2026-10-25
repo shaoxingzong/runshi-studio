@@ -14,6 +14,8 @@ package com.bhu.runshistudioweb.model.enums;
  * 为什么不照抄 OpenAI 协议里的 "assistant" / "user" 字面量：
  * 字面量散落在写库、拼 prompt、解析响应三处，任何一处拼错都是「AI 记不住上一句」这类
  * 不报错的静默故障。统一走枚举的 getValue，拼写只有一处来源。
+ *
+ * @author shaoshing
  */
 public enum AiMessageRoleEnum {
 

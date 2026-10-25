@@ -20,7 +20,7 @@ async function submit() {
     loading.value = true;
     try {
         const data = await adminApi.login(form.account, form.password);
-        // ⚠️ 必须把 userRole 一起存下来：路由守卫用 isAdmin 判断能否进后台，
+        // 必须把 userRole 一起存下来：路由守卫用 isAdmin 判断能否进后台，
         // 少了它，刚登录的管理员会被自己的前端挡在门外（表现为「登录成功又跳回登录页」）
         if (data.userRole !== 'admin') {
             user.logout();

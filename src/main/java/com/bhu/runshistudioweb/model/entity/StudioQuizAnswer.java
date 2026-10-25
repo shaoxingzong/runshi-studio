@@ -25,11 +25,13 @@ import java.time.LocalDateTime;
  * 响应里不含答案——否则跳过按钮就成了看答案按钮。
  *
  * correctLabels 是提交时刻的快照，不是外键：
- * 管理员事后改题不会影响这条记录的可解释性（「你当时选了 C，正确答案是 ACD」依然成立）。
+ * 管理员事后改题不会影响这条记录的可解释性（「提交时选了 C，当时正确答案是 ACD」依然成立）。
  *
  * chosenLabels 在跳过时为 NULL，绝不存空字符串：
  * 本项目全局约定「空值存 NULL」，且判分逻辑用 equals 比较，
  * 空串与 NULL 混用会让「没选」与「选了空」变成两种状态。
+ *
+ * @author shaoshing
  */
 @Data
 @TableName("studio_quiz_answer")

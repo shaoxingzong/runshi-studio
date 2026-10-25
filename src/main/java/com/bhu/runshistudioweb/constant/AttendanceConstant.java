@@ -14,6 +14,8 @@ import java.time.format.DateTimeFormatter;
  *
  * 注意：本常量必须与数据库连接串上的 serverTimezone=Asia/Shanghai 保持同一口径，
  * 否则 JDBC 写入 datetime 时还会再做一次时区换算。
+ *
+ * @author shaoshing
  */
 public final class AttendanceConstant {
 

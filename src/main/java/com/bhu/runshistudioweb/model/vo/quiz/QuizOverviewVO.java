@@ -24,6 +24,8 @@ import java.io.Serializable;
  * 首答口径需要额外标记「这是第几次作答」，且它不会随复习上升——
  * 用户刷完错题回来看，正确率纹丝不动，反馈是坏的。
  * 用全部提交口径时，刷错题能让正确率回升，正是产品想要的激励方向。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizOverviewVO implements Serializable {

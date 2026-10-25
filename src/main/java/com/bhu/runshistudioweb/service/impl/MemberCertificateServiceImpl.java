@@ -32,7 +32,7 @@ import java.util.List;
  * BeanUtils.copyProperties（照抄对应 Service 里的写法），这个代价是明确且可接受的。
  *
  * 查询策略：两步查询，而不是 JOIN。
- * db/DESIGN.md 的场景 C 论证的是「一次 JOIN」的索引路径，这里刻意不那样做：
+ * 一次 JOIN 的索引路径本身没问题，这里刻意不那样做：
  * - 项目目前没有任何 XML Mapper，为了一个 JOIN 引入手写 SQL，
  * 就多了一层「漏写 deleted_at = 0」的风险——主表是逻辑删除的，
  * 手写 JOIN 一旦漏掉这个条件，就会查出已删除成员/证书的悬空数据；
@@ -48,6 +48,8 @@ import java.util.List;
  *
  * 排序三键：sort_order 倒序 → award_date 倒序 → id 倒序，与证书模块默认排序一致；
  * 追加 id 作为最终键，保证前两个键都相同时分页次序稳定（不会翻页时乱序）。
+ *
+ * @author shaoshing
  */
 @Service
 @RequiredArgsConstructor
@@ -168,9 +170,9 @@ public class MemberCertificateServiceImpl extends ServiceImpl<StudioMemberCertif
         return studioMemberMapper.selectList(wrapper).stream().map(this::toMemberVO).toList();
     }
 
-    // 原 listFrontCertificatesByMember(long)（C 端脱敏视图）已随「团队成员不对外展示」删除。
-    // 管理端的 listCertificatesByMember 仍复用下方同一条取数逻辑（selectCertificatesOfMember），
-    // 保证「后台看到几张、官网就看到几张」这个一致性前提不受影响。
+    // 这里没有「按成员查证书」的 C 端脱敏视图：它与「团队成员不对外展示」的规则冲突。
+    // 管理端的 listCertificatesByMember 复用下方同一条取数逻辑（selectCertificatesOfMember），
+    // 保证「后台看到几张、门户就看到几张」这个一致性前提不受影响。
 
     // ==================== 级联清理 ====================
 

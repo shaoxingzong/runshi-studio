@@ -20,6 +20,8 @@ import org.apache.ibatis.annotations.Mapper;
  * 第二个会撞键抛 DuplicateKeyException，Service 必须接住它并
  * 重读已有记录、原样返回首次判定（而不是报错说「本题已答」）——
  * 断网重试是正常现象，让用户看到红条比看到判定结果更糟。
+ *
+ * @author shaoshing
  */
 @Mapper
 public interface StudioQuizAnswerMapper extends BaseMapper<StudioQuizAnswer> {

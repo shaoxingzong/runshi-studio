@@ -24,6 +24,8 @@ import java.io.Serializable;
  * 扩展提示：若将来需要「按获奖年份筛选」，加 awardYear（Integer）即可，
  * 比加 awardDateStart/awardDateEnd 区间更符合官网的使用方式，
  * 也更容易走索引（可用 YEAR(award_date) 的等价范围条件实现）。
+ *
+ * @author shaoshing
  */
 @Data
 public class CertificateQueryRequest implements Serializable {

@@ -34,21 +34,22 @@ import java.util.List;
  * EmbeddingStore 实现（换一行构造代码），但会引入一个必须单独运维的组件。
  * 在「检索刚上线、知识库量级还很小」的前提下，先不背这个运维成本更合理；
  * - 补救：重启后调 POST /knowledge/doc/reindex-all
- * 即可恢复。⚠️ 注意 sync / sync-all 此时会全部 skipped，救不回来
+ * 即可恢复。注意 sync / sync-all 此时会全部 skipped，救不回来
  * （内容哈希没变，它们什么都不会做）——这是最容易踩的坑；
- * 检索层已能容忍"向量为空"（反查为空即跳过）。
- * 这条事实已登记在 db/DESIGN.md 场景 I。
+ * 检索层已能容忍「向量为空」（反查为空即跳过）。
  *
  * 为什么不用 EmbeddingStoreIngestor：它提供一条龙的
  * ingest(document)（切分 + 向量化 + 入库），很省事，
  * 但它不返回 embeddingId——而我们的 chunk 表必须落 embedding_id
- * （场景 H 的回查就是靠它把「命中的向量」翻译成「块的正文」）。
+ * （检索回查就是靠它把「命中的向量」翻译成「块的正文」）。
  * 拿不到 ID，向量和块就断了联系。所以这里手写「split → embed → addAll」三步。
  *
  * 切块时不写元数据（不把 docId、sourceId 之类的信息塞进
  * TextSegment.metadata()）：回查一律走数据库（chunk 行里有完整信息），
  * 保持单一事实源——不然同一份信息存两处，迟早不一致，
  * 而向量库里的旧数据还特别难修。
+ *
+ * @author shaoshing
  */
 @Slf4j
 @Component
@@ -125,7 +126,7 @@ public class KnowledgeBaseManager {
      * 检索必须用与入库相同的向量模型：这是本模块最贵的一条约束。
      * 换了 studio.ai.embedding-model 之后，新向量与库里旧向量处在不同的语义空间，
      * 相似度毫无意义（表现为「什么都检索不到」或「检索到的完全不相关」）。
-     * 因此换模型 = 全库重建（重新 sync / 重新手工录入），已登记在 db/DESIGN.md 场景 J。
+     * 因此换模型 = 全库重建（重新 sync / 重新手工录入）。
      *
      * 空库（或全被 minScore 过滤）返回空列表，而不是异常：
      * 这是日常场景——本类是内存向量库，每次重启都是空的。

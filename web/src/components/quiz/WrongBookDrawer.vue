@@ -12,7 +12,7 @@ import type { QuizWrongDetail, QuizWrongItem } from '@/api/types';
  * 另开一个标签页翻错题本。详情带答案是合理的：那道题你已经做错过。
  *
  * 为什么详情里要显示「你上次选了什么」：只给正确答案的话，
- * 用户不知道自己当时错在哪——而「错在哪」才是错题本的价值。
+ * 用户不知道自己错在哪——而「错在哪」才是错题本的价值。
  */
 const props = defineProps<{
     modelValue: boolean;

@@ -59,6 +59,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * - 失败也是事件：参数错误 / 会话不存在或无权 / AI 失败 → error 事件，
  * HTTP 恒 200；AI 失败时保留用户消息、无 assistant、不计数；
  * - 回归：匿名流式被拒 A0201（未登录不可用）与既有接口不受影响。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -81,7 +83,7 @@ class AiChatStreamTest {
      * AI 熔断器：每个用例前重置。
      *
      * 本类有用例会让流式调用失败（连接断开、服务商 5xx），而熔断器是进程内单例，
-     * 不重置会把失败传染给同一 JVM 里后跑的测试类（2026-10-13 实测踩坑）。
+     * 不重置会把失败传染给同一 JVM 里后跑的测试类。
      */
     @Resource
     private AiCircuitBreaker circuitBreaker;
@@ -109,7 +111,7 @@ class AiChatStreamTest {
         stub = HttpServer.create(new InetSocketAddress(0), 0);
         stub.createContext("/chat/completions", exchange -> {
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            // ⚠️ LangChain4j 的请求体是带空格的美化 JSON（"stream" : true），
+            // LangChain4j 的请求体是带空格的美化 JSON（"stream" : true），
             // 精确匹配 "stream":true 会失败——必须先压掉空白再判断
             String compact = body.replace(" ", "").replace("\r", "").replace("\n", "");
             if (compact.contains("TRIGGER_FAIL")) {

@@ -93,7 +93,7 @@ npm run dev        # http://localhost:5173，/api 已代理到 8080
 
 | 文档 | 内容 |
 |---|---|
-| [HELP.md](HELP.md) | **开发约定**：分层职责、请求链路、注释规范、11 条全局约定、常见坑速查 |
+| [HELP.md](HELP.md) | **开发约定**：分层职责、请求链路、注释规范、12 条全局约定、常见坑速查 |
 | [DEPLOY.md](DEPLOY.md) | **部署指南**：环境变量清单、初始化管理员、内外网配置、上线检查清单 |
 | [deploy/nginx.conf](deploy/nginx.conf) | Nginx 反向代理 + 静态资源 + 安全响应头配置样例 |
 | [docs/erd.md](docs/erd.md) | 数据库 ER 图与关键设计取舍 |
@@ -114,7 +114,10 @@ runshi-studio-web/
 │   └── application-local.yml.example         本地私有配置模板（复制后填真值，不进 Git）
 ├── src/test/java/                            自动化测试（单测 / MockMvc / DDL 校验）
 ├── web/                                      Vue3 前端独立工程
-├── db/user.sql                               全量建库脚本（唯一权威 DDL 源头）
+├── db/
+│   ├── user.sql                              全量建库脚本（唯一权威 DDL 源头）
+│   ├── init-prod.sql                         生产初始化（只建库表，不灌演示数据）
+│   └── test-data-full.sql                    联调用的演示数据
 ├── docs/                                     ER 图与请求链路文档
 └── deploy/nginx.conf                         生产部署配置样例
 ```

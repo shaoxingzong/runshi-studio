@@ -23,6 +23,8 @@ import java.util.TreeSet;
  *
  * 本类是纯函数集合，不依赖 Spring、不碰数据库，因此可以被
  * QuizLabelUtilsTest 用极低成本覆盖全部边界。
+ *
+ * @author shaoshing
  */
 public final class QuizLabelUtils {
 
@@ -31,7 +33,7 @@ public final class QuizLabelUtils {
      *
      * 处理顺序：去空白 → 转大写 → 只保留 A–F 范围内的字母 → 去重 → 升序。
      *
-     * ⚠️ 非法字符会被静默丢弃，这是刻意的：本方法只负责「整理」，
+     * 非法字符会被静默丢弃，这是刻意的：本方法只负责「整理」，
      * 是否合法由 validateLabels 判断。若在整理阶段就抛异常，
      * 调用方拿不到「整理后剩下什么」，也就无法给出「你输入的 Z 不是有效选项」这类精确提示。
      *

@@ -22,6 +22,8 @@ import java.io.Serializable;
  *
  * 用 Long 接收雪花 ID：Jackson 对 Long 字段同时接受数字与数字字符串，
  * 前端从列表接口拿到的字符串 ID 可以直接回传。
+ *
+ * @author shaoshing
  */
 @Data
 public class ProjectMemberRequest implements Serializable {

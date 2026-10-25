@@ -23,6 +23,8 @@ import java.io.Serializable;
  * BindException，会落到全局异常处理器的兜底分支变成 B0001，体验很差；
  * 且「页码传错」没必要让整个查询失败。因此一律由 Service 兜底纠正
  * （页码 < 1 视为 1、pageSize 收敛到上限）。
+ *
+ * @author shaoshing
  */
 @Data
 public class PostAdminQueryRequest implements Serializable {

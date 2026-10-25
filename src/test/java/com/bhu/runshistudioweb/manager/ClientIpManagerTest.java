@@ -17,6 +17,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 本类最重要的用例是「伪造内网签到」那几条：考勤的区分能力完全取决于
  * 「请求头不可信时是否被忽略」。这些用例是安全边界，不是普通的功能校验——
  * 它们要是挂了，说明任何人都能在家里签到成「在工作室」。
+ *
+ * @author shaoshing
  */
 class ClientIpManagerTest {
 

@@ -24,8 +24,28 @@ import java.io.Serializable;
  * 挡住 1800、3200 这类明显不可能的输入；
  * - teamPosition / memberStatus 不做注解白名单，只声明「选填」，
  * 合法性由 Service 用枚举校验——把取值写死在注解里的话，枚举一改注解就过期了；
- * - userId 绑定账号是可选动作，非空时由 Service 校验
- * 「账号存在且未被其他成员绑定」（唯一索引 uk_userid_deleted 兜底并发竞态）。
+ * - userId 绑定账号仍是<b>选填</b>（见下方字段注释，这是刻意保留的）。
+ *
+ * <p><b>为什么 userId 是选填而不是必填</b>
+ * 这里最容易踩的坑，是把它当成「两套身份判据」中的一套：成员功能的准入判据是
+ * <b>查 {@code studio_member} 档案（认表）</b>，而后台入口 / 角色标签查的是
+ * {@code sys_user.user_role}（认角色）。两者不同步时，就会出现「后台创建的成员
+ * 有时候不显示功能、有时候显示了也报错」这类现象。
+ *
+ * <p>一个看似直接的修法是把 userId 改成必填，但那会破坏既有设计——
+ * {@code db/user.sql} 明确写着「<b>也可以有档案没账号（历史导入）</b>」，
+ * 强制必填属于过度修正。
+ *
+ * <p>因此这里<b>保留选填，但把「不绑定的后果」讲清楚</b>：
+ * <ul>
+ *     <li>新增时不绑账号仍然允许（历史导入 / 先建档后开号都靠它）；</li>
+ *     <li>但管理端在授予 member / admin 角色时，会校验「该账号必须有档案」，
+ *     否则拒绝并提示先去建档——这一步堵住了「有角色没档案」的坏状态；</li>
+ *     <li>前端在新增表单里把「不绑定将不会生效」写成醒目提示。</li>
+ * </ul>
+ * 这样既不改既有契约，又让「档案是否真正生效」在流程上可被感知。
+ *
+ * @author shaoshing
  */
 @Data
 public class MemberAddRequest implements Serializable {
@@ -33,8 +53,18 @@ public class MemberAddRequest implements Serializable {
     private static final long serialVersionUID = 1L;
 
     /**
-     * 绑定的系统用户 ID（选填）
-     * 不填表示该成员尚未开通登录账号；填了就必须是真实存在且未被占用的账号
+     * 绑定的系统用户 ID（<b>选填</b>）
+     *
+     * <p><b>不填的后果（管理端必须知道）</b>：成员功能的准入判据是
+     * 「档案的 {@code user_id} 命中当前登录账号」。{@code user_id} 为 NULL 的档案
+     * <b>永远不会生效</b>——本人登录后看不到任何成员功能，而管理员在列表里
+     * 却看到「这个人是成员」，且不报错、不提示。
+     *
+     * <p>因此它虽然允许为空（历史导入、先建档后开号的场景需要），
+     * 但<b>面向普通使用时应尽量绑定</b>；前端表单已把这条写成醒目提示。
+     *
+     * <p>非空时由 Service 校验「账号存在且未被其他成员绑定」
+     * （唯一索引 {@code uk_userid_deleted} 兜底并发竞态）。
      */
     @Positive(message = "绑定的用户 id 必须为正整数")
     private Long userId;

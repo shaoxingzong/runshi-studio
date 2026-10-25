@@ -30,6 +30,8 @@ import com.bhu.runshistudioweb.model.vo.project.ProjectVO;
  * 事务边界（DESIGN 2.2 / 2.3）：addProject、updateProject、
  * deleteProject 都是「主表写 + 关联表写」两次写，必须在同一事务内，
  * 否则会出现「有项目没队长」或「项目已删、关联还在」的悬空状态。
+ *
+ * @author shaoshing
  */
 public interface StudioProjectService extends IService<StudioProject> {
 

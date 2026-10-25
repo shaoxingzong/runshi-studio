@@ -48,7 +48,9 @@ import org.springframework.web.bind.annotation.RestController;
  * 返回类型：管理端返回 MemberVO（含 userId / sortOrder 等内部字段），
  * 只在 admin 面前出现。脱敏的 MemberFrontVO 仍然保留，但如今唯一的对外出处是
  * 项目详情里的「参与成员」（ /project/detail，产品确认保留）——
- * 那是本规则下有意的唯一例外，已登记在 db/DESIGN.md 场景 L。
+ * 那是本规则下有意的唯一例外。
+ *
+ * @author shaoshing
  */
 @RestController
 @RequestMapping("/member")
@@ -95,16 +97,13 @@ public class StudioMemberController {
 
     // ==================== 管理端：全部要求 admin 角色 ====================
 
-    // ⚠️ 原「C 端：官网展示，匿名可访问」的三个接口（GET /member/list、
-    // /member/certificate/list、/member/detail）已在「团队成员不对外展示」的规则下整体删除：
-    //   - 白名单中的三条精确路径一并移除（见 SaTokenMvcConfig）；
-    //   - 官网成员页与成员详情页同步下线（web/ 与 static/ 两套前端）；
-    //   - Service 侧配套方法（listFrontMembers / getFrontMemberDetail /
-    //     listFrontCertificatesByMember）与 MemberDetailFrontVO 一并删除。
-    // 成员档案自此只作为后台内部数据：读取走下面的 /member/list/page 与 /member/get。
+    // 这里刻意没有「C 端：官网展示，匿名可访问」的接口（成员列表 / 成员证书 / 成员详情）：
+    // 「团队成员不对外展示」这条产品规则要求成员档案只作为后台内部数据，
+    // 因此它们既不在本类里，也不在 SaTokenMvcConfig 的白名单里。
+    // 成员档案只经管理端读取：/member/list/page 与 /member/get。
     //
     // 一处有意保留的例外：项目详情（/project/detail）仍返回参与成员，用于项目介绍
-    // （产品确认保留），见 db/DESIGN.md 场景 L。
+    // （产品确认保留）。
 
     /**
      * 管理员新增成员档案

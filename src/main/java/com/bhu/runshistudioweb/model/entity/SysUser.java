@@ -18,16 +18,18 @@ import java.time.LocalDateTime;
  * userAccount → user_account，因此不需要给每个字段写 @TableField("...")。
  * 一旦某个字段的列名不符合这个规律，必须显式声明，否则会报「Unknown column」。
  *
- * 三条全局约定（详见 db/DESIGN.md）：
- * - 主键策略：统一用雪花算法 ASSIGN_ID，DDL 里已移除 AUTO_INCREMENT。
+ * 三条全局约定：
+ * - 主键策略：统一用雪花算法 ASSIGN_ID，DDL 不带 AUTO_INCREMENT。
  * 两套策略绝不能并存，否则 MP 写入的雪花 ID 会把自增计数器顶到天文数字；
  * - 逻辑删除：deleted_at 为毫秒时间戳，0 表示未删除。
- * 所有唯一索引都必须带上该列，否则注销后的账号会永久占用账号名、无法重新注册（ADR-1）；
+ * 所有唯一索引都必须带上该列，否则注销后的账号会永久占用账号名、无法重新注册；
  * - 时间字段：统一 _at 后缀、datetime 类型（不用 timestamp，避免 2038 与时区隐式转换），
  * 值由 com.bhu.runshistudioweb.config.MyMetaObjectHandler 自动填充。
  *
  * 注意：本类字段与 DDL 一一对应，不要在此直接加业务展示字段；
  * 对外返回时应使用 VO，避免密码等敏感字段泄露。
+ *
+ * @author shaoshing
  */
 @Data
 @TableName("sys_user")
@@ -59,7 +61,7 @@ public class SysUser implements Serializable {
      * 权限角色：user-普通注册用户, member-工作室成员, admin-管理员
      * 取值定义见 com.bhu.runshistudioweb.model.enums.UserRoleEnum，
      * 必须与 DDL 注释、@SaCheckRole 入参保持一致（三处任一不一致都会静默判定为无权限）
-     * 用 varchar 而非 tinyint，是为了排障时一眼读懂、且新增角色不必改表（DESIGN.md 4.2）
+     * 用 varchar 而非 tinyint，是为了排障时一眼读懂、且新增角色不必改表
      */
     private String userRole;
 
@@ -74,14 +76,14 @@ public class SysUser implements Serializable {
 
     /**
      * 用户状态：0-正常，1-封禁（枚举值域由 db/user.sql 的列注释维护）
-     * 与 userRole 是两个正交维度，不要合并成一个「带 ban 的角色」字段（ADR-4）
+     * 与 userRole 是两个正交维度，不要合并成一个「带 ban 的角色」字段
      */
     private Integer userStatus;
 
     /**
      * AI 查询次数（基准值，不是实时用量）
      *
-     * 起它不再是「每次提问都要写」的热点行（风险 R1 已收口）：
+     * 它刻意不是「每次提问都要写」的热点行：
      * 提问的增量先进 Redis（ INCR，在数据库事务外），
      * 由定时任务批量回刷到本字段。
      *

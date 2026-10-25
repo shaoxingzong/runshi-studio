@@ -33,6 +33,8 @@ import java.time.LocalDateTime;
  *
  * 唯一键 uk_user_question(user_id, question_id, deleted_at) 带 deleted_at：
  * 全项目铁律，否则「移出错题本后再答错」无法重新入本。
+ *
+ * @author shaoshing
  */
 @Data
 @TableName("studio_quiz_wrong")

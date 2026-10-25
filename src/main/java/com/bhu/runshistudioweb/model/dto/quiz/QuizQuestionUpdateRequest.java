@@ -22,6 +22,8 @@ import java.util.List;
  *
  * 为什么没有 @NotBlank：本类的所有字符串字段都允许为 null（= 不改），
  * 空串则会被视为「要改成空」并在整体校验阶段被拒——两者的区别必须保留。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizQuestionUpdateRequest implements Serializable {

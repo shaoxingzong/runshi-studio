@@ -42,6 +42,16 @@ interface StoredBatch {
     verdicts: Record<string, QuizVerdict>;
 }
 
+/**
+ * 刷题会话：一批题的完整生命周期（开批 → 答题 / 跳过 → 下一题 → 结算）
+ *
+ * 为什么把状态放进 sessionStorage 而不是 Pinia：
+ * 刷题是「一次访问内」的临时状态，关掉标签页就该结束；
+ * sessionStorage 正好是「标签页级」的生命周期，也顺手解决了刷新丢进度的问题。
+ * 题目本身不含答案，存浏览器没有泄露风险。
+ *
+ * @returns 会话状态与操作方法；页面卸载时无需手动清理
+ */
 export function useQuizSession() {
     const batch = ref<StoredBatch | null>(null);
     const phase = ref<QuizPhase>('idle');
@@ -94,7 +104,7 @@ export function useQuizSession() {
             }
             return true;
         } catch {
-            // 本地数据损坏（手工改过、旧版本格式）：当作没有，让用户重开一轮
+            // 本地数据损坏（手工改过、格式不匹配）：当作没有，让用户重开一轮
             sessionStorage.removeItem(QUIZ_STORAGE_KEY);
             return false;
         }

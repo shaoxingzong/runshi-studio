@@ -101,6 +101,11 @@ studio:
     api-key: ${AI_API_KEY:}
     model: ${AI_MODEL:deepseek-chat}
     embedding-model: ${AI_EMBEDDING_MODEL:text-embedding-3-small}
+    # 单次回答的最大输出 token 数（含推理模型的思考过程）。
+    # ⚠️ 推理模型（deepseek-v4-pro 等）**必须**设：思考过程同样消耗额度，
+    #    不设时可能全被思考耗尽、正文为空 → 后端判「回答为空」→ 用户看到 C0200。
+    # 设为 0 表示不传该参数（用服务商默认值），换回非推理模型想省钱时可以这样配
+    max-tokens: ${AI_MAX_TOKENS:4096}
     # 想不改包换话术：设为 file:/opt/.../system-prompt.txt
     system-prompt-location: ${AI_SYSTEM_PROMPT_LOCATION:classpath:prompts/system-prompt.txt}
 

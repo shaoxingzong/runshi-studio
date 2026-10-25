@@ -26,6 +26,8 @@ import com.bhu.runshistudioweb.model.vo.quiz.QuizWrongItemVO;
  * 这样停用是可逆的——重新启用后条目自动回来。
  *
  * 约定：参数不合法 / 越权时抛 BusinessException，不返回 null。
+ *
+ * @author shaoshing
  */
 public interface QuizWrongService extends IService<StudioQuizWrong> {
 

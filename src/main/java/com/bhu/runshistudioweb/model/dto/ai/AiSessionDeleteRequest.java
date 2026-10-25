@@ -18,6 +18,8 @@ import java.io.Serializable;
  * 删除的归属规则与提问完全一致（见 AiChatServiceImpl）：
  * 绑定用户的会话仅本人可删；匿名会话凭不可枚举的雪花 ID 可删；
  * 不存在与无权统一返回 A0402，不暴露存在性。
+ *
+ * @author shaoshing
  */
 @Data
 public class AiSessionDeleteRequest implements Serializable {

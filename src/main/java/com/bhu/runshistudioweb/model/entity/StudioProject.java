@@ -40,7 +40,9 @@ import java.time.LocalDateTime;
  * 默认排序：sort_order 倒序 + created_at 倒序 + id 倒序，
  * 与 idx_status_sort_time (status, sort_order DESC, created_at DESC) 同向。
  *
- * 逻辑删除、时间填充、雪花主键三条全局约定与其它主表一致，见 db/DESIGN.md。
+ * 逻辑删除、时间填充、雪花主键三条全局约定与其它主表一致。
+ *
+ * @author shaoshing
  */
 @Data
 @TableName("studio_project")

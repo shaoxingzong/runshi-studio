@@ -20,6 +20,8 @@ import java.io.Serializable;
  *
  * 改名到已存在的章节名时合并（两章并成一章），并提示管理员——
  * 这比报错「名称已存在」更符合直觉：用户想的大概率就是合并。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizChapterRenameRequest implements Serializable {

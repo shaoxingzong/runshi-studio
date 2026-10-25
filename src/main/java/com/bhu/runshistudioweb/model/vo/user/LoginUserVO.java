@@ -17,6 +17,8 @@ import java.time.LocalDateTime;
  * - 解耦：接口契约与数据库表结构分离，加字段、改列名不会直接影响前端。
  *
  * 注意：VO 只用于「往外返回」，不要拿它接收前端参数；接收参数请用 DTO。
+ *
+ * @author shaoshing
  */
 @Data
 public class LoginUserVO implements Serializable {

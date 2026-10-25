@@ -21,6 +21,8 @@ import java.io.Serializable;
  * score 是相似度，不是置信度：它是向量余弦相似度（0~1，越高越像），
  * 只是排序依据与阈值过滤依据，不要当成「答案正确的概率」展示给用户
  * （那会误导，且不同向量模型的分值分布并不可比）。
+ *
+ * @author shaoshing
  */
 @Data
 public class KnowledgeSourceVO implements Serializable {

@@ -41,7 +41,7 @@ export interface Overview {
 /**
  * 成员（脱敏）
  *
- * ⚠️ 它只出现在项目详情的「参与成员」里（产品确认保留的例外）——
+ * 它只出现在项目详情的「参与成员」里（产品确认保留的例外）——
  * 官网没有成员列表页 / 详情页，也不要用它去调 `/member/list` 或 `/member/detail`
  * （后端没有这些接口，调用会 404）。
  */
@@ -263,7 +263,7 @@ export interface Post {
 export interface PostDetail extends Post {
     // 正文（Markdown，图片内嵌其中）
     //
-    // ⚠️ 它是成员提交的内容，比管理员录入的项目正文更不可信，
+    // 它是成员提交的内容，比管理员录入的项目正文更不可信，
     // 渲染前必须走「marked → DOMPurify 白名单清洗 → v-html」，
     // 且要额外限制 img 的 src 只能是站内路径（见 PostDetail.vue）
     content?: string | null;
@@ -315,7 +315,7 @@ export interface PostAudit {
  * 「已通过」的帖子且会自增浏览量，两者都满足不了编辑场景。
  */
 export interface PostAdminDetail extends PostAudit {
-    // 正文（Markdown，图片内嵌其中；⚠️ 成员提交的内容，按需做清洗处理）
+    // 正文（Markdown，图片内嵌其中；成员提交的内容，按需做清洗处理）
     content?: string | null;
 }
 
@@ -500,7 +500,7 @@ export interface QuizOption {
 /**
  * 题目（答题前）
  *
- * ⚠️ 结构上没有 correctLabels / analysis：
+ * 结构上没有 correctLabels / analysis：
  * 正确答案与解析只出现在提交后的 QuizVerdict 里。
  * 不要为了「前端先判一下」往这里加字段——那等于把答案发给了客户端。
  */

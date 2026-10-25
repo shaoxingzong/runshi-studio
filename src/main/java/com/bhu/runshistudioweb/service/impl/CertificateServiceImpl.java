@@ -33,16 +33,18 @@ import java.util.List;
  *
  * 本模块四个考点在实现里的落点：
  * - 级别与类型正交：两个字段分别用 CertificateLevelEnum /
- * CertificateTypeEnum 校验，绝不接收「国家级竞赛」这种合并写法（ADR-5）；
+ * CertificateTypeEnum 校验，绝不接收「国家级竞赛」这种合并写法；
  * - 获奖日期：非空 + 不得晚于今天（ isAfter(LocalDate.now()) 即拒绝）；
  * - 证书图片：非空校验（DDL 中 image_url 是 NOT NULL，不校验会直接抛 SQL 错误）；
  * - 默认排序：sort_order 倒序 + award_date 倒序，
  * 与 idx_type_date / idx_level_date 的 (维度列, award_date DESC) 索引结构同向。
  *
  * 事务说明：deleteCertificate 是「清理关联表 + 逻辑删除主表」两次写，
- * 已加 @Transactional(rollbackFor = Exception.class)（DESIGN.md 2.2）；
+ * 加了 @Transactional(rollbackFor = Exception.class)；
  * 新增与更新是一次写，不加事务。写 rollbackFor = Exception.class 的原因：
  * Spring 默认只回滚 RuntimeException，显式声明才能覆盖受检异常。
+ *
+ * @author shaoshing
  */
 @Service
 @RequiredArgsConstructor
@@ -87,7 +89,7 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
 
         // 标题：trim 后再判空，避免"   "这种全空格的标题入库
         ThrowUtils.throwIf(StrUtil.isBlank(title), ErrorCode.PARAMS_ERROR, "证书名称不能为空");
-        // 两个维度：必须是枚举内的合法取值（ADR-5 要求拆开存，各自独立校验）
+        // 两个维度：必须是枚举内的合法取值（拆开存，各自独立校验）
         CertificateLevelEnum level = resolveLevel(certificateAddRequest.getAwardLevel(), true);
         CertificateTypeEnum type = resolveType(certificateAddRequest.getAwardType(), true);
         // 获奖日期：非空 + 不得晚于今天
@@ -168,7 +170,7 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
      * 删除证书（逻辑删除 + 同一事务内清理成员-证书关联）
      *
      * 顺序是「先清关联、再删主表」，且两次写必须在同一事务内：
-     * 反过来（先删主表）一旦清理失败，就会留下指向已删除证书的悬空关联（DESIGN.md 2.2）；
+     * 反过来（先删主表）一旦清理失败，就会留下指向已删除证书的悬空关联；
      * 而现在的顺序下，主表删除失败会让整个事务回滚，
      * 不会出现「证书还在、关联却没了」的静默数据丢失。
      *
@@ -185,7 +187,7 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
         StudioCertificate existing = this.getById(id);
         ThrowUtils.throwIf(existing == null, ErrorCode.NOT_FOUND_ERROR, "证书不存在");
 
-        // 同一事务内先清关联（DESIGN.md 2.2）：证书被删后，
+        // 同一事务内先清关联：证书被删后，
         // 「某成员持有该证书」的绑定关系必须一并消失，否则会留下悬空数据
         memberCertificateService.removeByCertificateId(id);
 

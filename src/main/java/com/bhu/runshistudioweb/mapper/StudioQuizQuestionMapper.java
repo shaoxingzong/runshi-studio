@@ -19,6 +19,8 @@ import org.apache.ibatis.annotations.Mapper;
  * - 索引利用：按教材+章节取题必须带 status 并走 idx_scope，
  * 顺序模式还要按 question_seq, id 排序——索引最后一列是 id，
  * 正是为了让「同题序」的行次序稳定。
+ *
+ * @author shaoshing
  */
 @Mapper
 public interface StudioQuizQuestionMapper extends BaseMapper<StudioQuizQuestion> {

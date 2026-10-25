@@ -16,6 +16,8 @@ import lombok.Getter;
  *
  * 注意：如果只是想「条件成立就抛异常」，业务代码里更推荐用
  * ThrowUtils#throwIf，可少写一个 if 块。
+ *
+ * @author shaoshing
  */
 @Getter
 public class BusinessException extends RuntimeException {

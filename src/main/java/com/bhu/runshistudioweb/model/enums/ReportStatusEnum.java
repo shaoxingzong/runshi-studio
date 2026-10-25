@@ -12,6 +12,8 @@ package com.bhu.runshistudioweb.model.enums;
  *
  * 取值必须与 DDL 中 studio_post_report.status 的列注释保持一致：
  * 0-待处理, 1-已处置, 2-举报不成立。
+ *
+ * @author shaoshing
  */
 public enum ReportStatusEnum {
 

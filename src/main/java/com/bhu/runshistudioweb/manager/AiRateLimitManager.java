@@ -18,6 +18,8 @@ import org.springframework.stereotype.Component;
  *
  * 预留状态：AI 咨询当前要求登录（见 AiChatServiceImpl 的准入），
  * 游客提问路径暂时不可达；若将来重新开放匿名提问，直接注入本类调用即可。
+ *
+ * @author shaoshing
  */
 @Slf4j
 @Component

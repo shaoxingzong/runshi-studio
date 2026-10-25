@@ -45,6 +45,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *
  * 为什么不调 AI Stub：本类不经过发帖接口，文章由 createApprovedPost
  * 直接以「已通过」状态落库——要验的是点赞本身，先把内容审核链路排除在外。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc

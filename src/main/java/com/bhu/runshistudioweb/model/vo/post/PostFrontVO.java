@@ -22,6 +22,8 @@ import java.time.LocalDateTime;
  * 为什么不含 status：列表查询已经过滤了「仅已通过」，
  * 返回的状态恒为 1，带上它只会让前端多一个无意义的判断分支。
  * 需要看状态的地方走「我的发帖」接口（ PostVO）。
+ *
+ * @author shaoshing
  */
 @Data
 public class PostFrontVO implements Serializable {

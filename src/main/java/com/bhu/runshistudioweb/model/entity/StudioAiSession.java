@@ -30,7 +30,9 @@ import java.time.LocalDateTime;
  * updated_at 在每次追加消息时由 Service 主动刷新（同一事务内），
  * 这样「最近活跃的会话」可以直接按它排序，不需要去 join 消息表求 MAX(created_at)。
  *
- * 审计字段、逻辑删除、雪花主键三条全局约定与其它主表完全一致，见 db/DESIGN.md。
+ * 审计字段、逻辑删除、雪花主键三条全局约定与其它主表完全一致。
+ *
+ * @author shaoshing
  */
 @Data
 @TableName("studio_ai_session")

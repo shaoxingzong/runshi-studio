@@ -14,6 +14,8 @@ package com.bhu.runshistudioweb.model.enums;
  * - 单选：恰好 1 个正确项，提交时恰好 1 个标签；
  * - 多选：至少 2 个正确项，提交时至少 1 个标签，全对才得分（不给部分分）。
  * 这些规则将来可能放宽（例如允许「2 选 1」的多选变体），写进 DDL 就得改表。
+ *
+ * @author shaoshing
  */
 public enum QuizQuestionTypeEnum {
 

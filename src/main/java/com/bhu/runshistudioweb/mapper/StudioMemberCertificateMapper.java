@@ -16,6 +16,8 @@ import org.apache.ibatis.annotations.Mapper;
  * 而关联到的 studio_member / studio_certificate 两张主表是逻辑删除——
  * 它们的 deleted_at = 0 由 MP 自动追加，手写 JOIN 时必须自己带上，
  * 否则会查出「已删除成员」的悬空数据。
+ *
+ * @author shaoshing
  */
 @Mapper
 public interface StudioMemberCertificateMapper extends BaseMapper<StudioMemberCertificate> {

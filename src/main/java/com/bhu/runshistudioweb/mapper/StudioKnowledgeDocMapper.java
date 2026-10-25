@@ -18,6 +18,8 @@ import org.apache.ibatis.annotations.Mapper;
  * 两者的一致性由上层 Service 保证（先写库拿到 id，再用它当向量条目 id）。
  *
  * 逻辑删除由 @TableLogic 驱动：所有查询自动追加 deleted_at = 0。
+ *
+ * @author shaoshing
  */
 @Mapper
 public interface StudioKnowledgeDocMapper extends BaseMapper<StudioKnowledgeDoc> {

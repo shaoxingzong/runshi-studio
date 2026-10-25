@@ -52,6 +52,8 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * 接口地址前缀：server.servlet.context-path=/api，所以完整路径是
  * http://localhost:8080/api/user/login。
+ *
+ * @author shaoshing
  */
 @RestController
 @RequestMapping("/user")

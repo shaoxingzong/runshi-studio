@@ -49,6 +49,8 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
  * 缺少必填参数 MissingServletRequestParameterException、
  * 请求方法不支持 HttpRequestMethodNotSupportedException 等）会落到兜底方法返回 B0001，
  * 需要时按同样思路补一个处理器即可。
+ *
+ * @author shaoshing
  */
 @Hidden               // 不在接口文档中暴露异常处理器本身
 @RestControllerAdvice // 全局异常处理，作用于所有 @RestController

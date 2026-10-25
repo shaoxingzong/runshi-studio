@@ -11,7 +11,7 @@ import { MARKDOWN_ALLOWED_ATTR, MARKDOWN_ALLOWED_TAGS, renderMarkdown } from './
 // 这类回归单测 renderer 或单测 sanitize 都发现不了，必须测链路。
 //
 // 同时反向守住安全底线：白名单为增强放行了 div/button/id 等，
-// 不能顺手把 ``、`onerror=` 也放进来。
+// 不能顺手把 `<script>`、`onerror=` 也放进来。
 
 /** 复刻两个详情页的清洗调用（白名单与工具同源，差异只在帖子页的 img 钩子） */
 function sanitize(html: string, restrictImages = false): string {

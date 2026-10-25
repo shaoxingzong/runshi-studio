@@ -12,6 +12,8 @@ package com.bhu.runshistudioweb.constant;
  *
  * 真正该配置的是「一轮多少题」「连对几次算掌握」这类产品口径，
  * 它们在 config/QuizProperties（ studio.quiz.*）。
+ *
+ * @author shaoshing
  */
 public final class QuizConstant {
 

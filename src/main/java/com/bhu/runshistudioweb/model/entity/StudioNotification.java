@@ -19,7 +19,9 @@ import java.time.LocalDateTime;
  * 审计四列由 MyMetaObjectHandler 自动填充。
  *
  * title / content 是快照不是模板引用：通知发出后业务数据怎么变
- * （帖子改名、评论被删）都不影响已收到通知的文字——通知记录的是「当时发生了什么」。
+ * （帖子改名、评论被删）都不影响已收到通知的文字——通知记录的是「那一刻发生了什么」。
+ *
+ * @author shaoshing
  */
 @Data
 @TableName("studio_notification")

@@ -35,10 +35,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * - 错误码约定：参数非法 A0401、成员/证书不存在 A0402、
  * 重复绑定 A0401、解绑不存在的关系 A0402；
  * - C 端脱敏与匿名可访问：官网接口不带 token 可用，且不含置顶权重与审计字段；
- * - 级联清理：删成员 / 删证书时，关联行必须被同一事务清掉（DESIGN.md 2.2）。
+ * - 级联清理：删成员 / 删证书时，关联行必须被同一事务清掉。
  *
  * 测试数据一律通过管理端接口创建（而不是直接插库），这样也顺带验证了主表接口可用；
  * 关联行是否残留则用 Mapper 直查，避免「用同一个 Service 的读方法验证它的写方法」。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -215,16 +217,13 @@ class MemberCertificateCrudTest {
         assertEquals("证书不存在", message(noCert));
 
         // 查询接口缺参数：必须是 A0401，不能被兜底成 B0001
-        // （原 /member/certificate/list 的缺参用例已随该 C 端接口下线删除）
         assertEquals("A0401", code(getBody("/member-certificate/member/list", token)), "缺 certificateId 应返回 A0401");
     }
 
-    // ==================== 排序（原 C 端用例改用管理端接口）====================
+    // ==================== 排序（走管理端接口）====================
 
-    // 原有两个 C 端用例（「匿名可访问 + 脱敏」「C 端排序」）已随 /member/certificate/list
-    // 整体删除。排序这条行为本身仍值得守住，
-    // 因此改用管理端同名接口 /member-certificate/certificate/list 继续覆盖——
-    // 两端共用同一套取数逻辑，证明「排序规则没有因下线而改变」。
+    // 排序这条行为值得单独守住，这里用管理端接口 /member-certificate/certificate/list 覆盖：
+    // 它与管理端其它入口共用同一套取数逻辑，排序规则改坏时会立刻被这条用例发现。
     @Test
     @DisplayName("排序：置顶权重高的证书排在前面（管理端接口）")
     void sortedBySortOrderThenAwardDate() throws Exception {
@@ -255,7 +254,7 @@ class MemberCertificateCrudTest {
 
         assertEquals("00000", code(postJson("/member/delete", "{\"id\":" + memberId + "}", token)));
 
-        assertEquals(0, countRelations(memberId, certificateId), "删成员后关联行必须被清空（DESIGN.md 2.2）");
+        assertEquals(0, countRelations(memberId, certificateId), "删成员后关联行必须被清空（）");
     }
 
     @Test
@@ -269,6 +268,6 @@ class MemberCertificateCrudTest {
 
         assertEquals("00000", code(postJson("/certificate/delete", "{\"id\":" + certificateId + "}", token)));
 
-        assertEquals(0, countRelations(memberId, certificateId), "删证书后关联行必须被清空（DESIGN.md 2.2）");
+        assertEquals(0, countRelations(memberId, certificateId), "删证书后关联行必须被清空（）");
     }
 }

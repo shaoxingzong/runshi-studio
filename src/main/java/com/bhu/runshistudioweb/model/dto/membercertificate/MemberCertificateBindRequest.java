@@ -21,6 +21,8 @@ import java.io.Serializable;
  * @Positive 是廉价的格式兜底：能挡住 0、-1 这类明显非法的探测请求，
  * 避免它们打到数据库再返回「不存在」这种误导性提示。真正的存在性校验在 Service 里
  * （成员/证书是否存在、是否已绑定），注解表达不了那些业务规则。
+ *
+ * @author shaoshing
  */
 @Data
 public class MemberCertificateBindRequest implements Serializable {

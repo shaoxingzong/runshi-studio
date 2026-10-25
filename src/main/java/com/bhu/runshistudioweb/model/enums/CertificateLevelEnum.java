@@ -3,7 +3,7 @@ package com.bhu.runshistudioweb.model.enums;
 /**
  * 证书「级别」维度枚举（对应 studio_certificate.award_level）
  *
- * 为什么级别和类型是两套枚举（ADR-5）：初版设计里曾把「国家级竞赛 / 软著」这种
+ * 为什么级别和类型是两套枚举：若把「国家级竞赛 / 软著」这种
  * 「级别 + 类型」合并进一个字段，结果是任一维度都无法独立筛选与统计——
  * 想查「所有国家级证书」要写 LIKE '%国家级%'，既走不了索引，
  * 又会误匹配到「国家级软著」与「国家级竞赛」之外的写法；想统计「有多少竞赛」同样无解。
@@ -14,6 +14,8 @@ package com.bhu.runshistudioweb.model.enums;
  *
  * 维护约定：新增级别时要同步改 DDL 的列注释（DDL 注释即取值字典），
  * 否则会出现「枚举里加了、库里没写」，后人按注释写代码就会漏值。
+ *
+ * @author shaoshing
  */
 public enum CertificateLevelEnum {
 

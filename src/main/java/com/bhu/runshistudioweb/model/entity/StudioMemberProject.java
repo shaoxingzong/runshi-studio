@@ -25,6 +25,8 @@ import java.time.LocalDateTime;
  * 本表承载的一个不变量：项目队长（ studio_project.leader_id）
  * 必然在本表中有一行对应记录，由 Service 在写项目时同一事务内同步（DESIGN 2.3）。
  * 解绑接口会拦住「移除当前队长」，否则这个不变量会被打破。
+ *
+ * @author shaoshing
  */
 @Data
 @TableName("studio_member_project")

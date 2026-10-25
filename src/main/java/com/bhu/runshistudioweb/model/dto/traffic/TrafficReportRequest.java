@@ -16,6 +16,8 @@ import java.io.Serializable;
  * 不收完整 URL / query：pagePath 只要路径部分。
  * query 里可能带 token（例如分享链接、邮件营销参数），把它原样存进埋点表
  * 等于把凭证写进了一张匿名可写的表里。
+ *
+ * @author shaoshing
  */
 @Data
 public class TrafficReportRequest implements Serializable {
@@ -26,7 +28,7 @@ public class TrafficReportRequest implements Serializable {
      * 页面路径（必填，≤256）：如 /posts、/projects/123
      *
      * 由前端在提交前剥掉 query 与 hash；后端仍会再做一次规范化
-     * （见 TrafficServiceImpl#normalizePath）——前端可能被旧版本缓存。
+     * （见 TrafficServiceImpl#normalizePath）——前端代码可能还是旧缓存。
      *
      * 必须以 / 开头：本接口匿名可写，不收紧格式的话
      * 任意字符串都能进库，把「热门页面」聚合搞成一锅粥。

@@ -48,6 +48,8 @@ import java.util.List;
  * 改写 request.getRemoteAddr()。它的问题不是实现有 bug，而是缺少信息来源的判断——
  * 它无法表达「只信任来自 127.0.0.1 的头」这层语义，等于把所有客户端都当成可信代理。
  * 本项目需要的是「按来源分级信任」，所以自己做，而不是打开那个开关。
+ *
+ * @author shaoshing
  */
 @Slf4j
 @Component
@@ -66,6 +68,14 @@ public class ClientIpManager {
     /** 预解析后的局域网网段 */
     private List<IpUtils.Cidr> lanCidrs = new ArrayList<>();
 
+    /**
+     * 构造时预解析网段配置
+     *
+     * <p>Spring 容器与纯单测走的是同一条初始化路径，不会出现「单测里忘了初始化，
+     * 于是网段为空、判定全是外网」的假阴性。
+     *
+     * @param attendanceProperties 考勤相关配置
+     */
     public ClientIpManager(AttendanceProperties attendanceProperties) {
         this.attendanceProperties = attendanceProperties;
         // 构造即完成预解析：Spring 容器与纯单测走的是同一条初始化路径，
@@ -125,7 +135,7 @@ public class ClientIpManager {
         }
 
         if (!isTrustedProxy(peer)) {
-            // ★ 安全根基：非可信来源，直接忽略它带来的所有头。
+            // 安全根基：非可信来源，直接忽略它带来的所有头。
             // 这条分支同时也是「应用直接暴露、没有反向代理」时的正常路径
             log.debug("对端非可信代理，忽略请求头 | peer={} | xRealIp={} | xff={}", peer, xRealIp, xForwardedFor);
             return peer;

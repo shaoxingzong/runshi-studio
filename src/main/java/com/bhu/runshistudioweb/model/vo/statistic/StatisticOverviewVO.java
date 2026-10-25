@@ -6,7 +6,7 @@ import java.io.Serializable;
 import java.util.Map;
 
 /**
- * 官网首页大盘统计视图对象（DESIGN.md 场景 A 落地）
+ * 官网首页大盘统计视图对象
  *
  * 本类最值钱的一个知识点：计数字段一律用 Integer，不是 Long。
  * 这不是随手选的，是被项目的全局约定推出来的结论：
@@ -28,16 +28,18 @@ import java.util.Map;
  * 本期只覆盖证书维度。
  * 项目模块（ studio_project）落地后在本类加字段即可，
  * 接口路径与响应结构都不用改（这也是用 VO 承载的好处）。
+ *
+ * @author shaoshing
  */
 @Data
 public class StatisticOverviewVO implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    // ⚠️ 原三个成员计数字段（memberTotal / memberInTeam / memberGraduated）已随
-    // 「团队成员不对外展示」删除。本 VO 挂在匿名接口 /statistic/overview 上，
-    // 对外暴露「团队有多少人」同样属于展示成员信息，因此一并移除；
-    // 首页大盘如今只剩证书维度。管理端若将来需要人数，应另开一个要求 admin 的统计接口。
+    // 本类刻意没有成员人数（总数 / 在读 / 已毕业）：
+    // 它挂在匿名接口 /statistic/overview 上，对外暴露「团队有多少人」
+    // 同样属于展示成员信息，与「团队成员不对外展示」的规则冲突。
+    // 首页大盘因此只有证书维度。管理端若需要人数，应另开一个要求 admin 的统计接口。
 
     /** 证书总数（studio_certificate 未删除的全部行数） */
     private Integer certificateTotal;

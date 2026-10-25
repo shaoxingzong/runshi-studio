@@ -22,6 +22,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * 覆盖的核心是「什么情况下必须拿不到角色」：封禁、已逻辑删除、ID 非法。
  * 这些分支一旦漏判，就等于封禁用户仍然能访问管理员接口。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @Transactional

@@ -28,6 +28,8 @@ import com.bhu.runshistudioweb.model.vo.quiz.QuizVerdictVO;
  * 同设备刷新由前端 sessionStorage 兜住。
  *
  * 约定：参数不合法 / 业务不允许时抛 BusinessException，不返回 null。
+ *
+ * @author shaoshing
  */
 public interface QuizPracticeService extends IService<StudioQuizAnswer> {
 

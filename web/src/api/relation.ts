@@ -30,16 +30,16 @@ export const relationApi = {
 
     // 移除参与成员
     //
-    // ⚠️ 当前队长不可移除（A0401）：队长由 `studio_project.leader_id` 决定，
+    // 当前队长不可移除（A0401）：队长由 `studio_project.leader_id` 决定，
     // 后端保证「队长必然在成员列表里」。要换人得先走 `/project/update` 改 leaderId。
     // 界面上应把队长那一行标出来并禁用移除按钮，而不是让用户点了才知道。
     projectMemberUnbind: (projectId: string, memberId: string) =>
         http.post<boolean>('/member-project/unbind', { projectId, memberId }),
 
-    // 某成员参与的全部项目（反向查询：成员详情页的「参与项目」）
+    // 某成员参与的全部项目（反向查询）
     //
-    // ⚠️ 当前无调用方：成员详情页已随「团队成员不对外展示」下线，
-    // 这个方法与它的后端接口一并留下备用。前端若要恢复成员维度的展示可直接复用。
+    // 当前无调用方：成员详情页不对外展示，这里作为备用能力保留。
+    // 前端若要恢复成员维度的展示，可直接复用这个方法。
     memberProjectList: (memberId: string) =>
         http.get<Project[]>('/member-project/project/list', { memberId }),
 
@@ -59,9 +59,9 @@ export const relationApi = {
     certificateMemberUnbind: (memberId: string, certificateId: string) =>
         http.post<boolean>('/member-certificate/unbind', { memberId, certificateId }),
 
-    // 某成员持有的全部证书（反向查询：成员详情页的「持有证书」）
+    // 某成员持有的全部证书（反向查询）
     //
-    // ⚠️ 当前无调用方：原因同 memberProjectList——成员详情页已下线。
+    // 当前无调用方：原因同 memberProjectList——成员维度的展示不对公众开放。
     memberCertificateList: (memberId: string) =>
         http.get<AdminMember[]>('/member-certificate/certificate/list', { memberId }),
 };

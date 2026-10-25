@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 统计服务实现（官网首页大盘，DESIGN.md 场景 A 落地）
+ * 统计服务实现（官网首页大盘）
  *
  * 三条强制口径（改本类前先读）：
  * - 一律排除逻辑删除数据：studio_certificate 带
@@ -45,12 +45,14 @@ import java.util.Map;
  * （成员/证书增删改时什么时候删缓存），那是一个独立任务；
  * - 不做写操作、不做任何入参；
  * - 不为「看起来走了索引」硬凑 SQL：本表量级下 COUNT(*) 与
- * GROUP BY 全表扫描完全可接受（DESIGN 场景 A 的索引论证只是解释
- * 当前路径为什么够用，不是要求我们优化）。
+ * GROUP BY 全表扫描完全可接受（索引论证只用来解释当前路径为什么够用，
+ * 不是要求现在就去优化）。
  *
  * 本期范围：只覆盖证书维度。
  * 项目模块（ studio_project）落地后在 VO 加字段、这里加对应查询即可，
  * 接口路径与响应结构都不用改；管理端若将来需要人数统计，应另开一个要求 admin 的接口。
+ *
+ * @author shaoshing
  */
 @Service
 @RequiredArgsConstructor
@@ -72,7 +74,7 @@ public class StatisticServiceImpl implements StatisticService {
     /**
      * 查询官网首页大盘：共 3 条查询，顺序即实现顺序
      *
-     * 成员维度（总数 / 在读 / 已毕业）已随「团队成员不对外展示」移除。
+     * 刻意不含成员维度（总数 / 在读 / 已毕业）：对外暴露人数同样属于展示成员信息。
      *
      * @return 大盘统计，永不为 null
      */

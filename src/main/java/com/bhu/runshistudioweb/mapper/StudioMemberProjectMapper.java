@@ -17,6 +17,8 @@ import org.apache.ibatis.annotations.Mapper;
  *
  * 索引：uk_member_proj (member_id, project_id) 负责防重（并发兜底），
  * idx_proj_member (project_id, member_id) 负责反向查询。
+ *
+ * @author shaoshing
  */
 @Mapper
 public interface StudioMemberProjectMapper extends BaseMapper<StudioMemberProject> {

@@ -22,6 +22,8 @@ import java.io.Serializable;
  * 注意：本 DTO不接受 status。
  * 审核状态由服务端决定（先审后发，一律先落"待审"），
  * 绝不能让前端传一个"已通过"进来——那等于把审核功能架空了。
+ *
+ * @author shaoshing
  */
 @Data
 public class PostAddRequest implements Serializable {

@@ -12,6 +12,8 @@ package com.bhu.runshistudioweb.model.enums;
  * 答错的题不会在这里反复出现——它们归错题重刷管；
  * - WRONG：只出待复习的错题，最久没复习的先来；
  * - RANDOM：范围内全部启用题里随机抽，一轮内不重复。
+ *
+ * @author shaoshing
  */
 public enum QuizModeEnum {
 

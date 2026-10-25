@@ -15,6 +15,8 @@ import java.io.Serializable;
  *
  * 移动后 textbook_seq 也要跟着改：章节顺序是「教材内」的概念，
  * 换了教材就得用新教材的顺序值，否则排序会错乱。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizChapterMoveRequest implements Serializable {

@@ -41,6 +41,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  *
  * 断言落点放在 Stub 收到的请求体上（messages 只有一条 user），
  * 因为「没有 system 消息」这件事在响应里看不出来，只有模型侧能证明。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc

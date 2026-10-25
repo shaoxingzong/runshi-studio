@@ -21,6 +21,8 @@ import java.io.Serializable;
  * 局部加注解属于重复且容易遗漏其它字段；
  * chunkCount / status 用 Integer，
  * 因为它们是「计数/状态」而不是 ID，必须让前端拿到数字（若用 Long 会变成 "3"）。
+ *
+ * @author shaoshing
  */
 @Data
 public class KnowledgeIngestVO implements Serializable {

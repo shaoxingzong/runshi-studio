@@ -21,6 +21,8 @@ import org.springframework.stereotype.Component;
  * api-key 只从环境变量注入（ AI_API_KEY），不写进仓库：
  * 配置里的写法是 ${AI_API_KEY:}，冒号后留空表示「没有就留空」。
  * 密钥一旦提交进 Git，等于永久泄露（历史提交里删不干净）。
+ *
+ * @author shaoshing
  */
 @Data
 @Component
@@ -45,6 +47,27 @@ public class AiProperties {
 
     /** 模型名（如 deepseek-chat、 gpt-4o-mini） */
     private String model = "deepseek-chat";
+
+    /**
+     * 单次回答的最大输出 token 数
+     *
+     * <p><b>为什么必须有这个配置项</b>：
+     * 推理模型（如 {@code deepseek-v4-pro}）会先输出一大段 {@code reasoning_content}
+     * （思考过程），<b>这部分同样消耗 max_tokens 额度</b>。
+     * 不显式设置时用的是服务商默认值，推理模型在 max_tokens=800 时
+     * 800 个 token 全被思考过程耗尽、正文 {@code content} 为空，
+     * 于是 {@code AiManager#extractAnswer} 判定「回答为空」并抛 C0200——
+     * 用户看到的是「AI 服务暂时不可用」，而真实原因只是额度被思考吃光了。
+     *
+     * <p>给 4096 是「思考 + 正文」都够用的量：简单问题思考约 100–800 token、
+     * 正文几十到几百 token，4096 有充分余量；同时它也是多数 OpenAI 兼容服务的常见上限，
+     * 不会因为超限被服务端直接拒绝。
+     *
+     * <p>对非推理模型（flash / qwen-plus 等）它只是一个宽松的上限，不会改变行为。
+     * 设成 null 或 <= 0 表示「不传该参数」，回到服务商默认值——
+     * 换回非推理模型且想省钱时可以这样配。
+     */
+    private Integer maxTokens = 4096;
 
     /**
      * 系统提示词（system prompt）的位置，而不是提示词本身
@@ -84,18 +107,38 @@ public class AiProperties {
      */
     private long circuitBreakerOpenSeconds = 300L;
 
+    /**
+     * 连续失败多少次后打开熔断
+     *
+     * @return 阈值
+     */
     public int getCircuitBreakerFailureThreshold() {
         return circuitBreakerFailureThreshold;
     }
 
+    /**
+     * 设置熔断失败阈值
+     *
+     * @param circuitBreakerFailureThreshold 阈值
+     */
     public void setCircuitBreakerFailureThreshold(int circuitBreakerFailureThreshold) {
         this.circuitBreakerFailureThreshold = circuitBreakerFailureThreshold;
     }
 
+    /**
+     * 熔断打开后多久尝试恢复
+     *
+     * @return 秒数
+     */
     public long getCircuitBreakerOpenSeconds() {
         return circuitBreakerOpenSeconds;
     }
 
+    /**
+     * 设置熔断打开时长
+     *
+     * @param circuitBreakerOpenSeconds 秒数
+     */
     public void setCircuitBreakerOpenSeconds(long circuitBreakerOpenSeconds) {
         this.circuitBreakerOpenSeconds = circuitBreakerOpenSeconds;
     }
@@ -132,7 +175,7 @@ public class AiProperties {
      * 设成 0 等于不过滤（会把完全不相关的块也塞给模型，回答质量反而下降）；
      * 设得太高（如 0.9）则可能一条都不命中，RAG 静默退化成普通聊天。
      *
-     * ⚠️ 这里的「相似度」不是余弦相似度本身：LangChain4j 的
+     * 这里的「相似度」不是余弦相似度本身：LangChain4j 的
      * minScore 比较的是 relevance score = (1 + cosine) / 2，
      * 取值区间从余弦的 [-1, 1] 被线性映射到 [0, 1]。
      * 于是：0.5 对应「正交」（余弦 0，两者毫不相关）而不是「有点相关」，

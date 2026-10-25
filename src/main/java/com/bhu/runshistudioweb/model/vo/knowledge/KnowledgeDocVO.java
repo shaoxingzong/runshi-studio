@@ -21,6 +21,8 @@ import java.time.LocalDateTime;
  * 是雪花 ID，靠全局 JsonConfig 序列化成字符串，这里不再加局部注解；
  * status / chunkCount 用 Integer（它们是状态与计数，不是 ID），
  * 这样前端拿到的是数字而不是 "3"。
+ *
+ * @author shaoshing
  */
 @Data
 public class KnowledgeDocVO implements Serializable {

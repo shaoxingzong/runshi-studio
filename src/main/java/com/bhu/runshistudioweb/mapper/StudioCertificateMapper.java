@@ -22,6 +22,8 @@ import org.apache.ibatis.annotations.Mapper;
  *
  * @MapperScan 已在 MyBatisPlusConfig 中批量扫描本包，
  * 这里的 @Mapper 属于重复声明（保留或去掉都可以，建议二选一）。
+ *
+ * @author shaoshing
  */
 @Mapper
 public interface StudioCertificateMapper extends BaseMapper<StudioCertificate> {

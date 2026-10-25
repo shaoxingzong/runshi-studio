@@ -46,6 +46,8 @@ import jakarta.validation.Valid;
  * 绝不写成 /post/**——那样会把将来新增的帖子管理端接口（审核、删除）一起放行。
  *
  * 接口地址前缀 /api，完整路径形如 http://localhost:8080/api/post/list/page。
+ *
+ * @author shaoshing
  */
 @RestController
 @RequestMapping("/post")

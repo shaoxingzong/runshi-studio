@@ -20,6 +20,8 @@ import java.io.Serializable;
  * 对历史作答 | 无影响 | 无影响
  *
  * 因此「改坏了想临时下线」应该用停用，只有「这题彻底不要了」才删除。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizQuestionStatusRequest implements Serializable {

@@ -45,6 +45,8 @@ import java.util.regex.Pattern;
  * - scheme 混淆只处理大小写与内部空白 / 控制字符（如 java\tscript:），
  * 不处理 HTML 实体编码（ &#106;avascript:）——那类在浏览器侧由
  * DOMPurify 兜（它工作在已解析的 DOM 上，属性值已解码）。
+ *
+ * @author shaoshing
  */
 public final class MarkdownSanitizer {
 

@@ -24,6 +24,8 @@ import org.apache.ibatis.annotations.Mapper;
  * 删除是级联的：删一条顶层评论时，条件写成
  * WHERE id = ? OR parent_id = ?，让它的回复一并逻辑删除，
  * 不留「父已删、子还在」的孤儿回复。
+ *
+ * @author shaoshing
  */
 @Mapper
 public interface StudioPostCommentMapper extends BaseMapper<StudioPostComment> {

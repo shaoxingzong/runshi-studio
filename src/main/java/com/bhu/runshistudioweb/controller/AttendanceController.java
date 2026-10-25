@@ -35,6 +35,8 @@ import java.util.List;
  * Service 层刻意不认识 HTTP（这样「给定这些头该判内网还是外网」可脱离容器直接单测）。
  *
  * 接口地址前缀 /api，完整路径形如 http://localhost:8080/api/attendance/check-in。
+ *
+ * @author shaoshing
  */
 @RestController
 @RequestMapping("/attendance")

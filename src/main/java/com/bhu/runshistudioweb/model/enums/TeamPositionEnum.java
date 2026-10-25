@@ -3,7 +3,7 @@ package com.bhu.runshistudioweb.model.enums;
 /**
  * 团队职务枚举（studio_member.team_position）
  *
- * 为什么用 varchar 而不是 tinyint（DESIGN.md 4.2 的判定标准）：
+ * 为什么用 varchar 而不是 tinyint：
  * 职务取值会扩展（以后可能加「队长 / 组长 / 组员」之外的「顾问」等），
  * 且需要直接参与接口返回给前端渲染标签；字符串值排障时一眼读懂。
  *
@@ -14,6 +14,8 @@ package com.bhu.runshistudioweb.model.enums;
  * 取值必须与 db/user.sql 中 team_position 的列注释保持一致：
  * member-成员, leader-队长, tech_lead-组长；
  * 入库前统一用 of 校验，禁止魔法字符串。
+ *
+ * @author shaoshing
  */
 public enum TeamPositionEnum {
 

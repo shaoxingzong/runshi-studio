@@ -36,6 +36,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
  * 为什么关掉 IP 限流：本类每个用例要连续登录 6 次以上，
  * 不关的话会先撞 IP 限流（10 次/分钟），锁定的断言就失去意义了。
  * 限流本身由 IpRateLimitManagerTest 覆盖，两者不互相干扰。
+ *
+ * @author shaoshing
  */
 @SpringBootTest
 @AutoConfigureMockMvc

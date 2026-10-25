@@ -18,6 +18,8 @@ import java.util.List;
  * answerCount / accuracy 是列表页要展示的两个派生列：
  * 管理员靠它们判断「这道题是不是出得太难/太怪」。它们由 Service 批量查一次
  * GROUP BY question_id 填充，不是逐行 count（那是 N+1）。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizQuestionAdminVO implements Serializable {

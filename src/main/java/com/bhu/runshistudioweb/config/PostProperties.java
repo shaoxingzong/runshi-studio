@@ -15,6 +15,8 @@ import org.springframework.stereotype.Component;
  * @ConfigurationProperties 的绑定依赖 setter 与无参构造，
  * 字段一旦 final 就会让配置绑定彻底失效——这与「依赖注入统一用构造器注入」是两回事，
  * 不要混为一谈（注入方可以是 final，被绑定的配置类不可以）。
+ *
+ * @author shaoshing
  */
 @Data
 @Component
@@ -41,7 +43,7 @@ public class PostProperties {
      * 截断只发生在送审这一步，入库的正文不受任何影响——
      * 用户看到的仍是完整内容，不存在「发了长文结果被存成一半」的情况。
      *
-     * 截断后会在送审消息里注明「以下为节选」，让模型知道它看到的是片段，
+     * 截断后会在送审消息里注明「（后文略）」，让模型知道它看到的是片段，
      * 免得它因为「文章看起来没头没尾」而误判成灌水。
      */
     private int auditContentMaxLength = 2000;

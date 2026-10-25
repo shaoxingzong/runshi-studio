@@ -14,6 +14,8 @@ import java.io.Serializable;
  * 「只复习第一章的错题」是最常见的诉求；没有这个筛选，用户只能一页页翻。
  * 筛选靠 question_id IN (子查询) 实现——与「过滤停用题」共用同一段子查询，
  * 不会多一次查询。
+ *
+ * @author shaoshing
  */
 @Data
 public class QuizWrongQueryRequest implements Serializable {
