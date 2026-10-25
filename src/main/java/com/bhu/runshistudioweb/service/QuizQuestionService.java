@@ -429,7 +429,7 @@ public interface QuizQuestionService extends IService<StudioQuizQuestion> {
      * 章节在新教材里的位置可能因此落到意料之外的地方。
      *
      * @param request 移动请求，不能为 null；来源教材名、章节名、目标教材名必填；
-     *                toTextbookSeq 为 null 表示沿用原来的教材顺序值
+     *                toTextbookSeq 为 null 表示保持该章当前的教材顺序值不变
      * @return 受影响的题目行数（即该章题目数）
      * @throws com.bhu.runshistudioweb.exception.BusinessException 来源章节不存在时抛 A0402
      */
