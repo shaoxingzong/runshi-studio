@@ -23,6 +23,34 @@ export const trafficApi = {
 };
 
 /**
+ * 生成 uuid 的兜底实现
+ *
+ * 为什么需要它：`crypto.randomUUID()` 只在「安全上下文」（HTTPS 或 localhost）
+ * 存在。本站用局域网 HTTP 访问（如 http://10.193.10.244），`crypto.randomUUID`
+ * 直接是 undefined——而 visitorId() 又在路由 afterEach 里被同步调用，
+ * 于是一次抛错就会让**每一次页面跳转**都被全局错误处理器接住，
+ * 表现为「点哪里都弹页面显示异常」。
+ *
+ * `crypto.getRandomValues()` 不受安全上下文限制，用它手拼 v4 uuid；
+ * 连它都不可用时退回时间戳 + 随机数——访客标识只用于 UV 去重，
+ * 不需要密码学强度，但绝不能因为「生成不了 ID」把整站导航搞崩。
+ */
+function fallbackUuid(): string {
+    try {
+        const bytes = crypto.getRandomValues(new Uint8Array(16));
+        bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+        bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 10xx
+        const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+        return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    } catch {
+        return `v-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+}
+
+/** 无痕模式 / 存储被禁用时的进程内标识：保证一次会话内稳定，不落盘 */
+let memoryVisitorId = '';
+
+/**
  * 取访客标识（localStorage 持久化的随机 uuid）
  *
  * 为什么放前端而不是后端：后端拿不到「同一个人」的稳定标识——
@@ -32,15 +60,29 @@ export const trafficApi = {
  * 已知边界：换设备 / 清缓存 / 无痕模式会算成新的 UV。
  * 这是轻量埋点的固有代价（不记 IP、不记设备指纹的取舍），
  * 管理端页面需注明这个口径。
+ *
+ * 本函数**永不抛错**：它在路由 afterEach 里同步执行，抛出去就是全站导航报错。
  */
 export function visitorId(): string {
     const key = 'traffic_visitor_id';
-    let id = localStorage.getItem(key);
-    if (!id) {
-        id = crypto.randomUUID();
-        localStorage.setItem(key, id);
+    try {
+        const cached = localStorage.getItem(key);
+        if (cached) {
+            return cached;
+        }
+        const next =
+            typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+                ? crypto.randomUUID()
+                : fallbackUuid();
+        localStorage.setItem(key, next);
+        return next;
+    } catch {
+        // 无痕模式 / 存储配额满：退回内存标识，本次会话内仍然稳定
+        if (!memoryVisitorId) {
+            memoryVisitorId = fallbackUuid();
+        }
+        return memoryVisitorId;
     }
-    return id;
 }
 
 /**

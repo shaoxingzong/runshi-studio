@@ -260,14 +260,23 @@ router.beforeEach((to) => {
 router.afterEach((to) => {
     usePageMeta({ title: (to.meta.title as string) ?? '' });
 
-    void trafficApi.report({
-        pagePath: to.path,
-        visitorId: visitorId(),
-        referrerHost: referrerHost(),
-        deviceType: deviceType(),
-    }).catch(() => {
-        // 静默：旁路故障不影响主流程（与 RAG 检索失败降级同一条纪律）
-    });
+    // 整段 try/catch：参数构造里要读 localStorage、取 crypto 随机数，
+    // 任何一步抛错都会让 afterEach 异常冒到全局错误处理器——
+    // 表现就是「点每一次跳转都弹页面显示异常」。埋点是纯旁路，绝不参与主流程。
+    try {
+        void trafficApi
+            .report({
+                pagePath: to.path,
+                visitorId: visitorId(),
+                referrerHost: referrerHost(),
+                deviceType: deviceType(),
+            })
+            .catch(() => {
+                // 静默：旁路故障不影响主流程（与 RAG 检索失败降级同一条纪律）
+            });
+    } catch {
+        // 参数构造阶段失败（存储被禁用、安全上下文缺失等）同样吞掉
+    }
 });
 
 export default router;
