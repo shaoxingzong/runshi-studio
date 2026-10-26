@@ -15,8 +15,12 @@ export const aiApi = {
     chat(sessionId: string | null, message: string) {
         return http.post<ChatResponse>('/ai/chat', { sessionId, message });
     },
+    // 会话历史
+    //
+    // 静默：调用方（AiChat）会把「会话已失效」当作可恢复状态处理（清掉本地 id
+    // 直接开新对话），不该先弹一条红字再自我修复。其余失败由调用方决定是否提示。
     history(sessionId: string) {
-        return http.get<ChatMessage[]>('/ai/chat/history', { sessionId });
+        return http.get<ChatMessage[]>('/ai/chat/history', { sessionId }, { silent: true });
     },
     // 删除会话及其全部消息
     //

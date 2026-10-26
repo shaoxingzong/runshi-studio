@@ -4,6 +4,7 @@ import { ElLoading, ElMessage } from 'element-plus';
 
 import App from './App.vue';
 import router from './router';
+import { isRequestError } from './api/request';
 import './styles/index.css';
 
 // 按需引入模式下，这三处必须手动补（它们不在模板里出现，扫描器发现不了）：
@@ -31,11 +32,19 @@ app.directive('loading', ElLoading.directive);
 // 处理口径：控制台保留完整现场（错误 + 组件名 + 阶段，便于排查），
 // 用户侧给一条可操作的提示（刷新重试）。不在 try-catch 里吞掉异常——
 // 吞掉会让「错了但看起来没事」，比白屏更难查。
+//
+// 唯一的例外是请求错误：async 生命周期（onMounted 里 await 接口）抛出的
+// RequestError 也会走到这里，但它已经被请求层按业务码提示过（如「未登录」
+// 「会话不存在」），再补一句「页面显示异常，请刷新重试」只会让用户以为页面坏了。
+// 这类错误只记控制台，不打扰用户。
 app.config.errorHandler = (err, instance, info) => {
     console.error('[Vue 渲染异常]', err, {
         component: instance?.$options?.name ?? '(匿名组件)',
         info,
     });
+    if (isRequestError(err)) {
+        return;
+    }
     ElMessage.error('页面显示异常，请刷新重试');
 };
 

@@ -23,6 +23,34 @@ const loading = ref(false);
 /** 加载失败（含 id 不存在）：此前提炼只有 v-if="detail"，失败时整页空白 */
 const error = ref('');
 
+/** 站内默认封面：封面文件缺失 / 404 时用它顶上，而不是留一块空白 */
+const DEFAULT_COVER = '/uploads/defaults/cover.svg';
+
+/**
+ * 加载失败的头像 URL
+ *
+ * 头像可能指向一个已经不存在的历史文件（换过图床、文件被清理），
+ * 浏览器拿到的就是 404 —— 不处理会留下一个裂图占位。
+ * 记具体 URL 而不是一个布尔：单个成员的头像坏掉，不该让所有人都退回首字。
+ */
+const brokenAvatars = ref<Set<string>>(new Set());
+
+function markAvatarBroken(url: string) {
+    brokenAvatars.value = new Set(brokenAvatars.value).add(url);
+}
+
+/**
+ * 封面加载失败 → 换成站内默认封面
+ *
+ * 加 endsWith 判断是为了防死循环：默认图自己再失败时不再递归替换。
+ */
+function onCoverError(e: Event) {
+    const img = e.target as HTMLImageElement;
+    if (!img.src.endsWith(DEFAULT_COVER)) {
+        img.src = DEFAULT_COVER;
+    }
+}
+
 const STATUS_TEXT: Record<string, string> = { 0: '研发中', 1: '已上线', 2: '已结题' };
 
 /** 正文容器：代码块复制与目录高亮都要在真实 DOM 上接线（v-html 的内容 Vue 管不着） */
@@ -126,7 +154,13 @@ usePageMeta({
         </template>
         <template v-else>
             <div class="card">
-                <img v-if="detail.coverImage" :src="detail.coverImage" :alt="detail.title" class="cover" />
+                <img
+                    v-if="detail.coverImage"
+                    :src="detail.coverImage"
+                    :alt="detail.title"
+                    class="cover"
+                    @error="onCoverError"
+                />
                 <h1>{{ detail.title }}</h1>
                 <span class="tag" :class="detail.status === 1 ? 'green' : 'gray'">
                     {{ STATUS_TEXT[String(detail.status)] || detail.status }}
@@ -174,7 +208,13 @@ usePageMeta({
                          官网没有成员详情路由，跳转会命中兜底路由静默回到首页 -->
                     <div v-for="member in detail.members" :key="member.id" class="member">
                         <div class="member-head">
-                            <img v-if="member.avatar" :src="member.avatar" :alt="member.name" class="avatar" />
+                            <img
+                                v-if="member.avatar && !brokenAvatars.has(member.avatar)"
+                                :src="member.avatar"
+                                :alt="member.name"
+                                class="avatar"
+                                @error="markAvatarBroken(member.avatar)"
+                            />
                             <span v-else class="avatar fallback">{{ member.name.slice(0, 1) }}</span>
                             <div class="who">
                                 <div class="name">{{ member.name }}</div>

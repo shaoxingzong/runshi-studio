@@ -147,7 +147,9 @@ function isActive(path: string): boolean {
                             <span class="bell-icon">🔔</span>
                         </el-badge>
                     </router-link>
-                    <span class="who">{{ user.account }}</span>
+                    <!-- 成员优先显示档案里的姓名：账号（如 chenyu）是登录凭据，
+                     在右上角展示真实姓名才像「自己人」，也让成员身份一眼可辨 -->
+                <span class="who">{{ user.memberProfile?.name || user.account }}</span>
                     <el-button link @click="logout">退出</el-button>
                 </template>
                 <template v-else>

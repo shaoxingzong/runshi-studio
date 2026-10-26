@@ -82,6 +82,15 @@ async function send() {
                     void scrollBottom();
                 },
                 onError: (payload) => {
+                    // 会话丢失（被删除 / 服务端数据重置）：本地 id 已失效，
+                    // 丢掉它让下一次提问自动开新会话——否则每次发送都会撞 A0402，
+                    // 用户只能自己去点「新建会话」
+                    if (payload.code === 'A0402') {
+                        sessionId.value = '';
+                        localStorage.removeItem(SESSION_KEY);
+                        answer.content = '（会话已失效，已自动开启新对话，请重新提问）';
+                        return;
+                    }
                     // SSE 的失败契约：error 事件里带业务码与文案（可能是参数错误、
                     // 配额超限，也可能是 AI 不可用）。统一挂上提示条，让用户知道要重试
                     aiDown.value = true;
@@ -176,6 +185,14 @@ async function loadHistory() {
         messages.value = history.map((item) => ({ role: item.role as 'user' | 'assistant', content: item.content }));
         void scrollBottom();
     } catch (e) {
+        // 会话不存在（被删除 / 服务端数据重置）：本地存的 id 已经失效。
+        // 静默丢掉它，直接进入空白新对话——否则用户会卡在
+        // 「每次都要先点一次新建会话才能提问」上
+        if (isRequestError(e) && e.code === 'A0402') {
+            newChat();
+            ElMessage.info('上次的会话已失效，已为你开启新对话');
+            return;
+        }
         // 请求层已弹过提示（notified）就不再重复，否则同一条错误弹两次
         if (!isRequestError(e) || !e.notified) {
             ElMessage.error((e as Error).message);

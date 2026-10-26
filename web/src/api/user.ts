@@ -34,5 +34,9 @@ export const userApi = {
     mineMember: () => http.get<Member | null>('/member/mine'),
 
     // 注销：清服务端会话与 Cookie
-    logout: () => http.post<boolean>('/user/logout', {}),
+    //
+    // 静默：令牌可能已经过期（后端会返回 A0201），此时本地状态照样要清。
+    // 若让请求层弹一条「未登录」，用户看到的顺序是「红色错误 → 已退出登录」，
+    // 会误以为退出失败——而实际上退出流程已经完整走完了。
+    logout: () => http.post<boolean>('/user/logout', {}, { silent: true }),
 };

@@ -133,33 +133,84 @@ instance.interceptors.request.use((config) => {
     return config;
 });
 
+/**
+ * 把 HTTP 层错误翻译成可展示的 RequestError
+ *
+ * 为什么只处理 400/413/414/431：这几个状态码通常不是后端业务代码返回的，
+ * 而是框架/网关在请求到达 Controller 之前就拒绝了——最常见的是搜索关键词过长，
+ * URL 编码后超过 Nginx/Tomcat 的 ~8KB 请求行上限，响应体是 HTML 而不是统一 JSON。
+ * 不翻译的话，axios 只会给出「Request failed with status code 414」这类英文文案，
+ * 页面最终展示成「网络异常」，用户既不知道原因也不知道该缩短输入。
+ *
+ * 其余 4xx/5xx 保持原样抛出（含 5xx）：它们的响应结构与页面处置方式各不相同，
+ * 不在本次范围内扩大改动面。
+ *
+ * @param error axios 错误对象（可能没有 response）
+ * @return 可展示的 RequestError；不是 400/413/414/431 时返回 null，由调用方原样抛出
+ */
+function toHttpRequestError(error: unknown): RequestError | null {
+    const response = (error as { response?: { status?: number; data?: unknown } })?.response;
+    const status = response?.status;
+    if (typeof status !== 'number' || ![400, 413, 414, 431].includes(status)) {
+        return null;
+    }
+
+    // 后端业务校验失败时可能返回 JSON（含 message）；网关拒绝时 data 是 HTML 字符串
+    const body = response?.data;
+    const backendMessage =
+        body && typeof body === 'object' && typeof (body as { message?: unknown }).message === 'string'
+            ? (body as { message: string }).message
+            : '';
+    const code =
+        body && typeof body === 'object' && typeof (body as { code?: unknown }).code === 'string'
+            ? (body as { code: string }).code
+            : undefined;
+
+    const message =
+        backendMessage ||
+        (status === 413
+            ? '提交内容过大，请压缩后重试'
+            : status === 414 || status === 431
+              ? '输入内容过长，请精简后重试'
+              : '请求参数不正确，请检查输入');
+
+    ElMessage.error(message);
+    return new RequestError(message, 'client', code, true);
+}
+
 // 网络层兜底：没到达服务器（断网 / 超时 / 服务未启动）时的统一处理
 //
 // 与 unwrap 的分工：unwrap 管「服务端正常响应但业务码非 0」，
 // 本拦截器管「根本没连上服务端」—— error.response 为空正是后者的判据。
-// 有 response 的错误（4xx/5xx）不在这里处理，交给 unwrap，避免同一错误弹两次提示。
+// 有 response 的错误（4xx/5xx）不在这里走断网文案；其中 400/413/414/431
+// 先翻译成人话（见 toHttpRequestError），其余状态码原样抛出，交给页面按需处理。
 //
 // 这里把 axios 的英文错误改写成 RequestError：
 // 调用方拿到的 message 直接可展示，kind 可用于决定是否给「重试」按钮。
 instance.interceptors.response.use(
     (response) => response,
     (error) => {
-        // 已有 response：HTTP 层收到了响应（4xx/5xx），交给 unwrap 统一处理
+        // 已有 response：HTTP 层收到了响应（4xx/5xx），不走「断网」兜底
         if (error?.response) {
-            return Promise.reject(error);
+            const httpError = toHttpRequestError(error);
+            return Promise.reject(httpError ?? error);
         }
 
         const isTimeout = error?.code === 'ECONNABORTED' || /timeout/i.test(String(error?.message));
         const kind: ErrorKind = isTimeout ? 'timeout' : 'network';
         const message = describeNetworkError(kind);
 
-        ElMessage.error(message);
-        return Promise.reject(new RequestError(message, kind, undefined, true));
+        // silent 请求（后台轮询、注销）连不上服务端也不打扰用户
+        const silent = Boolean(error?.config?.silent);
+        if (!silent) {
+            ElMessage.error(message);
+        }
+        return Promise.reject(new RequestError(message, kind, undefined, !silent));
     },
 );
 
 /** 把 {code,data,message} 解成 data，非 0 抛错 */
-async function unwrap<T>(promise: Promise<AxiosResponse<ApiResponse<T>>>): Promise<T> {
+async function unwrap<T>(promise: Promise<AxiosResponse<ApiResponse<T>>>, silent = false): Promise<T> {
     const response = await promise;
     const body = response.data;
 
@@ -181,14 +232,25 @@ async function unwrap<T>(promise: Promise<AxiosResponse<ApiResponse<T>>>): Promi
     // 业务错误优先用后端 message（它比通用文案具体，如「账号或密码错误」），
     // 为空时才退回带错误码的兜底文案——错误码对用户无意义，但排障时需要
     const message = body.message || `请求失败（${body.code}）`;
-    ElMessage.error(message);
+    if (!silent) {
+        ElMessage.error(message);
+    }
 
-    throw new RequestError(message, kind, body.code, true);
+    throw new RequestError(message, kind, body.code, !silent);
 }
 
-/** 单次请求的可选项：目前只需要能单独指定超时 */
+/** 单次请求的可选项：超时 + 静默 */
 export interface RequestOptions {
     timeout?: number;
+    /**
+     * 静默模式：失败时不弹全局错误提示，把「要不要告诉用户」交给调用方
+     *
+     * 给两类请求用：
+     * 1. 后台轮询（未读数）：旁路请求失败不该打扰用户，下一次轮询自然恢复；
+     * 2. 注销：登录态可能本就已失效，再弹一条红字会让用户误以为「退出出了问题」，
+     *    而实际上本地状态已经清理干净了。
+     */
+    silent?: boolean;
 }
 
 /**
@@ -209,10 +271,10 @@ export const AUTH_EXPIRED_EVENT = 'auth:expired';
  */
 export const http = {
     get<T>(url: string, params?: Record<string, unknown>, options?: RequestOptions): Promise<T> {
-        return unwrap<T>(instance.get<ApiResponse<T>>(url, { params, ...options }));
+        return unwrap<T>(instance.get<ApiResponse<T>>(url, { params, ...options }), options?.silent);
     },
     post<T>(url: string, data?: unknown, options?: RequestOptions): Promise<T> {
-        return unwrap<T>(instance.post<ApiResponse<T>>(url, data, options));
+        return unwrap<T>(instance.post<ApiResponse<T>>(url, data, options), options?.silent);
     },
 
     // 长耗时请求：给后端真实调用模型的操作用（默认 5 分钟）

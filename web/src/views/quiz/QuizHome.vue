@@ -143,10 +143,23 @@ async function resume() {
 
 onMounted(async () => {
     usePageMeta({ title: '刷题', description: '政治选择题刷题：顺序、错题重刷与随机抽题，错题本自动收录。' });
-    // 布局不会在路由切换时重建，这里主动拉一次确保身份是最新的
-    await user.loadMemberProfile();
+    // 布局不会在路由切换时重建，这里主动拉一次确保身份是最新的。
+    //
+    // 必须自己兜住异常：onMounted 是 async 的，这里 await 的请求一旦失败
+    // （典型场景是退出登录后仍停留在本页），rejection 会冒泡到 Vue 的全局
+    // 错误处理器，弹出「页面显示异常，请刷新重试」——而实际上页面好好的，
+    // 只是登录态没了。这里静默降级，由下面的 isMember 判断统一收口。
+    try {
+        await user.loadMemberProfile();
+    } catch {
+        /* 登录态失效：请求层已清理本地状态，走下面的分支 */
+    }
     if (!user.isMember) {
-        ElMessage.warning('仅工作室成员可以使用刷题功能');
+        if (!user.isLogin) {
+            ElMessage.info('登录后即可使用刷题功能');
+        } else {
+            ElMessage.warning('仅工作室成员可以使用刷题功能');
+        }
         await router.replace('/');
         return;
     }

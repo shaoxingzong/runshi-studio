@@ -39,6 +39,20 @@ const submitting = ref(false);
 /** 点赞请求中（按钮 loading，防连点） */
 const liking = ref(false);
 
+/** 评论区容器：点 meta 行里的「评论 N」要能直接滚过去 */
+const commentsRef = ref<HTMLElement | null>(null);
+
+/**
+ * 跳到评论区
+ *
+ * 用 scrollIntoView 而不是改 location.hash：本页路由已带 hash 语义（目录锚点），
+ * 再塞一个 #comments 会污染前进后退历史；prevent 掉默认跳转后手动滚动，
+ * 顺带把焦点交给输入框附近，键盘用户也能直接就位。
+ */
+function scrollToComments() {
+    commentsRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 /** 正文容器：代码块复制与目录高亮都要在真实 DOM 上接线（v-html 的内容 Vue 管不着） */
 const bodyRef = ref<HTMLElement | null>(null);
 
@@ -265,19 +279,24 @@ usePageMeta({
                         <span class="date">{{ detail.createdAt?.slice(0, 16) }}</span>
                     </div>
                     <span class="spacer" />
-                    <span>浏览 {{ detail.viewCount ?? 0 }}</span>
-                    <span>评论 {{ detail.commentCount ?? 0 }}</span>
-                    <!-- 只能赞不能取消：已赞后禁用，不提供取消入口 -->
+                    <span class="stat">浏览 {{ detail.viewCount ?? 0 }}</span>
+                    <!-- 评论数做成可点击入口：看到「评论 3」想直接跳过去，
+                         不该要求读者自己往下滚找评论区 -->
+                    <a class="stat stat-link" href="#comments" @click.prevent="scrollToComments">
+                        评论 {{ detail.commentCount ?? 0 }}
+                    </a>
+                    <!-- 只能赞不能取消：已赞后禁用，不提供取消入口。
+                         尺寸从 small 提到默认档并加粗——点赞是正文页最主要的互动，
+                         原先它和「浏览」字号相同，视觉上等同于一条统计信息 -->
                     <el-button
                         class="like-btn"
                         :type="detail.liked ? 'primary' : 'default'"
                         :disabled="detail.liked === true"
                         :loading="liking"
                         round
-                        size="small"
                         @click="like"
                     >
-                        {{ detail.liked ? '已赞' : '赞' }} {{ detail.likeCount ?? 0 }}
+                        {{ detail.liked ? '已赞' : '点赞' }} {{ detail.likeCount ?? 0 }}
                     </el-button>
                 </div>
 
@@ -301,8 +320,8 @@ usePageMeta({
                 <div ref="bodyRef" class="markdown-body" v-html="contentHtml" />
             </article>
 
-            <section class="card comments">
-                <h2>评论</h2>
+            <section id="comments" ref="commentsRef" class="card comments">
+                <h2>评论 <span class="count">{{ detail.commentCount ?? 0 }}</span></h2>
 
                 <div class="composer">
                     <el-input
@@ -410,9 +429,41 @@ h1 {
     flex-wrap: wrap;
 }
 
-/* 点赞是轻量互动：small + round 与 meta 行文字高度协调，视觉权重低于标题正文 */
+/* 点赞是正文页最主要的互动入口：比 meta 行的统计文字重一档，
+   但不抢标题的视觉层级——靠尺寸 + 加粗做到「一眼能找到」 */
 .like-btn {
-    margin-left: 2px;
+    margin-left: 8px;
+    padding: 8px 18px;
+    font-weight: 600;
+}
+
+/* meta 行的统计文字：与点赞按钮的左邻右舍保持同一视觉重量 */
+.stat {
+    color: var(--muted);
+    white-space: nowrap;
+}
+
+/* 「评论 N」是可点入口：给品牌色下划线，暗示可以点 */
+.stat-link {
+    color: var(--brand);
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.stat-link:hover {
+    text-decoration: underline;
+}
+
+/* 评论区标题里的计数：小一号的徽标，避免和标题正文抢注意力 */
+.comments h2 .count {
+    margin-left: 6px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--brand-soft);
+    color: var(--brand-dark);
+    font-size: 13px;
+    font-weight: 600;
+    vertical-align: 2px;
 }
 
 .author-box {

@@ -17,7 +17,9 @@ export const notificationApi = {
     // 未读通知数（铃铛轮询专用）
     //
     // 与列表分开的接口：轮询不该拉整页数据。60s 一次，COUNT 查询毫无压力。
-    unreadCount: () => http.get<number>('/notification/unread-count'),
+    // 静默：后台轮询失败不该弹窗——退出登录瞬间那次在途请求会拿到 A0201，
+    // 弹出来就是「刚点退出，屏幕上先红了一下」。
+    unreadCount: () => http.get<number>('/notification/unread-count', undefined, { silent: true }),
 
     // 标记单条已读（幂等：重复调用不刷新已读时间）
     markRead: (id: string) => http.post<boolean>('/notification/read', { id }),
