@@ -6,7 +6,7 @@ import type { Certificate } from '@/api/types';
 
 const list = ref<Certificate[]>([]);
 const loading = ref(false);
-/** 加载失败的原因（空 = 正常）。此前本页是门户唯一没有错误态的页面：请求失败后 loading 消失、表格空白，用户分不清「没数据」还是「坏了」 */
+/** 加载失败的原因（空 = 正常）。没有它时请求失败只是 loading 消失、表格空白，分不清「没数据」还是「坏了」 */
 const error = ref('');
 
 const LEVEL_TEXT: Record<string, string> = { national: '国家级', provincial: '省级', municipal: '市级/校级' };

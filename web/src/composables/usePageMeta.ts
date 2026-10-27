@@ -2,20 +2,11 @@ import { type Ref, watch } from 'vue';
 
 // 页面级 title / description 管理
 //
-// 为什么需要它：SPA 的路由切换不会自己改标签页标题——不处理的话，
-// 所有页面在浏览器标签、书签、历史记录里都叫「润石工作室」，
-// 分享链接时对方看不到内容提示，搜索引擎收录详情页也拿不到有效标题。
-//
-// 两种用法（对应两类页面）：
-// - 静态页（列表 / 表单）：路由 meta.title 配好，
-// router.afterEach 统一调用，一处接线全部生效；
-// - 详情页（项目 / 帖子）：标题带业务数据，数据是异步回来的，
-// 页面内传 computed 进来，数据到位后自动覆盖（先显示「项目详情」，
-// 数据到了换成真实项目名——好过空着或显示Loading）。
+// SPA 切路由不会改标签页标题，不处理的话所有页面在标签、书签、历史里都叫「润石工作室」。
+// 静态页由路由 meta.title + afterEach 统一接线；详情页的标题依赖异步数据，页面内传 computed，
+// 数据到位后自动覆盖。
 //
 // 刻意不做 SSR / 预渲染：后端没有 Node 渲染层，为此引入 vite-ssg 是架构级变更。
-// 当前真实需求（分享不像话、详情页可收录）用运行时 title + 静态 OG 已覆盖，
-// 真有 SEO KPI 时再评估预渲染方案。
 
 const SITE_NAME = '润石工作室';
 
@@ -38,11 +29,7 @@ function fullTitle(title: string): string {
 /**
  * 声明当前页面的标题与描述（组件卸载时恢复）
  *
- * 为什么用 composable 而不是在每个页面里直接写 document.title：
- * 标题要在数据加载完成后才确定（如「项目名 - 润石工作室」），
- * 而 SPA 切换路由不会自动更新 title，忘记写就会出现「所有页面标题都一样」。
- *
- * @param meta 页面元信息；title 与 description 都支持传 ref/computed，数据到位后自动更新
+ * @param meta title 与 description 都支持传 ref/computed，数据到位后自动更新
  */
 export function usePageMeta(meta: {
     // 页面标题（不带站点后缀，拼接规则见 fullTitle）；传 ref/computed 可随数据更新

@@ -9,12 +9,11 @@ import java.io.Serializable;
 /**
  * 管理端：新增用户请求
  *
- * 与用户自助注册（ UserRegisterRequest）的区别：管理员可以指定角色与状态，
- * 因为这两个字段本来就是管理动作的一部分；而自助注册永远不能指定（否则人人可注册管理员）。
- * 所以这两个 DTO 不能合并——「谁能决定字段」才是它们的本质差异。
+ * 与自助注册（UserRegisterRequest）不能合并：管理员可以指定角色与状态，自助注册永远不能
+ * （否则人人可注册管理员）——「谁能决定字段」才是两者的本质差异。
  *
- * 注意：本类的接口必须挂在 @SaCheckRole("admin") 之下（见 UserController），
- * DTO 里的字段再宽松，只要入口是管理员专属的，就不会被普通用户利用。
+ * 本类接口必须挂在 @SaCheckRole("admin") 之下（见 UserController），
+ * 字段再宽松，只要入口是管理员专属的就不会被普通用户利用。
  *
  * @author shaoshing
  */
@@ -51,8 +50,7 @@ public class UserAddRequest implements Serializable {
 
     /**
      * 用户角色（选填），取值见 com.bhu.runshistudioweb.model.enums.UserRoleEnum
-     * 不填按普通用户处理。取值是否合法由 Service 用枚举校验，
-     * 不用 @Pattern 写死字符串——那样枚举一改注解就过期了
+     * 不填按普通用户处理。合法性由 Service 用枚举校验，不用 @Pattern 写死字符串——枚举一改注解就过期
      */
     private String userRole;
 

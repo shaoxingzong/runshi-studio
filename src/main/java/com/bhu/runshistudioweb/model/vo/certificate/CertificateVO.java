@@ -11,15 +11,12 @@ import java.time.LocalDateTime;
 /**
  * 证书视图对象（管理端列表 / 详情使用）
  *
- * 与 CertificateFrontVO 的关系，和成员模块的两个 VO 完全同一套路：
- * - CertificateVO：给管理员看，字段齐全，含运营用的 sortOrder 与审计时间；
- * - CertificateFrontVO：给游客看，只保留官网展示必须的字段。
- * 分成两个类是刻意的：C 端接口是匿名的，任何多返回的字段都等于对外公开，
- * 靠「同一个 VO 传不同的地方」迟早会漏，靠「两个 VO 各写各的字段」则不可能漏。
+ * 与 CertificateFrontVO 的分工：本类给管理员看，字段齐全，含运营用的 sortOrder 与审计时间；
+ * 那个给游客看，只保留官网展示必须的字段。分成两个类而不是一个类加开关：
+ * C 端接口是匿名的，任何多返回的字段都等于对外公开，靠「两个 VO 各写各的字段」则不可能漏。
  *
- * 类型提醒：awardDate 用 LocalDate（与实体、DDL 的 date 一致）。
- * 若写成 LocalDateTime，BeanUtils.copyProperties 会因类型不匹配静默跳过，
- * 表现为管理端列表的获奖日期永远是 null，且不报任何错。
+ * 类型提醒：awardDate 用 LocalDate（与实体、DDL 的 date 一致）。若写成 LocalDateTime，
+ * BeanUtils.copyProperties 会因类型不匹配静默跳过，表现为管理端列表的获奖日期永远是 null，且不报任何错。
  *
  * @author shaoshing
  */

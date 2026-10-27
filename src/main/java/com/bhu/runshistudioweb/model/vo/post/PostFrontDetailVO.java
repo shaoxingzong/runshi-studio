@@ -10,14 +10,11 @@ import java.time.LocalDateTime;
 /**
  * 帖子详情视图对象（C 端详情使用，游客可获取）
  *
- * 与 PostFrontVO 的唯一实质区别是带上 content——
- * 列表不传大字段、详情才传，这是响应体积与体验的取舍（见 com.bhu.runshistudioweb.model.vo.project.ProjectFrontVO 的注释）。
+ * 与 PostFrontVO 的唯一实质区别是带上 content——列表不传大字段、详情才传，这是响应体积与体验的取舍。
  * 其余脱敏口径完全一致：不含驳回理由、不含审核过程、不含审计字段。
  *
- * 安全提示（前端必须配合）：content 是 Markdown，
- * 渲染链路必须是「marked → DOMPurify 白名单清洗 → v-html」，
- * 且清洗时要额外限制 img 的 src 只能是站内路径
- * （现有 ProjectDetail.vue 的清洗配置没有限制 src，帖子是成员发的、比管理员录入更不可信，需要补上这一步）。
+ * 安全提示（前端必须配合）：content 是 Markdown，渲染链路必须是「marked → DOMPurify 白名单清洗 → v-html」，
+ * 且清洗时要额外限制 img 的 src 只能是站内路径。帖子是成员发的、比管理员录入更不可信。
  *
  * @author shaoshing
  */
@@ -53,6 +50,14 @@ public class PostFrontDetailVO implements Serializable {
     /** 作者名 */
     private String authorName;
 
+    /**
+     * 作者头像 URL（成员档案里的头像；未上传或查不到档案时为空）
+     *
+     * 与 PostFrontVO#authorAvatar 同源：列表页与详情页必须显示同一个人的同一张图。
+     * 为空时前端用姓名首字兜底。
+     */
+    private String authorAvatar;
+
     /** 浏览量 */
     private Integer viewCount;
 
@@ -65,7 +70,7 @@ public class PostFrontDetailVO implements Serializable {
     /**
      * 当前登录用户是否已赞过本篇（游客恒为 false）
      *
-     * 与 PostFrontVO#getLiked 同义：带「当前用户」语义，不可被缓存。
+     * 与 PostFrontVO#liked 同义：带「当前用户」语义，不可被缓存。
      */
     private Boolean liked;
 

@@ -5,15 +5,11 @@ import com.bhu.runshistudioweb.model.entity.StudioAiMessage;
 import org.apache.ibatis.annotations.Mapper;
 
 /**
- * AI 消息数据访问层（对应 studio_ai_message）
+ * studio_ai_message 表的数据访问层（AI 对话消息）
  *
- * 继承 BaseMapper 即自动获得单表 CRUD。本模块的两处查询
- * （上下文窗口、历史记录）都是「按 session_id 取最近 N 条」，
- * 用 LambdaQueryWrapper + Page 即可表达，不需要自定义 SQL 与 XML。
- *
- * 提醒：created_at 只有秒级精度，同秒的两条消息时间相同，
- * 因此排序一定要追加 id 作为次级键（雪花 ID 单调递增）。
- * 只按时间排序会导致对话记录偶发颠倒。
+ * 继承 BaseMapper 即得单表 CRUD，故接口为空。三个自动行为只对 MP 方法生效：逻辑删除
+ * （查询自动加 deleted_at = 0、deleteById 实为 UPDATE）、审计填充、分页须走 selectPage。
+ * 坑：created_at 只有秒级精度，排序必须追加 id 作次级键，否则对话记录偶发颠倒。
  *
  * @author shaoshing
  */

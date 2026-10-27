@@ -11,14 +11,12 @@ import java.time.LocalDateTime;
  * AI 消息视图对象（历史记录接口使用）
  *
  * 只暴露前端渲染对话气泡需要的四个字段：id（列表 key）、role（决定气泡在左还是在右）、
- * content、createdAt（时间戳展示）。
+ * content、createdAt。
  *
- * 刻意不包含：sessionId（前端已经知道，属于冗余）、
- * createdBy / updatedBy / updatedAt / deletedAt（审计字段，与展示无关）。
- * 与其它模块一致：脱敏靠「目标 VO 没有这些字段」，而不是拷完再手动置空。
+ * 刻意不含 sessionId（前端已知道，冗余）与 createdBy / updatedBy / updatedAt / deletedAt（审计字段）：
+ * 脱敏靠「目标 VO 没有这些字段」，而不是拷完再手动置空。
  *
- * createdAt 由全局 JsonConfig 统一序列化成 yyyy-MM-dd HH:mm:ss，
- * 前端不需要再处理 ISO-8601 的 "T"。
+ * createdAt 由全局 JsonConfig 统一序列化成 yyyy-MM-dd HH:mm:ss，前端不必处理 ISO-8601 的 "T"。
  *
  * @author shaoshing
  */
@@ -33,7 +31,6 @@ public class AiMessageVO implements Serializable {
      */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
-
     /**
      * 消息角色：user（用户提问，气泡靠右）/ assistant（AI 回答，气泡靠左）
      * 取值见 com.bhu.runshistudioweb.model.enums.AiMessageRoleEnum

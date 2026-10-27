@@ -41,9 +41,8 @@ export const aiApi = {
 /**
  * 流式提问的回调集合（每个事件一个回调，全部可选）
  *
- * 为什么用回调而不是 AsyncGenerator：浏览器端的 SSE 只能靠 fetch + 手动解析流，
- * 后端一次回答会被切成很多 delta；回调让「收到一段就渲染一段」变得直接，
- * 也不必在页面里维护一个可暂停的迭代器。
+ * 用回调而不是 AsyncGenerator：浏览器端 SSE 只能靠 fetch 手动分帧，
+ * 回调让「收到一段渲染一段」更直接，页面里也不用维护可暂停的迭代器。
  */
 export interface StreamHandlers {
     onMeta?: (payload: { sessionId: string }) => void;
@@ -78,8 +77,8 @@ export async function chatStream(
     });
 
     /**
-     * 未登录 / 被拦截 / 服务端异常时返回的不是事件流，而是统一响应体的 JSON。
-     * 必须先判内容类型，否则会把一段 JSON 当成 SSE 帧去分帧，最后一个事件也收不到
+     * 未登录 / 被拦截 / 服务端异常时返回的是统一响应体 JSON，不是事件流。
+     * 必须先判内容类型，否则会把一段 JSON 当 SSE 帧去分帧，最后一个事件也收不到。
      */
     const contentType = response.headers.get('content-type') ?? '';
     if (!contentType.includes('text/event-stream')) {

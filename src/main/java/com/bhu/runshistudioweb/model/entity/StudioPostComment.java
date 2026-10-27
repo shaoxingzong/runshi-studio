@@ -14,25 +14,11 @@ import java.time.LocalDateTime;
 /**
  * 帖子评论实体（对应 studio_post_comment，楼中楼）
  *
- * 楼中楼结构：parentId 为 null 表示「直接评论帖子」，
- * 非 null 表示回复某条评论。只支持两层——回复的回复仍挂在同一个顶层下，
- * 不再继续嵌套。这样列表组装只要一次查询 + 内存分组：
- * WHERE post_id = ? 取回全部，再按 parentId 挂成树。
+ * 只支持两层：parentId 为 null 是直接评论，非 null 是回复，回复的回复仍挂在同一顶层下。
+ * 列表组装只要一次查询 + 内存分组（WHERE post_id = ? 取回后按 parentId 挂树）。
  *
- * 为什么不为 parentId 建索引：它只参与内存里的分组，不进任何 WHERE 条件，
- * 建索引也用不上，白白增加写成本。真正服务查询的是
- * idx_post_status_id (post_id, status, id)——一次查完某帖的已通过评论并按 id 有序返回。
- *
- * content 用 varchar(1000) 而不是 text：评论是短文本。
- * 定长上限让「Service 层校验长度」与「列宽」是同一个值，
- * 不会出现代码限 1000、列却是 text 的错位（那种错位在严格模式下会以截断报错的形式暴露）。
- *
- * deletedBy 是审计字段：管理员删的是别人的内容。
- * 光有 deletedAt 只能知道「什么时候删的」，追溯不到「谁删的」；
- * 出争议时必须能查到操作人，因此单独存一列。
- *
- * status 与帖子共用 com.bhu.runshistudioweb.model.enums.AuditStatusEnum：
- * 两者的状态机完全一致，不另建一套枚举。
+ * content 用 varchar(1000) 而非 text：Service 校验长度与列宽必须是同一个值。
+ * deletedBy 单独存一列：光有 deletedAt 只知道何时删的，出争议时要能查到是谁删的。
  *
  * @author shaoshing
  */
@@ -50,11 +36,7 @@ public class StudioPostComment implements Serializable {
     /** 所属帖子 ID（关联 studio_post.id） */
     private Long postId;
 
-    /**
-     * 评论人 ID（关联 sys_user.id）
-     *
-     * 登录用户即可评论，不要求是工作室成员——这是与发帖的区别。
-     */
+    /** 评论人 ID（sys_user.id）：登录用户即可评论，不要求是工作室成员（这是与发帖的区别） */
     private Long authorId;
 
     /** 父评论 ID（楼中楼）；null 表示直接评论帖子 */
@@ -63,11 +45,7 @@ public class StudioPostComment implements Serializable {
     /** 评论正文（纯文本，最长 1000 字符，与列宽一致） */
     private String content;
 
-    /**
-     * 楼层号（顶层评论从 1 递增；回复某条评论时为 null）
-     *
-     * 只有顶层才有楼层——回复依附于父评论，给它编号会让「第几楼」的语义变得混乱。
-     */
+    /** 楼层号（顶层从 1 递增）；回复为 null，给回复编号会让「第几楼」的语义混乱 */
     private Integer floor;
 
     /** 审核状态：0-待审, 1-已通过, 2-已驳回 */
@@ -76,23 +54,13 @@ public class StudioPostComment implements Serializable {
     /** 驳回理由（给用户看；仅「已驳回」时有意义） */
     private String rejectReason;
 
-    /**
-     * 审核人 ID（管理员）
-     *
-     * AI 自动处置时留空：AI 不是人，不该伪造管理员 ID，
-     * 机器的处置记录见 aiAuditStatus。
-     */
+    /** 审核人 ID（管理员）；AI 自动处置时留空，机器结论记在 aiAuditStatus */
     private Long auditBy;
 
     /** 审核时间 */
     private LocalDateTime auditAt;
 
-    /**
-     * AI 审核结论：0-未判, 1-安全(自动通过), 2-违规(自动驳回), 3-灰色(转人工), 4-判定失败(转人工)
-     *
-     * 取值定义见 com.bhu.runshistudioweb.model.enums.AiAuditStatusEnum，与帖子共用。
-     * 异步审核任务拿它当幂等条件：只处理「未判」的记录。
-     */
+    /** AI 审核结论：0-未判，1-安全，2-违规，3-灰色，4-失败，见 AiAuditStatusEnum；异步任务以「未判」作幂等条件 */
     private Integer aiAuditStatus;
 
     /** AI 给出的理由（给管理端参考；给用户看的驳回说明另存 #rejectReason） */
@@ -120,13 +88,7 @@ public class StudioPostComment implements Serializable {
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 
-    /**
-     * 逻辑删除毫秒时间戳（0-未删除，非0-已删除）
-     *
-     * 删除采用级联：删一条顶层评论时，它的所有回复一并逻辑删除
-     * （ WHERE id = ? OR parent_id = ?），
-     * 不留「父已删、子还在」的悬空回复——那样前端会渲染出没有上下文的孤儿评论。
-     */
+    /** 逻辑删除毫秒时间戳（0-未删除，非0-已删除）；删顶层评论时其回复一并删除，不留悬空回复 */
     @TableLogic
     private Long deletedAt;
 }

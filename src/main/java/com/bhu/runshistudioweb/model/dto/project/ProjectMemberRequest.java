@@ -9,19 +9,13 @@ import java.io.Serializable;
 /**
  * 项目-成员绑定 / 解绑请求体（两个接口共用）
  *
- * 与 MemberCertificateBindRequest 同一套路：bind 与 unbind 入参完全相同，
- * 共用一个类避免「改一个忘了改另一个」；语义差异（新增 vs 删除、冲突时报错 vs 未绑定报错）
- * 由 Service 方法区分，不体现在字段结构上。
+ * bind 与 unbind 入参完全相同，共用一个类避免「改一个忘了改另一个」；语义差异由 Service 方法区分。
  *
- * 注意与「队长同步」的区别：本 DTO 走的是
- * MemberProjectService#bindMember——重复绑定会返回 A0401，
- * 因为这是管理员的显式动作，冲突必须被看见。
- * 而新增/修改项目时同步队长用的是幂等的 ensureMemberInProject
- * （已存在就直接返回），两者不能混用——换队长若走 bind，
- * 管理员每次重复保存都会收到 A0401。
+ * 注意与「队长同步」的区别：本 DTO 走 MemberProjectService#bindMember，重复绑定返回 A0401
+ * （管理员的显式动作，冲突必须被看见）；而新增/修改项目时同步队长走幂等的 ensureMemberInProject，
+ * 两者不能混用——换队长若走 bind，管理员每次重复保存都会收到 A0401。
  *
- * 用 Long 接收雪花 ID：Jackson 对 Long 字段同时接受数字与数字字符串，
- * 前端从列表接口拿到的字符串 ID 可以直接回传。
+ * 用 Long 接收雪花 ID：Jackson 对 Long 同时接受数字与数字字符串，前端拿到的字符串 ID 可直接回传。
  *
  * @author shaoshing
  */

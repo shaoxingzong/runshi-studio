@@ -10,19 +10,14 @@ import java.time.LocalDateTime;
 /**
  * 用户视图对象（管理端列表 / 详情使用）
  *
- * 与 LoginUserVO 的分工：
- * - LoginUserVO：给「用户自己」看，含 token，不含状态位；
- * - UserVO：给「管理员」看，含角色与状态，但永远不含密码——两个 VO 都不含，
- * 这是刻意的：不把敏感字段暴露到即使拷贝也不会带上的实体结构里。
+ * 与 LoginUserVO 的分工：LoginUserVO 给用户自己看，含 token；本类给管理员看，含角色与状态。
+ * 两个 VO 都不含密码——这是刻意的，不把敏感字段暴露到即使拷贝也不会带上的结构里。
  *
- * 修掉的一个隐藏 bug：原实现的 createTime / updateTime 用的是
- * java.util.Date，而实体里是 LocalDateTime。BeanUtils.copyProperties
- * 遇到类型不一致会静默跳过（不报错、不提示），结果是管理端列表里时间列永远是空，
- * 并且必须联调时才会发现。现在统一为 LocalDateTime，与实体一致，拷贝才能生效。
+ * 时间字段统一用 LocalDateTime，与实体一致：BeanUtils.copyProperties 遇到类型不一致会静默跳过
+ * （不报错、不提示），结果是管理端列表里时间列永远是空，且必须联调时才会发现。
  *
- * 字段命名与设计约定（时间字段统一 _at 后缀）：
- * 数据库列是 created_at / updated_at，Java 侧统一叫 createdAt / updatedAt，
- * 不要再用 createTime / updateTime 这类别名，否则一个概念两个名字，联调时极易对错。
+ * 时间字段命名统一 _at 后缀（createdAt / updatedAt），不要再用 createTime / updateTime 这类别名，
+ * 否则一个概念两个名字，联调时极易对错。
  *
  * @author shaoshing
  */
@@ -33,8 +28,7 @@ public class UserVO implements Serializable {
 
     /**
      * 用户 ID（雪花算法 19 位）
-     * 与 LoginUserVO 保持一致，显式标注 Jackson 3 的序列化器转成字符串，
-     * 避免前端因超出 JS 安全整数范围而丢失精度
+     * 与 LoginUserVO 一致，显式标注 ToStringSerializer 转成字符串，避免前端因超出 JS 安全整数范围而丢精度
      */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long id;

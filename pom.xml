@@ -197,6 +197,28 @@
             <version>${langchain4j.version}</version>
         </dependency>
 
+        <!--
+            Redis 向量库（生产环境）：
+            RedisEmbeddingStore 基于 Redis Query Engine 的 FT.CREATE / FT.SEARCH，
+            条数据以 JSON 存储，因此 Redis 需要 8.4+ 且包含 Query Engine + JSON 模块。
+
+            为什么排除 langchain4j-core：
+            社区模块 POM 把 core 钉在 1.20.0，而本项目由 langchain4j 1.20.2 提供 core。
+            不排除会让 Maven 把 core 回退到 1.20.0，出现「主库 1.20.2 + core 1.20.0」
+            的隐式混搭；排除后统一用 1.20.2，与前两个依赖保持一致。
+        -->
+        <dependency>
+            <groupId>dev.langchain4j</groupId>
+            <artifactId>langchain4j-community-redis</artifactId>
+            <version>1.20.0-beta30</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>dev.langchain4j</groupId>
+                    <artifactId>langchain4j-core</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
@@ -283,6 +305,12 @@
                              锁定行为由 AuthLockManagerTest 纯单测 + UserLoginLockTest 端到端
                              （@DynamicPropertySource 覆盖为 true）覆盖，不依赖该开关。 -->
                         <studio.auth.lock.enabled>false</studio.auth.lock.enabled>
+                        <!-- 测试环境固定使用内存向量库：不要求本机 Redis 安装 Query Engine/JSON，
+                             也避免测试之间共享 Redis 索引。生产由 application-prod.yml 切到 redis。 -->
+                        <studio.ai.vector-store-type>memory</studio.ai.vector-store-type>
+                        <!-- 测试不跑启动向量健康检查：内存库每次测试上下文都是空的，
+                             开启会误判为「索引缺失」并触发一次真实 Embedding 重建。 -->
+                        <studio.ai.rag-startup-check-enabled>false</studio.ai.rag-startup-check-enabled>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>

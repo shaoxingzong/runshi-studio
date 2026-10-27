@@ -14,12 +14,9 @@ import java.time.LocalDateTime;
 /**
  * 站内通知实体（对应 studio_notification）
  *
- * 字段与列的映射依赖 MyBatis-Plus 的「驼峰 ↔ 下划线」自动转换。
- * 三条全局约定同其它实体：雪花 ID（ASSIGN_ID）、逻辑删除（deleted_at 毫秒时间戳）、
- * 审计四列由 MyMetaObjectHandler 自动填充。
- *
- * title / content 是快照不是模板引用：通知发出后业务数据怎么变
- * （帖子改名、评论被删）都不影响已收到通知的文字——通知记录的是「那一刻发生了什么」。
+ * title / content 是快照而非模板引用：通知发出后业务数据怎么变，
+ * 都不影响已收到通知的文字——它记录的是「那一刻发生了什么」。
+ * 雪花 ID、逻辑删除、审计四列由 MyMetaObjectHandler 填充，与其它主表一致。
  *
  * @author shaoshing
  */
@@ -36,10 +33,7 @@ public class StudioNotification implements Serializable {
     /** 接收者用户 ID（sys_user.id） */
     private Long receiverId;
 
-    /**
-     * 通知类型，取值见 com.bhu.runshistudioweb.model.enums.NotificationTypeEnum
-     * （POST_APPROVED / POST_REJECTED / COMMENT_REPLIED / MEMBER_GRANTED）
-     */
+    /** 通知类型：POST_APPROVED / POST_REJECTED / COMMENT_REPLIED / MEMBER_GRANTED，见 NotificationTypeEnum */
     private String type;
 
     /** 来源业务类型：POST / COMMENT / USER（与 biz_id 配合做跳转） */
@@ -76,12 +70,7 @@ public class StudioNotification implements Serializable {
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private Long updatedBy;
 
-    /**
-     * 逻辑删除毫秒时间戳，0 表示未删除
-     *
-     * 注意：本字段不能加 @TableField(fill = ...)，它由逻辑删除机制自己维护
-     * （与 SysUser 同一条约定）。
-     */
+    /** 逻辑删除毫秒时间戳（0-未删除）；由逻辑删除机制维护，不能加 @TableField(fill = ...) */
     @TableLogic
     private Long deletedAt;
 }

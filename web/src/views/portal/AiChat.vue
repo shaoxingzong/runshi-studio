@@ -13,9 +13,7 @@ const router = useRouter();
  * AI 助手（SSE 流式）
  *
  * 事件序列（后端契约）：meta → sources → delta* → done / error
- * - meta：首次提问带回 sessionId，记住它即可续聊
- * - sources：本次回答引用的知识库来源（恒发，无命中时是空数组）
- * - delta：回答增量，边收边渲染
+ * meta 首次提问带回 sessionId（续聊靠它）；sources 是本次引用的知识库来源（恒发，无命中为空数组）。
  */
 interface Bubble {
     role: 'user' | 'assistant';
@@ -31,11 +29,10 @@ const sessionId = ref(localStorage.getItem(SESSION_KEY) || '');
 const streaming = ref(false);
 
 /**
- * AI 服务是否不可用（用于输入区上方的持续提示条）
+ * AI 服务是否不可用（输入区上方的持续提示条）
  *
- * 为什么不用全局红色弹窗：token 被冻结这类持续性故障下，用户每问一次
- * 就弹一次红窗，除了反复宣告同一件事没有任何帮助。改成一条可持续显示的提示，
- * 下次成功自动消失——既不打断输入，也不会被「关掉了就忘了」。
+ * 不用全局红色弹窗：token 冻结这类持续性故障下用户会连续提问，每问一次弹一次只是骚扰。
+ * 提示条一直挂着，下次成功自动消失。
  */
 const aiDown = ref(false);
 
@@ -131,7 +128,7 @@ function newChat() {
  * 拉取历史会话
  *
  * 未登录时直接返回而不是发请求：接口要求登录，游客调它会拿到 A0201，
- * 而请求层遇到 A0201 会顺手清掉本地令牌——为一个不该发的请求赔上登录态，不划算。
+ * 而请求层遇到 A0201 会清掉本地令牌——为一个不该发的请求赔上登录态不划算。
  */
 async function loadSessionList() {
     if (!user.isLogin) {
@@ -258,9 +255,8 @@ onMounted(() => {
 
             <div class="card chat">
                 <!--
-                  AI 不可用的持续提示条：替代此前的全局红色弹窗。
-                  持续性故障（token 冻结等）下用户会连续提问，每问一次弹一次红窗
-                  只会造成骚扰；这条提示会一直挂在这里，下次回答成功自动消失
+                  AI 不可用的持续提示条：替代全局红色弹窗。
+                  持续性故障下用户会连续提问，弹窗只会反复骚扰；这条一直挂着，下次成功自动消失
                 -->
                 <el-alert
                     v-if="aiDown"
@@ -275,11 +271,8 @@ onMounted(() => {
                 <div v-for="(msg, index) in messages" :key="index" class="msg" :class="msg.role">
                     <div class="bubble">
                         <!--
-                            未收到首个 delta 之前显示「思考中」：
-                            模型的首个正文 token 通常要等 1~5 秒（检索 + 生成），
-                            这段时间若一片空白，用户会以为卡住了、甚至反复点发送。
-                            sources 事件通常早于首个 delta 到达，因此命中资料时
-                            可以顺便告诉用户「已参考 N 条资料」——比干等更可信。
+                            首个 delta 前显示「思考中」：模型首个 token 通常要等 1~5 秒（检索 + 生成），
+                            一片空白会让用户以为卡住、反复点发送。sources 通常先到，可顺便告知「已参考 N 条资料」
                         -->
                         <span
                             v-if="

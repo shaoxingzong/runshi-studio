@@ -10,21 +10,14 @@ import java.time.LocalDateTime;
 /**
  * AI 会话视图对象（「我的会话」列表使用）
  *
- * 只有四个字段：id（点进去看历史）、title（列表主文案）、
- * updatedAt（「最近聊过」的时间）、messageCount（聊了多少轮）。
+ * 只有四个字段：id（点进去看历史）、title（列表主文案）、updatedAt（最近聊过的时间）、
+ * messageCount（聊了多少轮）。
  *
- * 刻意不包含：userId（属于内部归属字段，返回它等于把账号关系暴露给前端，
- * 而列表本来就是「当前用户的会话」，没有任何前端场景需要它）、
- * createdBy / updatedBy / createdAt / deletedAt（审计字段）。
- * 与其它模块一致：脱敏靠「目标 VO 没有这些字段」，而不是拷完再手动置空。
+ * 刻意不含 userId（返回它等于把账号关系暴露给前端，而列表本来就是当前用户的会话）
+ * 与 createdBy / updatedBy / createdAt / deletedAt（审计字段）：脱敏靠「目标 VO 没有这些字段」。
  *
- * 两个字段的类型选择都是有理由的：
- * - id 用 Long + ToStringSerializer：雪花 ID 19 位，
- * 超出 JS 安全整数范围，必须出字符串；
- * - messageCount 用 Integer：计数天然不超过 int 范围，
- * 而且前端要拿它做展示（「共 12 条」），
- * 不能用 Long——会被全局的 Long → 字符串约定变成 "12"。
- * 一句话：主键出字符串，计数出数字（与 StatisticOverviewVO 同一口径）。
+ * 类型选择：id 用 Long + ToStringSerializer（雪花 ID 19 位超出 JS 安全整数范围，必须出字符串）；
+ * messageCount 用 Integer（前端要拿它做展示，用 Long 会被全局约定变成 "12"）。主键出字符串，计数出数字。
  *
  * @author shaoshing
  */

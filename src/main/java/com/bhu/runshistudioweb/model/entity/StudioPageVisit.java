@@ -13,13 +13,10 @@ import java.time.LocalDateTime;
 /**
  * 门户页面访问记录实体（对应 studio_page_visit）
  *
- * 为什么没有逻辑删除与审计列：访问记录只增不改不删，
- * deleted_at / updated_by 对它没有意义，加了只会让每个查询多带条件。
- * （DDL 与表结构注释在 db/user.sql 第 16 节，含隐私口径说明。）
+ * 没有逻辑删除与审计列：访问记录只增不改不删，加了只会让每个查询多带条件。
  *
- * 隐私口径：记 visitorId（前端随机 uuid）而不记 IP / UA——
- * UV 去重只需要一个稳定标识，IP 属于个人数据，多存一份多一分泄露面。
- * referrerHost 与 pagePath 都刻意不含 query，避免 token 随埋点外泄。
+ * 隐私口径：只记 visitorId（前端随机 uuid）而不记 IP / UA，UV 去重不需要个人数据；
+ * referrerHost 与 pagePath 都不含 query，避免 token 随埋点外泄。
  *
  * @author shaoshing
  */

@@ -8,9 +8,8 @@ import type { Notification } from '@/api/types';
 /**
  * 通知中心（C 端，要求登录）
  *
- * 「已读」在这个页面里是点击即读：条目本身就是跳转链接，
- * 点开的瞬间标记已读——单独放一个「标为已读」按钮是多余的交互
- * （用户点通知的目的就是去看内容，不是去管理已读状态）。
+ * 「已读」是点击即读：条目本身就是跳转链接，用户点通知的目的是看内容，不是管理已读状态，
+ * 单独放一个「标为已读」按钮是多余交互。
  */
 const router = useRouter();
 
@@ -65,10 +64,8 @@ function turn(delta: number) {
 /**
  * 点击条目：标记已读 + 按类型跳转
  *
- * 跳转目标按 type 决定（后端 biz 语义）：
- * 三种帖子/评论类都跳帖子详情（COMMENT_REPLIED 的 biz 是帖子——
- * 同一帖子下的多次回复按话题聚合，见 api/types.ts）；成员授予跳工作台
- * （新能力所在处，比跳首页有用）。
+ * 评论回复也跳帖子详情（COMMENT_REPLIED 的 biz 是帖子，同一帖子的多次回复聚合成一条）；
+ * 成员授予跳工作台——新能力在那里，比跳首页有用。
  */
 async function open(item: Notification) {
     if (item.isRead !== 1) {

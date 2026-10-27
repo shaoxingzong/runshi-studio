@@ -5,29 +5,12 @@ import com.bhu.runshistudioweb.model.entity.StudioMember;
 import org.apache.ibatis.annotations.Mapper;
 
 /**
- * studio_member 表的数据访问层（Mapper）
+ * studio_member 表的数据访问层（成员档案）
  *
- * <p>为什么这个接口是空的：
- * 它继承了 MyBatis-Plus 的 BaseMapper，父接口里已经提供了
- * insert / deleteById / updateById / selectById / selectList / selectPage 等方法，
- * 单表增删改查一行 SQL 都不用写。只有「多表关联」或「复杂动态条件」才需要在这里声明方法。
- *
- * <p>初学者最容易困惑的三件事：
- * <ul>
- *     <li><b>逻辑删除是自动的</b>：实体上有 @TableLogic 字段 deleted_at，
- *     所以 selectList 会自动追加 {@code WHERE deleted_at = 0}，
- *     deleteById 实际执行的是 UPDATE。一旦自己写 SQL（@Select），
- *     这个条件就<b>不会</b>自动加，必须手写，否则会查出已删除的数据；</li>
- *     <li><b>审计字段是自动的</b>：insert / update 时会触发
- *     com.bhu.runshistudioweb.config.MyMetaObjectHandler，
- *     自动填 createdAt / updatedAt / createdBy / updatedBy，不用自己 set；</li>
- *     <li><b>分页必须走 selectPage</b>：自己 new 一个 Page 对象传进普通查询是<b>不会</b>分页的，
- *     必须调用 selectPage，因为分页靠的是拦截器。</li>
- * </ul>
- *
- * <p>业务上要特别注意：本表是「成员身份」的唯一权威来源。
- * 判断一个人是不是工作室成员，看的是这张表里有没有他 user_id 的在队档案，
- * 而不是看 sys_user.user_role 是不是 member——角色只是权限标签，可能与档案不同步。
+ * 继承 BaseMapper 即得单表 CRUD，故接口为空。三个自动行为只对 MP 方法生效：逻辑删除
+ * （查询自动加 deleted_at = 0、deleteById 实为 UPDATE）、审计填充、分页须走 selectPage。
+ * 坑：成员身份的唯一权威源是本表有没有他 user_id 的档案，不是 sys_user.user_role——
+ * 角色只是权限标签，可能与档案不同步。
  *
  * @author shaoshing
  */

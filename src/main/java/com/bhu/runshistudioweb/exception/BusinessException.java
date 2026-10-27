@@ -3,19 +3,14 @@ package com.bhu.runshistudioweb.exception;
 import lombok.Getter;
 
 /**
- * 业务异常：继承自 RuntimeException，专门用于表达「可预期的业务失败」
- * （如：用户已存在、参数不合法、无权限等）。
+ * 业务异常：继承 RuntimeException，专门表达「可预期的业务失败」
+ * （用户已存在、参数不合法、无权限等）。
  *
- * 设计要点：
- * - 继承 RuntimeException 而非 Exception：业务校验失败属于预期内分支，
- * 不需要每一层都写 try-catch，也不该污染方法签名（无需 throws 声明）；
- * - 携带 code：由 GlobalExceptionHandler 取出后原样返回给前端，
- * 这样「抛异常」和「返回错误码」两件事就统一了，业务代码只管抛，不用层层往回传错误码；
- * - 该异常会被全局异常处理器捕获并原样透传 code 与 message，
- * 所以 message 必须是能给用户看的文案，不能塞 SQL、堆栈等内部细节。
+ * 用运行时异常：这类失败是预期内分支，不该污染方法签名，也不必层层 try-catch。
+ * code 由 GlobalExceptionHandler 原样透传，业务代码只管抛；message 会直接给用户看，
+ * 不能塞 SQL、堆栈等内部细节。
  *
- * 注意：如果只是想「条件成立就抛异常」，业务代码里更推荐用
- * ThrowUtils#throwIf，可少写一个 if 块。
+ * 只想「条件成立就抛异常」时用 ThrowUtils#throwIf，可少写一个 if 块。
  *
  * @author shaoshing
  */

@@ -14,23 +14,11 @@ import java.time.LocalDateTime;
 /**
  * AI 咨询消息实体（对应 studio_ai_message）
  *
- * 一条消息 = 一句话（用户提问 或 AI 回答），通过 sessionId 归属于某个会话。
+ * 一条消息 = 用户提问或 AI 回答，通过 sessionId 归属会话。
+ * role 用 varchar：要原样送给模型（OpenAI 兼容协议），数字存法反而多一层映射。
  *
- * role 是闭集取值：user / assistant
- * （见 com.bhu.runshistudioweb.model.enums.AiMessageRoleEnum）。
- * 用 varchar 而不是 tinyint，是因为它同时要原样送给模型（OpenAI 兼容协议的 role 字段），
- * 数字存法反而要在两处做映射，多一层出错机会。
- *
- * content 是 text：AI 回答可能上千字，不能按短文本存。
- * 它不建全文索引：本期没有「搜消息内容」的需求，
- * 而 text 上建索引会让每次写入都多一次索引维护开销。
- *
- * 顺序问题：created_at 是 datetime（秒级精度），
- * 同一秒内产生的 user / assistant 两条消息会时间相同，
- * 因此查询一律追加 id 作为次级排序键（雪花 ID 单调递增，等价于时间序且唯一）。
- * 只按 created_at 排序会在「同一秒的两条消息」上出现随机顺序——表现为对话记录偶尔颠倒。
- *
- * 审计字段、逻辑删除、雪花主键三条全局约定与其它主表一致。
+ * 坑：created_at 是秒级 datetime，同秒两条消息时间相同，
+ * 查询必须追加 id 作次级排序键，否则对话记录会偶尔颠倒。
  *
  * @author shaoshing
  */
@@ -48,10 +36,7 @@ public class StudioAiMessage implements Serializable {
     /** 所属会话 ID（关联 studio_ai_session.id），走 idx_session_created 的最左前缀 */
     private Long sessionId;
 
-    /**
-     * 消息角色：user（用户提问）/ assistant（AI 回答）
-     * 取值见 com.bhu.runshistudioweb.model.enums.AiMessageRoleEnum
-     */
+    /** 消息角色：user（用户提问）/ assistant（AI 回答），取值见 AiMessageRoleEnum */
     private String role;
 
     /** 消息正文（用户问题 或 AI 回答） */
@@ -65,10 +50,7 @@ public class StudioAiMessage implements Serializable {
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private Long updatedBy;
 
-    /**
-     * 创建时间（NOT NULL，无 DB 默认值 → 由 MetaObjectHandler 填充）
-     * 秒级精度，排序时必须配合 id 使用（见类注释）
-     */
+    /** 创建时间（NOT NULL，无 DB 默认值，由 MetaObjectHandler 填充）；秒级精度，排序需配合 id */
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createdAt;
 

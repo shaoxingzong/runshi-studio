@@ -30,26 +30,13 @@ import java.util.Objects;
 /**
  * 成员-项目关联服务实现
  *
- * 依赖方向铁律：本类只注入 Mapper
- * （StudioProjectMapper / StudioMemberMapper）与容器里的 JsonMapper，
- * 绝不注入 StudioProjectService——它反过来依赖本类做队长同步与级联清理，
- * 一旦这里再依赖回去就是循环依赖，Spring Boot 默认禁止循环引用，启动直接失败
- * （不是偶发运行问题，而是每次启动都失败）。代价是 MemberVO / ProjectVO 的转换
- * 要在本类各写几行 BeanUtils.copyProperties、tech_stack 的解析要再写一遍，
- * 这个代价远小于循环依赖带来的启动失败。
+ * 依赖方向铁律：本类只注入 Mapper 与容器里的 JsonMapper，绝不注入 StudioProjectService——
+ * 它反过来依赖本类做队长同步与级联清理，再依赖回去就是循环依赖，启动直接失败。
  *
- * 查询策略：两步查询而不是 JOIN。
- * 先从关联表取 ID 列表（走 uk_member_proj / idx_proj_member 的最左前缀，
- * 只 select 一列，属于覆盖索引不回表），空集合直接返回，
- * 再 IN 查主表（MyBatis-Plus 自动追加 deleted_at = 0，于是「主表已被逻辑删除」的
- * 悬空关联被天然过滤掉，不需要我们记得写条件）。
- * 不写 JOIN 的理由：项目目前没有任何 XML Mapper，为了一个 JOIN 引入手写 SQL，
- * 就多了一层「漏写 deleted_at = 0」的风险，而主表是逻辑删除的，
- * 漏掉这个条件就会查出已删除数据的悬空行。
+ * 查询用两步而不是 JOIN：手写 SQL 多一层「漏写 deleted_at = 0」的风险，
+ * 而第二步由 MyBatis-Plus 自动带上该条件。
  *
- * 队长不变量：studio_project.leader_id 是权威源，
- * 关联表里的队长行是同步结果（由 StudioProjectServiceImpl 在同一事务写入）。
- * 本类的 unbindMember 负责守卫它——当前队长不允许被解绑。
+ * 队长不变量：studio_project.leader_id 是权威源，unbindMember 守卫它——当前队长不允许被解绑。
  *
  * @author shaoshing
  */
@@ -75,29 +62,16 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
     /**
      * 幂等地把成员加入项目（已存在则什么都不做）
      *
-     * <p>为什么这样设计：新增项目、换队长这两个场景要的是「确保他在里面」，
-     * 而不是「再插一条」。如果这里像 bindMember 那样遇到重复就报错，
-     * 管理员每次重复保存一个项目都会收到「该成员已参与此项目」——
-     * 而管理员只是点了一次保存，这个提示看起来完全像 bug。
-     * 所以「显式添加」与「保证在里面」必须是两个方法，语义不同，错误处理也不同。
+     * 新增项目与换队长要的是「确保他在里面」而不是「再插一条」。若像 bindMember 那样遇到重复就报错，
+     * 管理员每次重复保存项目都会收到「该成员已参与此项目」，看起来完全像 bug。
+     * 「显式添加」与「保证在里面」必须是两个方法，语义与错误处理都不同。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 校验两个 id 为正数：雪花 ID 恒为正，0 与负数一定是调用方传错；</li>
-     *     <li>② 先查一次（乐观检查）：绝大多数情况（重复保存、队长没变）在这里就返回了，
-     *         省掉一次必然失败的插入；</li>
-     *     <li>③ 插入关联行，并捕获唯一索引冲突——并发下另一个请求已经插进去了，
-     *         对「保证在列表里」这个语义而言，这正是想要的结果，所以静默成功。</li>
-     * </ol>
-     *
-     * <p>容易踩的坑：第 ② 步的查询只是优化，不能当作并发保证。
-     * 两个请求可能同时查到「不存在」然后同时插入，真正拦住重复的是
-     * 唯一索引 uk_member_proj。所以第 ③ 步的 catch 不能省——
-     * 省掉的话，并发场景下会抛一个英文 SQL 异常，前端看到的是 B0001。
+     * 坑：先查一次只是优化，不能当作并发保证。两个请求可能同时查到「不存在」然后同时插入，
+     * 真正拦住重复的是唯一索引 uk_member_proj，所以 catch 不能省。
      *
      * @param projectId 项目 ID，必须大于 0
      * @param memberId 成员 ID，必须大于 0
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 任一 id 不合法时抛出（A0401）
+     * @throws BusinessException 任一 id 不合法时抛出（A0401）
      */
     @Override
     public void ensureMemberInProject(long projectId, long memberId) {
@@ -126,30 +100,16 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
     /**
      * 绑定成员到项目（管理员显式添加）
      *
-     * <p>为什么这样设计：这是管理员的显式动作，如果没生效必须让他看见，
-     * 所以重复绑定要报 A0401，而不是像 ensure 那样静默返回。
-     * 两层防御缺一不可：应用层先查重，是为了给出可读的中文提示；
-     * 唯一索引兜住并发，是为了保证绝对不出现重复数据。
-     * 单靠唯一索引的话，用户看到的会是一段英文 SQLException。
+     * 这是管理员的显式动作，没生效必须让他看见，所以重复绑定要报 A0401 而不是静默返回。
+     * 两层防御缺一不可：应用层查重给中文提示，唯一索引兜住并发保证绝对不出现重复数据。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 校验两个 id 为正数；</li>
-     *     <li>② 校验项目与成员都存在（逻辑删除的等同不存在），
-     *         这一步必须排在插入之前，否则会写出指向不存在实体的关联；</li>
-     *     <li>③ 应用层查重，命中就给可读提示；</li>
-     *     <li>④ 插入，并捕获并发下的唯一索引冲突，翻成与第 ③ 步完全相同的文案。</li>
-     * </ol>
-     *
-     * <p>容易踩的坑：第 ④ 步的文案必须与第 ③ 步一模一样。
-     * 对调用方而言，「先查出来的重复」和「并发撞上唯一索引的重复」是同一件事，
-     * 给出两种提示只会让人以为是两个不同的问题。
+     * 坑：catch 处的文案必须与查重处一模一样——「先查出来的重复」和「并发撞上唯一索引的重复」
+     * 对调用方是同一件事，给出两种提示只会让人以为是两个不同的问题。
      *
      * @param projectId 项目 ID，必须大于 0
      * @param memberId 成员 ID，必须大于 0
      * @return true 表示绑定成功
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数非法或已参与时抛出（A0401）；
-     *         项目 / 成员不存在时抛出（A0402）
+     * @throws BusinessException 参数非法或已参与抛 A0401，项目 / 成员不存在抛 A0402
      */
     @Override
     public boolean bindMember(long projectId, long memberId) {
@@ -181,29 +141,17 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
     /**
      * 解绑成员（会拦住「移除当前队长」）
      *
-     * <p>为什么这样设计：项目表里存着 leader_id，成员名单存在关联表里，
-     * 两者必须保持一致——「队长必然出现在参与成员列表」是本模块的不变量。
-     * 如果允许把队长从关联表里删掉，就会出现「项目有队长、但成员列表里没有他」
-     * 的破窗状态：官网的项目成员区域看不到负责人，而项目本身又确实有负责人。
-     * 所以这里先读 leader_id 做守卫；想换人，必须先走「更换队长」。
+     * 项目表存着 leader_id，成员名单存在关联表，两者必须一致——「队长必然出现在参与成员列表」
+     * 是本模块的不变量。允许把队长从关联表删掉，官网的成员区域就看不到负责人，而项目确实有负责人。
+     * 想换人必须先走「更换队长」。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 校验两个 id 为正数；</li>
-     *     <li>② 先确认关联存在：不存在要明确说「未参与」，而不是返回 false 让前端猜；</li>
-     *     <li>③ 队长守卫：查项目读 leader_id，命中就拒绝并给出下一步动作；</li>
-     *     <li>④ 物理删除关联行。</li>
-     * </ol>
-     *
-     * <p>容易踩的坑：这里的守卫读的是 studio_project.leader_id（权威源），
-     * 不是关联表里的某一行。若改成「查关联表里有没有 leader 标记」，
-     * 就多了一份需要同步的冗余状态，两边一旦不一致，守卫就会失效。
+     * 坑：守卫读的是 studio_project.leader_id（权威源），不是关联表里的某一行。
+     * 改成查「有没有 leader 标记」就多了一份需要同步的冗余状态，两边不一致时守卫就会失效。
      *
      * @param projectId 项目 ID，必须大于 0
      * @param memberId 成员 ID，必须大于 0
      * @return true 表示解绑成功
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数非法、
-     *         该成员是当前队长时抛出（A0401）；关联不存在时抛出（A0402）
+     * @throws BusinessException 参数非法或该成员是当前队长抛 A0401，关联不存在抛 A0402
      */
     @Override
     public boolean unbindMember(long projectId, long memberId) {
@@ -232,25 +180,14 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
     /**
      * 项目的参与成员（管理端视图）
      *
-     * <p>为什么这样设计：先校验项目存在，再查成员。顺序不能反——
-     * 反过来的话，项目 ID 根本不存在时也会返回一个空列表，
-     * 前端会把它理解成「这个项目还没有成员」，而实际上项目本身就不存在。
-     * 用 A0402 明确区分这两种情况，前端才能决定是展示空态还是报错。
+     * 先校验项目存在再查成员：顺序反过来的话，项目 ID 根本不存在时也会返回空列表，
+     * 前端会把它理解成「这个项目还没有成员」。用 A0402 区分这两种情况，前端才能决定展示空态还是报错。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 校验 id 为正数；</li>
-     *     <li>② 校验项目存在，不存在给 A0402；</li>
-     *     <li>③ 两步查询取成员实体，再逐条转成管理端 VO。</li>
-     * </ol>
-     *
-     * <p>容易踩的坑：队长一定在返回结果里（这是同步不变量），
-     * 所以前端不需要再单独调接口取队长，否则同一个人会出现两次。
+     * 坑：队长一定在返回结果里（同步不变量），前端不需要再单独调接口取队长，否则同一个人会出现两次。
      *
      * @param projectId 项目 ID，必须大于 0
-     * @return 成员列表（按置顶权重 → id 倒序）；项目没有成员时返回空列表，不返回 null
-     * @throws com.bhu.runshistudioweb.exception.BusinessException id 不合法时抛出（A0401）；
-     *         项目不存在时抛出（A0402）
+     * @return 成员列表（按置顶权重 → id 倒序）；项目没有成员时返回空列表
+     * @throws BusinessException id 不合法抛 A0401，项目不存在抛 A0402
      */
     @Override
     public List<MemberVO> listMembersByProject(long projectId) {
@@ -265,25 +202,15 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
     /**
      * 成员参与的项目（管理端视图）
      *
-     * <p>为什么这样设计：与 listMembersByProject 对称——先校验成员存在，
-     * 再查项目。不先校验的话，成员 ID 不存在时也会返回空列表，
+     * 与 listMembersByProject 对称：先校验成员存在再查项目，否则成员 ID 不存在时也会返回空列表，
      * 前端分不清是「这个人没参与任何项目」还是「这个人根本不存在」。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 校验 id 为正数；</li>
-     *     <li>② 校验成员存在，不存在给 A0402；</li>
-     *     <li>③ 两步查询取项目实体，再逐条转成管理端 VO。</li>
-     * </ol>
-     *
-     * <p>容易踩的坑：管理端 VO 带 content 正文大字段，一次查回这个人参与的所有项目，
-     * 响应体会随项目数线性增长。参与项目数量通常很少，所以可以接受；
-     * 若将来一个成员能参与几十个项目，这里就应该换成列表 VO。
+     * 坑：管理端 VO 带 content 正文大字段，响应体会随项目数线性增长；
+     * 参与项目通常很少可以接受，涨到几十个就该换成列表 VO。
      *
      * @param memberId 成员 ID，必须大于 0
-     * @return 项目列表（按置顶权重 → 创建时间 → id 倒序）；无项目时返回空列表，不返回 null
-     * @throws com.bhu.runshistudioweb.exception.BusinessException id 不合法时抛出（A0401）；
-     *         成员不存在时抛出（A0402）
+     * @return 项目列表（按置顶权重 → 创建时间 → id 倒序）；无项目时返回空列表
+     * @throws BusinessException id 不合法抛 A0401，成员不存在抛 A0402
      */
     @Override
     public List<ProjectVO> listProjectsByMember(long memberId) {
@@ -300,26 +227,15 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
     /**
      * 成员参与的项目（门户脱敏视图）
      *
-     * <p>为什么这样设计：与管理端用同一条查询（selectProjectsOfMember），
-     * 只在最后一步换成脱敏 VO。这样两端的筛选与排序规则天然一致，
-     * 不会出现「后台看到 3 个、官网只显示 2 个」这种对不上的情况——
-     * 这类不一致一旦出现，排查成本极高，因为两边代码看起来都「没问题」。
+     * 与管理端用同一条查询，只在最后一步换成脱敏 VO，两端的筛选与排序因此天然一致，
+     * 不会出现「后台看到 3 个、官网只显示 2 个」这种两边代码看起来都「没问题」的差异。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 校验 id 为正数；</li>
-     *     <li>② 校验成员存在，不存在给 A0402；</li>
-     *     <li>③ 复用同一套两步查询，再转成脱敏 VO。</li>
-     * </ol>
-     *
-     * <p>容易踩的坑：脱敏靠 ProjectFrontVO 里没有 content / leaderId /
-     * sortOrder / 审计字段实现，不是靠这里手动过滤。
-     * 若为了「字段完整」给那个 VO 补字段，这个接口会静默泄露内部数据。
+     * 坑：脱敏靠 ProjectFrontVO 里没有 content / leaderId / sortOrder / 审计字段实现，
+     * 若为了「字段完整」给它补字段，这个接口会静默泄露内部数据。
      *
      * @param memberId 成员 ID，必须大于 0
-     * @return 脱敏项目列表；无项目时返回空列表，不返回 null
-     * @throws com.bhu.runshistudioweb.exception.BusinessException id 不合法时抛出（A0401）；
-     *         成员不存在时抛出（A0402）
+     * @return 脱敏项目列表；无项目时返回空列表
+     * @throws BusinessException id 不合法抛 A0401，成员不存在抛 A0402
      */
     @Override
     public List<ProjectFrontVO> listFrontProjectsByMember(long memberId) {
@@ -335,25 +251,14 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
     /**
      * 项目的参与成员（门户脱敏视图，项目详情页用）
      *
-     * <p>为什么这样设计：官网项目详情要展示「这个项目是谁做的」，
-     * 而参与成员是本项目唯一对外暴露的成员信息出口（属于产品确认保留的例外）。
-     * 脱敏靠 MemberFrontVO 的结构实现——它没有 userId、置顶权重与审计字段，
-     * 结构上就不可能把账号 ID 带出去。
+     * 参与成员是本项目唯一对外暴露的成员信息出口。脱敏靠 MemberFrontVO 的结构实现——
+     * 它没有 userId、置顶权重与审计字段，结构上就不可能把账号 ID 带出去。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 校验 id 为正数；</li>
-     *     <li>② 校验项目存在，不存在给 A0402；</li>
-     *     <li>③ 复用同一套两步查询，再转成脱敏 VO。</li>
-     * </ol>
-     *
-     * <p>容易踩的坑：返回结果里必然包含队长（同步不变量），
-     * 官网不需要再单独渲染一个「队长」头像，否则同一个人会出现两次。
+     * 坑：返回结果里必然包含队长（同步不变量），官网不需要再单独渲染一个「队长」头像，否则会出现两次。
      *
      * @param projectId 项目 ID，必须大于 0
-     * @return 脱敏成员列表；无成员时返回空列表，不返回 null
-     * @throws com.bhu.runshistudioweb.exception.BusinessException id 不合法时抛出（A0401）；
-     *         项目不存在时抛出（A0402）
+     * @return 脱敏成员列表；无成员时返回空列表
+     * @throws BusinessException id 不合法抛 A0401，项目不存在抛 A0402
      */
     @Override
     public List<MemberFrontVO> listFrontMembersByProject(long projectId) {
@@ -370,9 +275,8 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
     /**
      * 两步查询：取参与某项目的全部成员实体
      *
-     * 第一步走 idx_proj_member (project_id, member_id) 的覆盖索引（只 select 一列、不回表）；
-     * 第二步 IN 查主表时，MyBatis-Plus 会自动追加 deleted_at = 0，
-     * 于是「关联还在、但成员已被逻辑删除」的悬空数据被天然过滤（查询侧防御）。
+     * 第一步走 idx_proj_member 的覆盖索引（只 select 一列、不回表）；第二步 IN 查主表时
+     * MyBatis-Plus 自动追加 deleted_at = 0，「关联还在、但成员已被逻辑删除」的悬空数据被天然过滤。
      *
      * @param projectId 项目 ID，调用方保证已校验
      * @return 成员实体列表（已排序）
@@ -402,8 +306,7 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
     /**
      * 两步查询：取某成员参与的全部项目实体
      *
-     * 第一步走 uk_member_proj (member_id, project_id) 的最左前缀；
-     * 第二步 IN 查主表时自动带上 deleted_at = 0，
+     * 第一步走 uk_member_proj 的最左前缀；第二步 IN 查主表时自动带上 deleted_at = 0，
      * 「项目已被删除但关联还在」的悬空数据会被过滤掉。
      *
      * @param memberId 成员 ID，调用方保证已校验
@@ -439,24 +342,16 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
     /**
      * 删除项目时清理其全部关联行（关联表是物理删除）
      *
-     * <p>为什么这样设计：关联表没有 deleted_at 列，也不该有——
-     * 主表已经被逻辑删除，「谁参与了这个已不存在的项目」没有保留价值。
-     * 物理删除还让唯一索引保持有效：若是逻辑删除，同一对
-     * (project_id, member_id) 会与已删除的行冲突，重复绑定就再也插不进去了。
+     * 关联表没有 deleted_at 列，也不该有：主表已被逻辑删除，「谁参与了这个已不存在的项目」
+     * 没有保留价值。物理删除还让唯一索引保持有效，否则同一对 (project_id, member_id)
+     * 会与已删除的行冲突，重复绑定再也插不进去。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 校验 id 为正数；</li>
-     *     <li>② 用 baseMapper.delete 按 project_id 删除，返回被删除的行数。</li>
-     * </ol>
-     *
-     * <p>容易踩的坑：本方法必须在调用方的事务里执行。
-     * 它自己不加 @Transactional，因为「先清关联、再删主表」这两步要作为一个整体提交，
-     * 在这里另开事务会让两步互相独立，反而破坏原子性。
+     * 坑：本方法必须在调用方的事务里执行，自己不加 @Transactional——
+     * 「先清关联、再删主表」要作为一个整体提交，在这里另开事务反而破坏原子性。
      *
      * @param projectId 项目 ID，必须大于 0
      * @return 被删除的关联行数（0 表示该项目本来就没有关联成员）
-     * @throws com.bhu.runshistudioweb.exception.BusinessException id 不合法时抛出（A0401）
+     * @throws BusinessException id 不合法时抛出（A0401）
      */
     @Override
     public long removeByProjectId(long projectId) {
@@ -471,23 +366,14 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
     /**
      * 删除成员时清理其全部关联行（关联表是物理删除）
      *
-     * <p>为什么这样设计：与 removeByProjectId 对称——删成员时也要把
-     * 「他参与了哪些项目」一次性清掉，否则会留下指向已删除成员的悬空关联。
-     * 同样返回行数而不是 boolean：级联清理是内部调用，行数对排查问题有用
-     * （例如在日志里确认「这次清理掉了 3 条」）。
+     * 与 removeByProjectId 对称：不清掉会留下指向已删除成员的悬空关联。返回行数而不是 boolean，
+     * 是因为级联清理是内部调用，行数对排查问题有用。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 校验 id 为正数；</li>
-     *     <li>② 用 baseMapper.delete 按 member_id 删除，返回被删除的行数。</li>
-     * </ol>
-     *
-     * <p>容易踩的坑：本方法同样必须活在调用方的事务里。
-     * 它不加 @Transactional 是有意的——事务边界应该由「删主表」的那个方法统一划定。
+     * 坑：同样必须活在调用方的事务里，事务边界由「删主表」的那个方法统一划定。
      *
      * @param memberId 成员 ID，必须大于 0
      * @return 被删除的关联行数（0 表示该成员本来就没有参与任何项目）
-     * @throws com.bhu.runshistudioweb.exception.BusinessException id 不合法时抛出（A0401）
+     * @throws BusinessException id 不合法时抛出（A0401）
      */
     @Override
     public long removeByMemberId(long memberId) {
@@ -542,8 +428,7 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
     /**
      * 实体转管理端成员 VO
      *
-     * 本类不能注入 StudioMemberService（那会构成循环依赖），
-     * 所以这里的几行 BeanUtils 拷贝是刻意重复的，属于「依赖方向」换来的代价。
+     * 本类不能注入 StudioMemberService（那会构成循环依赖），所以这几行拷贝是刻意重复的。
      *
      * @param member 成员实体
      * @return 管理端 VO

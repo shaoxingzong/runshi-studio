@@ -10,13 +10,10 @@ import { usePageMeta } from '@/composables/usePageMeta';
 /**
  * 答题页
  *
- * 进度来自 sessionStorage：服务端不持久化批次（题目不含答案，整批交给前端即可），
- * 所以刷新页面后靠本地恢复。换设备不能续答是刻意接受的——刷题不是考试，重开成本为 0。
+ * 进度来自 sessionStorage：服务端不持久化批次（题目不含答案，整批交给前端即可），刷新后靠本地恢复。
+ * 换设备不能续答是刻意接受的——刷题不是考试，重开成本为 0。
  *
- * 单选点击即提交、多选显式提交：见 QuestionCard 的说明。
- *
- * 键盘快捷键：A–F 选项、Enter 提交/下一题、S 跳过。
- * 桌面端刷题效率的关键——鼠标在选项与「下一题」之间来回移动是最大的时间浪费。
+ * 键盘：A–F 选项、Enter 提交/下一题、S 跳过。桌面端鼠标在选项与「下一题」之间来回移动是最大的时间浪费。
  */
 const router = useRouter();
 const session = useQuizSession();

@@ -14,26 +14,12 @@ import java.time.LocalDateTime;
 /**
  * 工作室成员档案实体（对应 studio_member）
  *
- * 字段与列的映射依赖 MyBatis-Plus 的「驼峰 ↔ 下划线」自动转换：
- * gradeYear → grade_year、userId → user_id，无需逐个写 @TableField。
+ * 与 sys_user 是可选 1:1：user_id 可为 NULL（还没开号），
+ * uk_userid_deleted 保证一个账号最多绑一条成员记录（唯一索引不约束 NULL，
+ * 所以多条未绑定记录可以共存）。官网展示数据以本表为唯一权威源。
  *
- * 与 sys_user 的关系是本表最需要理解的一点：
- * 成员档案与登录账号是可选 1:1—— user_id 可为 NULL，表示「这个人还没开通登录账号」。
- * 官网展示数据以本表为唯一权威源，不反向同步 sys_user；
- * 数据库侧靠 uk_userid_deleted (user_id, deleted_at) 保证一个账号最多绑定一条成员记录
- * （MySQL 唯一索引不约束 NULL，所以多条未绑定记录可以共存，无需额外的标记字段）。
- *
- * 字段类型注意点：
- * - grade_year 是 smallint，Java 侧用 Integer 接收，
- * 并校验合理区间（1950~2100）——绝不能用字符串存「2026级」，那样无法排序、无法按届筛选；
- * - member_status 是 tinyint，取值 0-在读/在队、1-毕业/离队，
- * 定义见 com.bhu.runshistudioweb.model.enums.MemberStatusEnum；
- * - team_position 是 varchar，取值定义见
- * com.bhu.runshistudioweb.model.enums.TeamPositionEnum；
- * - sort_order 是官网展示置顶权重（数值越大越靠前），
- * 列表默认排序以它为准，而不是 id 倒序。
- *
- * 逻辑删除、时间填充、雪花主键三条全局约定与 SysUser 完全一致。
+ * grade_year 用 smallint / Integer 并校验 1950~2100，绝不用字符串存「2026级」——
+ * 那样无法排序、无法按届筛选。member_status、team_position 取值见对应枚举。
  *
  * @author shaoshing
  */
@@ -49,10 +35,8 @@ public class StudioMember implements Serializable {
     private Long id;
 
     /**
-     * 绑定的系统用户 ID（关联 sys_user.id），可为 NULL
-     *
-     * NULL 表示该成员尚未开通登录账号；非 NULL 时必须保证「账号存在」且
-     * 「未被其他成员绑定」（应用层校验 + uk_userid_deleted 唯一索引兜底并发竞态）。
+     * 绑定的登录账号 ID（sys_user.id），可空：NULL 表示还没开号
+     * 非空时须保证账号存在且未被其他成员绑定（应用层校验 + uk_userid_deleted 兜并发）
      */
     private Long userId;
 
@@ -71,16 +55,10 @@ public class StudioMember implements Serializable {
     /** 技术方向（如：Java后端, AI应用），用于按方向筛选 */
     private String direction;
 
-    /**
-     * 团队职务：member-成员, leader-队长, tech_lead-组长
-     * 取值定义见 com.bhu.runshistudioweb.model.enums.TeamPositionEnum
-     */
+    /** 团队职务：member / leader / tech_lead，取值见 TeamPositionEnum */
     private String teamPosition;
 
-    /**
-     * 成员状态：0-在读/在队, 1-毕业/离队
-     * 取值定义见 com.bhu.runshistudioweb.model.enums.MemberStatusEnum
-     */
+    /** 成员状态：0-在读/在队，1-毕业/离队，取值见 MemberStatusEnum */
     private Integer memberStatus;
 
     /** GitHub 主页 */
@@ -108,13 +86,7 @@ public class StudioMember implements Serializable {
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 
-    /**
-     * 逻辑删除毫秒时间戳（0-未删除，非0-已删除）
-     *
-     * 加 @TableLogic 后，MP 会自动改写 SQL：查询追加 deleted_at = 0，
-     * 删除改成 UPDATE（值取 yml 里配置的毫秒时间戳表达式）。
-     * 关联表实体不能出现本字段，否则会给中间表也套上逻辑删除，与物理删除的设计冲突。
-     */
+    /** 逻辑删除毫秒时间戳（0-未删除，非0-已删除）；关联表实体不能出现本字段，否则与物理删除冲突 */
     @TableLogic
     private Long deletedAt;
 }

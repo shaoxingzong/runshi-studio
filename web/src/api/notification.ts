@@ -4,8 +4,7 @@ import type { Notification, PageResult } from './types';
 /**
  * 站内通知接口（C 端，全部要求登录）
  *
- * 与「后台登录」的关系：同一条登录态——门户登录后铃铛才有数据，
- * 未登录时 PortalLayout 不发任何请求（接口本身也要求登录）。
+ * 与门户共用同一条登录态：未登录时 PortalLayout 不发任何请求。
  */
 export const notificationApi = {
     // 分页查询我的通知（新的在前）

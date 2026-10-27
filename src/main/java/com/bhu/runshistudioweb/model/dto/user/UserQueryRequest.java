@@ -1,5 +1,6 @@
 package com.bhu.runshistudioweb.model.dto.user;
 
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.io.Serializable;
@@ -7,25 +8,12 @@ import java.io.Serializable;
 /**
  * 管理端：分页查询用户请求
  *
- * 这里修掉了一个隐患：原实现写成 extends PageRequest
- * （ org.springframework.data.domain.PageRequest），有两个致命问题：
- * - Spring Data 的 PageRequest 是反序列化不出来的：它没有无参构造、字段是私有的 final，
- * Spring MVC 无法把 ?current=1 绑定进去，接口一调就报错；
- * - 它属于 Spring Data JPA 体系，和 MyBatis-Plus 的 Page 是两套分页模型，
- * 混用等于把「页码从 1 开始还是从 0 开始」「每页条数叫什么名字」这些细节交给两套规则去打架。
- * 现在的定位很单纯：一个普通的查询参数载体，分页字段由本类自己声明，
- * 由 Service 转成 MyBatis-Plus 的 Page。
+ * 不继承 Spring Data 的 PageRequest：它没有无参构造、字段是私有 final，Spring MVC 绑不上参数，
+ * 而且它属于 JPA 体系，与 MyBatis-Plus 的 Page 是两套分页模型。本类只是普通参数载体，
+ * 分页字段自己声明，由 Service 转成 Page。
  *
- * 字段语义：
- * - id、userRole、userStatus 为精确匹配；
- * - userAccount、userName 为模糊匹配；
- * - 字段为 null 表示「该条件不参与筛选」，不是「查 null 值」。
- *
- * 注意：分页与排序参数的非法值不在这里报错，而是在 Service 里做兜底纠正
- * （例如 current < 1 视为 1、pageSize 上限 50）。
- * 原因有两个：一是这些参数用 GET 传递，校验失败抛的是 BindException，
- * 会落到全局异常处理器的兜底分支变成 B0001，体验很差；
- * 二是「页码传错」没必要让整个查询失败，纠正成合理值继续查更符合预期。
+ * id、userRole、userStatus 精确匹配，userAccount、userName 模糊匹配；字段为 null 表示该条件不参与筛选。
+ * 分页与排序的非法值不在这里报错（GET 传参校验失败会变成 B0001），由 Service 兜底纠正。
  *
  * @author shaoshing
  */
@@ -37,10 +25,12 @@ public class UserQueryRequest implements Serializable {
     /** 用户 id（精确匹配） */
     private Long id;
 
-    /** 用户账号（模糊查询） */
+    /** 用户账号（模糊查询；上限 64，与前端搜索框 maxlength 对齐） */
+    @Size(max = 64, message = "搜索关键词不能超过 64 个字符")
     private String userAccount;
 
-    /** 用户昵称（模糊查询） */
+    /** 用户昵称（模糊查询；上限 64，与前端搜索框 maxlength 对齐） */
+    @Size(max = 64, message = "搜索关键词不能超过 64 个字符")
     private String userName;
 
     /** 用户角色（精确匹配），取值见 com.bhu.runshistudioweb.model.enums.UserRoleEnum */
@@ -57,8 +47,7 @@ public class UserQueryRequest implements Serializable {
 
     /**
      * 排序字段：id / userAccount / userName / userStatus / createdAt
-     * 只允许这几个值，Service 里用白名单映射成实体字段。
-     * 绝不能把前端传来的字符串直接拼进 SQL——那是最典型的 SQL 注入入口
+     * 只允许这几个值，Service 里用白名单映射成实体字段，绝不能把前端字符串直接拼进 SQL
      */
     private String sortField;
 

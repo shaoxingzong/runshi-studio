@@ -2,14 +2,12 @@ import { http } from './request';
 import type { AdminMember, Project } from './types';
 
 /**
- * 关联维护接口（成员 ↔ 项目、成员 ↔ 证书）
+ * 关联维护接口（成员 ↔ 项目、成员 ↔ 证书），全部要求 admin
  *
- * 全部要求 admin。它们独立于「项目 / 证书 / 成员」各自的 CRUD，
- * 因为处理的是两张表之间那层关系，而不是任何一方自己的字段。
+ * 独立于三方各自的 CRUD：这里处理的是两张表之间的关系，而不是任何一方自己的字段。
  *
- * 参数名照抄后端 DTO：项目侧是 `projectId` + `memberId`，
- * 证书侧是 `certificateId` + `memberId`（不是 certId）。写错不会报错，
- * 只会拿到一个「参数为空」的业务错误，排查起来很费时间。
+ * 参数名照抄后端 DTO：项目侧 `projectId` + `memberId`，证书侧 `certificateId` + `memberId`
+ * （不是 certId）。写错不报编译错误，只会拿到「参数为空」，排查很费时间。
  */
 export const relationApi = {
     // ==================== 项目 ↔ 成员 ====================

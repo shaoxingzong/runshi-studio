@@ -4,16 +4,16 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { adminApi } from '@/api/admin';
 import ErrorRetry from '@/components/ErrorRetry.vue';
 import ImageUploader from '@/components/ImageUploader.vue';
+import SmartImage from '@/components/SmartImage.vue';
 import type { AdminUser, PageResult } from '@/api/types';
 
 /**
  * 用户管理：「给注册用户授予成员身份」的地方
  *
- * 背景（与注册页配套）：注册只能产生普通用户（`user`）。
- * 管理员在这里把某个账号的角色改成 `member`（成员）或 `admin`，也可以封禁（`userStatus=1`）。
+ * 注册只能产生普通用户（`user`），管理员在这里改成 `member` / `admin`，或封禁（`userStatus=1`）。
  *
- * 角色取值必须是后端 `UserRoleEnum` 的原始值（user / member / admin），
- * 中文只用于显示——写错了 `@SaCheckRole` 会判不出来，而界面看起来一切正常。
+ * 角色取值必须是后端 `UserRoleEnum` 的原始值（user / member / admin），中文只用于显示——
+ * 写错了 `@SaCheckRole` 会判不出来，而界面看起来一切正常。
  */
 const ROLES = [
     { value: 'user', label: '普通用户' },
@@ -65,14 +65,8 @@ async function changeRole(row: AdminUser, value: unknown) {
     /**
      * 授予成员 / 管理员角色前，先确认该账号已有成员档案
      *
-     * <p>为什么前端也要拦：成员功能的准入判据是「studio_member 档案的 userId 命中当前账号」，
-     * 而 userRole 只是权限标签。只改角色不建档案时，界面上的成员入口不会出现
-     * （导航也按档案判断），即使进了页面后端也会返回 A0301——
-     * 这正是「有时候不显示、有时候显示了也用不了」的根源。
-     *
-     * <p>后端已有同样的校验（UserServiceImpl#updateUser），这里提前拦是为了：
-     * ① 让管理员在改之前就知道还差一步；
-     * ② 直接引导他去用下面的「转为成员」功能，一步搞定两件事。
+     * 准入判据是「studio_member 档案的 userId 命中当前账号」，userRole 只是权限标签；只改角色
+     * 不建档案时成员入口不会出现，硬进页面后端也返回 A0301。
      */
     if (role === 'member' || role === 'admin') {
         try {
@@ -120,9 +114,8 @@ async function toggleStatus(row: AdminUser) {
 
 // =
 /**
- * 背景：注册只能产生普通用户（user），而「成员档案」在 studio_member 里，
- * 两者通过 studio_member.user_id 可选绑定。以前要让人成为成员，得先在成员管理
- * 建档案、再回来改角色，两步且容易漏掉绑定。这里合成一步。
+ * 背景：注册只能产生普通用户，而成员档案在 studio_member 里，两者通过 user_id 可选绑定。
+ * 分开做要建档案、再回来改角色，两步且容易漏掉绑定。这里合成一步。
  */
 const promoteVisible = ref(false);
 const promoteTarget = ref<AdminUser | null>(null);
@@ -148,11 +141,8 @@ function openPromote(row: AdminUser) {
 }
 
 /**
- * 提交的顺序是刻意的：先建档案（绑定账号），成功后再改角色。
- * 反过来会留下「角色已是成员、却没有成员档案」的不一致状态——
- * 那正是最难排查的一类脏数据（界面看不出异常，只是成员管理里查不到人）。
- *
- * 后端两个接口都是现成的，不需要新增任何接口。
+ * 提交顺序是刻意的：先建档案（绑定账号），成功后再改角色。
+ * 反过来会留下「角色已是成员、却没有档案」的脏数据——界面看不出异常，只是成员管理里查不到人。
  */
 async function submitPromote() {
     const target = promoteTarget.value;
@@ -225,8 +215,7 @@ const createForm = reactive({
 /**
  * 初始密码结果框（创建成功后弹出）
  *
- * 为什么必须弹这个框：管理员没填密码时，后端生成的是随机口令，
- * 只随创建响应返回这一次——后端不存明文、也没有二次查询的接口。
+ * 管理员没填密码时后端生成随机口令，只随创建响应返回这一次——后端不存明文、也查不回来。
  * 不展示就等于管理员本人也不知道密码，账号等于白建。
  */
 const passwordResultVisible = ref(false);
@@ -246,8 +235,7 @@ function openCreate() {
 /**
  * 新增账号
  *
- * 密码留空时不下发 userPassword 字段：后端会生成随机初始密码，
- * 而下发空串会撞上 DTO 的 @Size(min=8)。这与「字段为 null 即不改」的部分更新语义一致。
+ * 密码留空时不下发 userPassword 字段：后端会生成随机初始密码，下发空串会撞上 DTO 的 @Size(min=8)。
  */
 async function submitCreate() {
     if (createForm.userAccount.length < 4 || createForm.userAccount.length > 16) {
@@ -311,8 +299,7 @@ async function removeUser(row: AdminUser) {
 // =
 /**
  * 后端 /user/update 是「部分更新」：传 null 的字段不改，空串会写入。
- * 所以本弹窗预填现有值、提交什么就改什么——只想改头像时昵称原样提交等于没改；
- * 两项都清空也允许（昵称为空时，列表与门户的作者名会兜底显示账号名）。
+ * 所以弹窗预填现有值、提交什么就改什么。两项都清空也允许（昵称为空时，列表与门户兜底显示账号名）。
  */
 const editVisible = ref(false);
 const editTarget = ref<AdminUser | null>(null);
@@ -363,6 +350,7 @@ onMounted(load);
                 v-model="query.userAccount"
                 placeholder="账号关键词"
                 clearable
+                maxlength="64"
                 style="width: 200px"
                 @keyup.enter="reload"
             />
@@ -379,9 +367,13 @@ onMounted(load);
             <el-table-column prop="userAccount" label="账号" min-width="140" />
             <el-table-column label="头像" width="80">
                 <template #default="{ row }">
-                    <img v-if="row.userAvatar" :src="row.userAvatar" :alt="row.userName" class="avatar" />
-                    <span v-else class="avatar fallback">
-                        {{ (row.userName || row.userAccount || '?').slice(0, 1) }}
+                    <!-- 与门户同一套兜底：头像失效时显示姓名首字，不留裂图 -->
+                    <span class="avatar">
+                        <SmartImage
+                            :src="row.userAvatar"
+                            :alt="row.userName || row.userAccount || '?'"
+                            :seed="row.id"
+                        />
                     </span>
                 </template>
             </el-table-column>
@@ -560,18 +552,13 @@ onMounted(load);
     width: 32px;
     height: 32px;
     border-radius: 50%;
-    object-fit: cover;
+    overflow: hidden;
+    display: inline-flex;
 }
 
-/* 没有头像时用昵称/账号首字兜底，避免表格里出现空列 */
-.avatar.fallback {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--brand);
-    color: #fff;
+/* 兜底（姓名首字）在 32px 的圆里需要小一号字号 */
+.avatar :deep(.img-fallback__box) {
     font-size: 13px;
-    font-weight: 600;
 }
 
 .toolbar {

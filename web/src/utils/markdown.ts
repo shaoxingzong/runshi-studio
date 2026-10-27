@@ -2,22 +2,12 @@ import { Marked, type RendererObject } from 'marked';
 
 // Markdown 渲染增强（帖子详情 / 项目详情共用）
 //
-// 为什么抽成共享工具：两个详情页的渲染链相同（marked → DOMPurify → v-html），
-// 此前「代码块复制、懒加载、目录」这类增强如果各写一份，改一处漏一处的风险实在太高
-// （项目里已经有够多的「两边必须一致」的约定了，没必要再添一个）。
+// 两页渲染链相同（marked → DOMPurify → v-html），增强各写一份必然改一处漏一处。
+// 三样增强：代码块一键复制（v-html 里挂不了 Vue 事件，只能事件委托）、
+// 长文目录（抽取与注入 id 是同一次遍历，不会对不上）、图片懒加载。
 //
-// 提供三样增强：
-// - 代码块一键复制：bindCodeCopy 用事件委托（ v-html
-// 里挂不了 Vue 事件，委托是唯一干净的做法），按钮标记由 renderMarkdown
-// 的自定义 renderer 生成；
-// - 长文目录：renderMarkdown 单次渲染时顺带抽取 h2/h3 并注入
-// id——抽取与注入是同一次遍历，不存在「目录里的 id 和标题上的 id 对不上」；
-// - 图片懒加载：renderer 输出 loading="lazy"，长文首屏不被图片拖慢。
-//
-// 与 DOMPurify 的配合（页面侧责任）：本工具输出的 div.code-block、
-// button.copy-btn、标题 id、图片 loading/decoding
-// 都在页面已有的白名单之外，页面必须同步放行这些标签与属性，否则会被洗掉、
-// 增强静默失效（表现：复制按钮不见了但没人报错）。
+// 页面侧责任：本工具输出的 div.code-block、button.copy-btn、标题 id、图片 loading/decoding
+// 必须在 DOMPurify 白名单里放行，否则会被洗掉且不报错。
 
 /** 目录项：只收 h2/h3（h1 是文章标题本身，收进来等于重复） */
 export interface TocItem {
@@ -31,8 +21,8 @@ export interface TocItem {
 /**
  * 渲染结果：正文 HTML + 目录
  *
- * 注意 html 是「清洗前」的产物，页面仍需过自己的 DOMPurify 白名单——
- * 两层各管一段：这里负责 Markdown → HTML，页面负责决定哪些标签允许保留。
+ * html 是「清洗前」的产物，页面仍需过自己的 DOMPurify 白名单——
+ * 这里负责 Markdown → HTML，页面负责决定哪些标签允许保留。
  */
 export interface MarkdownResult {
     // 清洗前的 HTML（页面仍需过自己的 DOMPurify 白名单）
@@ -45,15 +35,10 @@ export interface MarkdownResult {
 export const TOC_MIN_ITEMS = 3;
 
 /**
- * DOMPurify 白名单（帖子 / 项目详情共用，故提在这里做单一事实来源）
+ * DOMPurify 白名单（帖子 / 项目详情共用，单一事实来源）
  *
- * 为什么出口集中：两个页面的清洗配置必须一模一样——
- * 它们消费的是同一个 renderer 的输出。各写一份的后果是「给项目页加了新属性、
- * 帖子页忘了加」，那种不一致在测试里很难发现，在线上表现为奇偶不同的怪 bug。
- * 页面侧只保留自己的策略差异（如帖子页额外的 img 站内限制）。
- *
- * div/button/id/type/aria-label/loading/decoding 是本工具增强输出的载体
- * （代码块包装、复制按钮、标题锚点、图片懒加载），少任何一个，对应的增强会被静默洗掉。
+ * 两页消费同一个 renderer 的输出，各写一份必然漂移。div/button/id/loading/decoding 是增强
+ * 输出的载体（代码块包装、复制按钮、锚点、懒加载），少一个对应的增强就被静默洗掉。
  */
 export const MARKDOWN_ALLOWED_TAGS = [
     'p', 'br', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
@@ -95,8 +80,8 @@ function plainText(html: string): string {
 }
 
 /**
- * 标题转锚点 id：中文保留（技术文章的标题大量中文，转拼音既不准确也没必要），
- * 空格转连字符，其余标点清掉；空了兜底 section（纯符号标题是合法输入）
+ * 标题转锚点 id：中文保留（转拼音既不准确也没必要），空格转连字符，其余标点清掉；
+ * 空了兜底 section（纯符号标题是合法输入）
  */
 function slugify(text: string): string {
     return (
@@ -112,9 +97,8 @@ function slugify(text: string): string {
 /**
  * 渲染 Markdown，顺带产出目录
  *
- * 为什么每次渲染 new 一个 Marked 实例：renderer 需要闭包承载「本次渲染」的
- * 目录数组与去重计数，用模块级单例就要在并发渲染间共享可变状态（文章切换快的场景）。
- * Marked 实例很轻，文章级渲染完全感知不到开销。
+ * 每次渲染 new 一个 Marked：renderer 需要闭包承载本次的目录数组与去重计数，
+ * 用模块级单例就要在并发渲染（快速切文章）间共享可变状态。Marked 实例很轻，开销感知不到。
  */
 export function renderMarkdown(source: string): MarkdownResult {
     const toc: TocItem[] = [];
@@ -167,11 +151,7 @@ export function renderMarkdown(source: string): MarkdownResult {
 /**
  * 给代码块绑「一键复制」（事件委托，返回解绑函数）
  *
- * 为什么用委托而不是给每个按钮挂监听：HTML 是 v-html 出来的，
- * Vue 的 @click 够不着里面的节点；delegated 在容器上绑一次，
- * 文章重新渲染（切文章、重试加载）也不会叠加监听器。
- *
- * @param container 正文容器（.markdown-body 元素）
+ * 正文是 v-html 出来的，Vue 的 @click 够不着里面的节点；在容器上委托一次，重新渲染也不会叠加。
  */
 export function bindCodeCopy(container: HTMLElement): () => void {
     const onClick = (event: MouseEvent) => {
@@ -213,14 +193,8 @@ async function copyText(text: string): Promise<boolean> {
 /**
  * 目录滚动高亮（IntersectionObserver，返回断开函数）
  *
- * 为什么不用 scroll 事件：滚动回调高频，每次回调读标题位置会强制重排，
- * 长文掉帧肉眼可见；IntersectionObserver 把「谁在视野里」的判断交给浏览器合成线程。
- *
- * 多选一时取文档顺序中第一个可见的标题——用户从上往下读，
- * 「当前章节」应该是视野里最靠上的那个，而不是最后进入视野的那个。
- *
- * @param container 正文容器
- * @param onActive 当前章节 id 变化回调
+ * 不用 scroll 事件：回调高频，每次读标题位置都强制重排，长文掉帧肉眼可见。
+ * 多选一时取文档顺序中最靠上的可见标题——用户从上往下读，当前章节应是最上面那个。
  */
 export function observeTocHighlight(
     container: HTMLElement,
@@ -261,8 +235,7 @@ export function observeTocHighlight(
 /**
  * 平滑滚动到指定标题
  *
- * 尊重系统的「减少动态效果」偏好（ prefers-reduced-motion）——
- * 对动效敏感的用户直接跳转，不播动画。偏移由 CSS 的 scroll-margin-top
+ * 尊重系统的「减少动态效果」偏好（prefers-reduced-motion）。偏移由 CSS 的 scroll-margin-top
  * 处理（吸顶导航高度），JS 只管行为。
  */
 export function scrollToHeading(id: string): void {

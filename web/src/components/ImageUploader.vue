@@ -5,12 +5,9 @@ import { uploadFile } from '@/api/file';
 
 // 通用图片上传组件（`v-model` 绑定站内相对路径）
 //
-// 后台的证书图片 / 项目封面 / 成员头像此前都是「纯 URL 文本框」，
-// 让管理员手填路径既不现实也容易出错。这里复用后端 `POST /file/upload`，
-// 把「选图 → 上传 → 回填路径 → 预览」串成一步。
-//
-// 绑定值始终是站内相对路径（如 `/uploads/2026/10/xxxx.png`），
-// 与后端字段口径一致；预览时直接作为 `src`（开发态由 Vite 代理 `/uploads`）。
+// 把「选图 → 上传 → 回填路径 → 预览」串成一步，省得管理员手填 URL。
+// 绑定值始终是站内相对路径（如 `/uploads/2026/10/xxxx.png`），预览时直接当 `src`
+// （开发态由 Vite 代理 `/uploads`）。
 defineProps<{
     // 当前图片相对路径；空串表示未上传
     modelValue?: string | null;

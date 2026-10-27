@@ -12,6 +12,7 @@ import { postApi } from '@/api/post';
 import type { Overview, Post } from '@/api/types';
 import ErrorRetry from '@/components/ErrorRetry.vue';
 import ProjectSpotlight from '@/components/ProjectSpotlight.vue';
+import SmartImage from '@/components/SmartImage.vue';
 
 // ECharts 按需注册：只引入真正用到的图表（柱状 / 饼图）与组件，
 // 避免把近 1MB 的整包 ECharts 打进首屏。
@@ -33,12 +34,12 @@ const TYPE_TEXT: Record<string, string> = {
 // 只放团队真实在用的技术，避免为了好看堆一串与项目无关的关键词。
 const TECH = ['Spring Boot', 'Vue 3', 'MyBatis-Plus', 'MySQL', 'Redis', 'LangChain4j', 'Docker', 'Nginx'];
 
+
 // ==================== 社区精选 ====================
 
 /**
- * 精选条数：首页只展示 3 篇（1 篇头条 + 2 篇榜单），再多会把首页拉得比项目区还长。
- * 拉取 9 篇而不是 3 篇：公开列表接口只有「置顶优先 + 时间倒序」一种排序，
- * 想挑出「优秀」的文章必须在客户端按热度重排——样本太小会让热度排序失去意义。
+ * 首页只展示 3 篇（1 头条 + 2 榜单），再多会把首页拉得比项目区还长。
+ * 拉 9 篇是因为公开列表只有「置顶优先 + 时间倒序」，要在客户端按热度重排，样本太小排序就没意义。
  */
 const EXCELLENT_COUNT = 3;
 const EXCELLENT_FETCH = 9;
@@ -52,9 +53,8 @@ const postsError = ref('');
 const projectTotal = ref<number | null>(null);
 
 /**
- * 热度评分：点赞权重最高（主动表达认可的成本比浏览高得多），
- * 评论次之，浏览最低。权重是产品口径，不是算法——后端并没有热度字段，
- * 首页这个排序只影响展示顺序，不参与任何业务判断，所以放在前端即可。
+ * 热度评分：点赞权重最高（主动表达认可的成本比浏览高得多），评论次之，浏览最低。
+ * 这是产品口径而非算法——后端没有热度字段，此排序只影响首页展示，不参与任何业务判断。
  */
 const HOT_WEIGHT = { like: 6, comment: 4, view: 1 };
 
@@ -79,11 +79,8 @@ const featuredPost = computed(() => excellentPosts.value[0] ?? null);
 const sidePosts = computed(() => excellentPosts.value.slice(1));
 
 /**
- * 首页数据条
- *
- * 为什么数字来自三个不同接口：证书、文章、项目分别由三个模块维护，
- * 没有一个「首页聚合」接口可以少发请求——刻意不新增后端接口，
- * 是因为这三个数字只在首页出现，为它们建聚合接口不值得（首页已有各自的分页接口）。
+ * 首页数据条：三个数字分别来自证书 / 文章 / 项目三个模块。
+ * 刻意不新增聚合接口——它们只在首页出现，为三个数字建一个后端接口不值得。
  */
 const metrics = computed(() => [
     {
@@ -167,8 +164,7 @@ const typeOption = computed<EChartsOption>(() => ({
 /**
  * 首页大盘（证书维度）
  *
- * 失败与帖子加载失败是两种独立的错误态：大盘挂了不影响社区精选，
- * 反之亦然——所以拆成两个请求、两套错误提示，而不是一个大 try 包住。
+ * 与帖子加载是两套独立错误态：大盘挂了不影响社区精选，反之亦然，所以拆成两个请求。
  */
 async function load() {
     loading.value = true;
@@ -260,12 +256,8 @@ const ICON_PATHS = {
 /**
  * 滚动入场指令 v-reveal
  *
- * 为什么不用动画库：只需要「进入视口淡入上移」这一种效果，
- * 引一个动画库（几十 KB）不划算。IntersectionObserver 原生就有，逻辑 15 行。
- *
- * 约定：
- * - 系统开启「减少动态效果」时直接不注册观察者——元素保持默认可见，绝不隐藏内容；
- * - 类名由 JS 添加（而不是初始就写在模板上），这样脚本异常时页面依然完整可读。
+ * 不用动画库：只需要「进入视口淡入上移」一种效果，IntersectionObserver 十几行就够。
+ * 减少动态效果时不注册观察者（元素保持可见）；类名由 JS 添加，脚本异常时页面依然可读。
  */
 const vReveal: Directive<HTMLElement, number | undefined> = {
     mounted(el, binding) {
@@ -318,19 +310,22 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
                 </div>
 
                 <div class="hero-copy">
-                    <p class="eyebrow"><span class="eyebrow-dot"></span> STUDENT SOFTWARE STUDIO</p>
                     <h1>润石工作室</h1>
-                    <p class="lead">这里陈列我们做过的项目与获得的荣誉，也可以直接向 AI 助手提问。</p>
+                    <p class="hero-tagline">把课堂上的知识，做成真正能用的产品</p>
+                    <p class="lead">
+                        我们是一支由在校学生组成的软件开发团队，做项目、拿奖项、写技术文章，
+                        也用 AI 把工作室的经验沉淀成随时可问的知识库。
+                    </p>
                     <div class="actions">
-                        <router-link to="/projects" class="btn primary">看看项目 <span class="arrow">→</span></router-link>
-                        <router-link to="/posts" class="btn ghost">读读社区</router-link>
+                        <router-link to="/projects" class="btn primary">看看我们做过什么 <span class="arrow">→</span></router-link>
                         <router-link to="/ai" class="btn ghost">问问 AI 助手</router-link>
                     </div>
+                    <!-- 能力标签：给第一次来的人一个「他们能做什么」的快速印象 -->
                     <div class="hero-meta">
-                        <span>项目实战</span>
-                        <span>荣誉沉淀</span>
-                        <span>社区分享</span>
-                        <span>AI 问答</span>
+                        <span>网站与小程序开发</span>
+                        <span>AI 应用落地</span>
+                        <span>数据分析与可视化</span>
+                        <span>系统设计与实现</span>
                     </div>
                 </div>
             </div>
@@ -363,7 +358,6 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
         <section v-reveal class="section">
             <div class="section-head">
                 <div>
-                    <p class="eyebrow">FEATURED PROJECTS</p>
                     <h2>项目精选</h2>
                 </div>
                 <router-link to="/projects" class="more">全部项目 <span class="more-arrow">→</span></router-link>
@@ -386,7 +380,6 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
         <section v-reveal class="section">
             <div class="section-head">
                 <div>
-                    <p class="eyebrow">COMMUNITY PICKS</p>
                     <h2>社区精选</h2>
                 </div>
                 <router-link to="/posts" class="more">逛逛社区 <span class="more-arrow">→</span></router-link>
@@ -425,14 +418,21 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
                             />
                             <span v-else class="pick-initial">{{ initialOf(featuredPost.title) }}</span>
                             <div class="pick-badges">
-                                <span class="pick-rank">TOP 1</span>
+                                <span class="pick-rank">头条</span>
                                 <span v-if="featuredPost.pinned === 1" class="pick-pin">置顶</span>
                             </div>
                         </div>
 
                         <div class="pick-body">
                             <div class="pick-author">
-                                <span class="avatar">{{ initialOf(featuredPost.authorName) }}</span>
+                                <!-- 作者头像：有真实头像就用，没有则用姓名首字（SmartImage 统一兜底） -->
+                                <span class="avatar">
+                                    <SmartImage
+                                        :src="featuredPost.authorAvatar"
+                                        :alt="featuredPost.authorName || '工作室成员'"
+                                        :seed="featuredPost.authorId"
+                                    />
+                                </span>
                                 <span class="author-name">{{ featuredPost.authorName || '工作室成员' }}</span>
                                 <span class="sep">·</span>
                                 <span>{{ formatDate(featuredPost.createdAt) }}</span>
@@ -475,6 +475,13 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
                                 <h3>{{ post.title }}</h3>
                                 <p class="sum">{{ post.summary || '暂无摘要' }}</p>
                                 <div class="mini-meta">
+                                    <span class="mini-avatar">
+                                        <SmartImage
+                                            :src="post.authorAvatar"
+                                            :alt="post.authorName || '工作室成员'"
+                                            :seed="post.authorId"
+                                        />
+                                    </span>
                                     <span class="author-name">{{ post.authorName || '工作室成员' }}</span>
                                     <span>浏览 {{ formatCount(post.viewCount) }}</span>
                                     <span>赞 {{ formatCount(post.likeCount) }}</span>
@@ -486,16 +493,14 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
             </div>
         </section>
 
-        <!-- 大盘数据加载失败：用带重试按钮的统一组件。此前是裸 el-alert——
-             提示会一直在，但没有恢复手段，用户只能刷新整个页面 -->
+        <!-- 大盘数据加载失败：用带重试按钮的统一组件，裸 alert 没有恢复手段，用户只能刷新整页 -->
         <ErrorRetry v-if="error" :message="error" @retry="load" />
 
         <div v-loading="loading">
             <template v-if="overview">
-                <section v-reveal class="section">
+                <section v-reveal class="section stats-section">
                     <div class="section-head">
                         <div>
-                            <p class="eyebrow">ACHIEVEMENTS</p>
                             <h2>荣誉数据</h2>
                         </div>
                         <router-link to="/certificates" class="more">进入荣誉墙 <span class="more-arrow">→</span></router-link>
@@ -560,7 +565,6 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
 
         <section v-reveal class="cta-band">
             <div class="cta-copy">
-                <p class="eyebrow">JOIN THE STUDIO</p>
                 <h2>把想法做成作品</h2>
                 <p>从一行代码到上线项目，和一群认真做事的人一起成长。</p>
             </div>
@@ -599,9 +603,8 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
     opacity: 0.9;
 }
 
-/* 光晕只允许向页面内溢出一小段：
-   位置保持在页面 padding 之内，且动画只做纵向位移，
-   否则绝对定位元素会把 body 的 scrollWidth 撑宽（窄屏会出现横向滚动条）。 */
+/* 光晕只允许向页面内溢出一小段：绝对定位元素会把 body 的 scrollWidth 撑宽，
+   窄屏就出现横向滚动条 */
 .orb-a {
     width: 300px;
     height: 300px;
@@ -732,31 +735,13 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
     min-width: 0;
 }
 
-.eyebrow {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    margin: 0 0 10px;
-    color: var(--brand);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
-}
-
-.eyebrow-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--brand);
-    box-shadow: 0 0 0 4px rgb(37 99 235 / 12%);
-    animation: pulse 2.4s ease-in-out infinite;
-}
+/* 区块标题不用小标（eyebrow）：中文小字放在标题上方显得局促，也没有提供额外信息 */
 
 .hero h1 {
     margin: 0 0 12px;
-    font-size: clamp(34px, 4vw, 48px);
-    line-height: 1.15;
-    letter-spacing: -0.02em;
+    font-size: clamp(36px, 4.4vw, 52px);
+    line-height: 1.12;
+    letter-spacing: -0.025em;
     color: var(--text);
 }
 
@@ -769,6 +754,16 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
         -webkit-text-fill-color: transparent;
         color: transparent;
     }
+}
+
+/* 一句话定位：比 h1 更具体地说明「这群人做什么」，
+   字号介于标题与正文之间，让扫读的人不必读完整段 lead */
+.hero-tagline {
+    margin: 6px 0 14px;
+    font-size: 17px;
+    font-weight: 600;
+    color: #1d4ed8;
+    letter-spacing: 0.01em;
 }
 
 .lead {
@@ -833,26 +828,32 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
 .hero-meta {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px 18px;
-    margin-top: 20px;
-    padding-top: 16px;
+    gap: 8px;
+    margin-top: 22px;
+    padding-top: 18px;
     border-top: 1px dashed rgb(37 99 235 / 16%);
     color: var(--text-secondary);
     font-size: 13px;
 }
 
+/* 能力标签做成胶囊：比「圆点 + 文字」更像一组能力，也更容易扫读 */
 .hero-meta span {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
+    padding: 5px 12px;
+    border: 1px solid rgb(37 99 235 / 16%);
+    border-radius: 999px;
+    background: rgb(255 255 255 / 70%);
+    color: #1e40af;
+    font-size: 12.5px;
+    font-weight: 500;
+    transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
 }
 
-.hero-meta span::before {
-    content: '';
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: #93c5fd;
+.hero-meta span:hover {
+    border-color: rgb(37 99 235 / 40%);
+    background: #eff6ff;
+    transform: translateY(-1px);
 }
 
 /* ===== 首屏数据条 ===== */
@@ -928,25 +929,49 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
 }
 
 .section {
-    margin-top: 34px;
+    margin-top: 52px;
 }
 
+/* 区块标题：左侧一条渐变色竖条作视觉锚点——比小字更安静，同样能说清「这是新的一节」 */
 .section-head {
     display: flex;
     align-items: flex-end;
     justify-content: space-between;
     gap: 16px;
-    margin-bottom: 14px;
+    margin-bottom: 20px;
 }
 
-.section-head .eyebrow {
-    margin: 0;
+.section-head > div {
+    position: relative;
+    padding-left: 14px;
+}
+
+.section-head > div::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 6px;
+    bottom: 6px;
+    width: 4px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #2563eb, #38bdf8);
 }
 
 .section-head h2 {
-    margin: 4px 0 0;
-    font-size: 24px;
-    letter-spacing: -0.01em;
+    margin: 0;
+    font-size: 25px;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    color: var(--text);
+}
+
+/* 荣誉区块：用极淡的蓝底把它从上下两段白底内容里区分出来，
+   让长页面有「章节感」而不是一条平铺直叙的白带 */
+.stats-section {
+    padding: 32px 26px;
+    border-radius: 26px;
+    background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+    border: 1px solid rgb(37 99 235 / 8%);
 }
 
 .more {
@@ -1186,6 +1211,8 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
     width: 26px;
     height: 26px;
     border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
     background: linear-gradient(135deg, #2563eb, #0ea5e9);
     color: #fff;
     font-size: 12px;
@@ -1363,10 +1390,25 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
 .mini-meta {
     display: flex;
     flex-wrap: wrap;
+    align-items: center;
     gap: 10px;
     margin-top: auto;
     color: var(--muted);
     font-size: 12px;
+}
+
+/* 榜单条里的小头像：比头条小一号，不抢标题的注意力 */
+.mini-avatar {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    display: inline-flex;
+}
+
+.mini-avatar :deep(.img-fallback__box) {
+    font-size: 10px;
 }
 
 /* ===== 荣誉数据 ===== */
@@ -1573,11 +1615,6 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
     z-index: 1;
 }
 
-.cta-copy .eyebrow {
-    margin-bottom: 8px;
-    color: #93c5fd;
-}
-
 .cta-copy h2 {
     margin: 0 0 8px;
     color: #fff;
@@ -1731,10 +1768,6 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
         margin: 0 auto;
     }
 
-    .hero-copy .eyebrow {
-        justify-content: center;
-    }
-
     .hero h1 {
         font-size: 34px;
     }
@@ -1837,7 +1870,6 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
     .hero-orb,
     .hero-aurora,
     .hero-card::after,
-    .eyebrow-dot,
     .tech-track {
         animation: none;
     }

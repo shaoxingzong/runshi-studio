@@ -78,3 +78,9 @@ docs/DIAGRAM_GUIDE.md
 ### 临时诊断脚本（一次性排查用，不入库） ###
 # 根目录的 tools-*.mjs / tools-*.ps1 这类一次性脚本，用完即弃
 /tools-*
+
+### 工具与 IDE 的本地产物（不入库） ###
+# Playwright CLI 的调试日志与页面快照：只在本地排查界面问题时产生
+.playwright-cli/
+# Trae 编辑器生成的需求/方案草稿：随开发过程变化，不是交付物
+.trae/

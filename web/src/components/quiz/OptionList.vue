@@ -4,16 +4,8 @@ import type { QuizOption, QuizQuestionType, QuizVerdict } from '@/api/types';
 /**
  * 选项列表：单选用 radio 语义、多选用 checkbox 语义，判定后着色
  *
- * 只有两种交互，没有第三种：题型是闭集（0-单选 / 1-多选），
- * 因此这里只有 radio 与 checkbox 两个分支。
- * 判断题被刻意排除在设计之外——它就是选项为「正确 / 错误」的单选。
- *
- * 判定后的着色规则（三条，缺一条用户就看不懂自己错在哪）：
- * - 正确项：绿框（无论用户选没选）；
- * - 用户选了但不在正确答案里：红框（这是「多选/错选」的错）；
- * - 用户漏选的正确项：绿框（这是「漏选」的错）。
- * 注意「正确项」的判定用的是 QuizVerdict#correctLabels，
- * 而不是选项自带的标记——选项里本来就没有正确性标记。
+ * 着色三条缺一条就看不懂错在哪：正确项绿框（无论选没选）、选错的项红框、漏选的正确项绿框。
+ * 正确性只认 QuizVerdict#correctLabels——选项本身不带正确性标记。
  */
 const props = defineProps<{
     options: QuizOption[];
@@ -44,10 +36,7 @@ function isCorrect(label: string): boolean {
 }
 
 /**
- * 选项的视觉状态
- *
- * 返回值直接对应样式类：right 绿、wrong 红、
- * picked 只是选中（未判定时）。
+ * 选项的视觉状态，直接对应样式类：right 绿、wrong 红、picked 仅选中（未判定时）
  */
 function stateOf(label: string): string {
     if (!props.verdict) {

@@ -12,12 +12,10 @@ import java.util.List;
 /**
  * AI 提问响应
  *
- * sessionId 在每一次回答后都会返回，包括「本次刚新建会话」的情况：
- * 前端不需要在发问前先调一次「创建会话」接口，只要把响应里的 sessionId 存下来，
- * 下一轮带上即可续聊。这是「新建会话」与「续聊」共用一个接口的关键。
+ * sessionId 每次回答后都会返回，包括「本次刚新建会话」的情况：前端不必在发问前先调一次创建会话接口，
+ * 只要把响应里的 sessionId 存下来，下一轮带上即可续聊——这是「新建会话」与「续聊」共用一个接口的关键。
  *
- * sessionId 用雪花 ID，按全局约定序列化成字符串（防 JS 精度丢失）。
- * 前端原样回传即可（见 AiChatRequest#sessionId 的说明）。
+ * sessionId 是雪花 ID，按全局约定序列化成字符串防 JS 精度丢失，前端原样回传即可。
  *
  * @author shaoshing
  */
@@ -37,13 +35,12 @@ public class AiChatResponseVO implements Serializable {
     private String answer;
 
     /**
-     * 本次回答引用的资料来源（RAG 溯源，）
+     * 本次回答引用的资料来源（RAG 溯源）
      *
-     * 无命中时是空数组而不是 null：前端写 sources.map(...) 时不必先判空。
-     * 「没有引用资料」是正常的（闲聊、或知识库为空），不该和「出错了」混在一起。
+     * 无命中时是空数组而不是 null：前端写 sources.map(...) 时不必先判空，
+     * 「没有引用资料」是正常情况（闲聊、或知识库为空），不该和「出错了」混在一起。
      *
-     * 顺序即「资料送进模型的顺序」（相似度降序），与 answer 里事实的
-     * 出现顺序大体对应，前端按序渲染即可。
+     * 顺序即资料送进模型的顺序（相似度降序），前端按序渲染即可。
      */
     private List<KnowledgeSourceVO> sources = new ArrayList<>();
 }

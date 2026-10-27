@@ -12,20 +12,14 @@ import java.time.LocalDate;
 /**
  * 管理端：新增证书请求
  *
- * 四个必填项对应本模块的四个考点：
- * - 级别与类型是两个字段（ awardLevel + awardType）——
- * 不允许只给一个「国家级竞赛」字符串——两个维度各自独立筛选与统计；
- * - awardDate 不得晚于今天：用 @PastOrPresent 在入口拦住，
- * 还没发生的获奖日期一定是填错了；
- * - imageUrl 必须非空：DDL 里该列是 NOT NULL，
- * 不校验的话会直接抛 SQL 错误而不是给出「请上传证书图片」的提示；
- * - sortOrder 不传按 0 处理（由 Service 兜底）。
+ * 级别与类型是两个独立字段（awardLevel + awardType），不接受「国家级竞赛」这种合体字符串，
+ * 因为两个维度要各自独立筛选与统计。
  *
- * 为什么枚举取值不用 @Pattern 写死：枚举一加取值，注解就过期了，
- * 而且错误信息还得手写一遍取值列表。枚举合法性统一交给 Service 用
- * com.bhu.runshistudioweb.model.enums.CertificateLevelEnum /
- * com.bhu.runshistudioweb.model.enums.CertificateTypeEnum 校验，
- * 提示文案用枚举的 valuesText() 生成，永远不会跟实际取值脱节。
+ * awardDate 用 @PastOrPresent 在入口拦住——还没发生的获奖日期一定是填错了；
+ * imageUrl 必填是因为 DDL 里该列 NOT NULL，不校验会直接抛 SQL 错误而不是给出「请上传证书图片」的提示。
+ *
+ * 枚举取值不用 @Pattern 写死（枚举一加取值注解就过期），合法性由 Service 用枚举校验，
+ * 提示文案用 valuesText() 生成，不会跟实际取值脱节。
  *
  * @author shaoshing
  */
@@ -56,8 +50,7 @@ public class CertificateAddRequest implements Serializable {
     /**
      * 获奖 / 颁发日期（必填，不得晚于今天）
      *
-     * 用 LocalDate 接收：DDL 里该列是 date，
-     * 用 LocalDateTime 会出现「时间部分丢失/报错」的类型错配。
+     * 用 LocalDate 接收：DDL 里该列是 date，用 LocalDateTime 会出现时间部分丢失或类型错配。
      */
     @NotNull(message = "获奖日期不能为空")
     @PastOrPresent(message = "获奖日期不能晚于今天")

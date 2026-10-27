@@ -14,21 +14,12 @@ import java.time.LocalDateTime;
 /**
  * 内容举报实体（对应 studio_post_report）
  *
- * 举报是「免审内容」的兜底：被信任的用户发布的内容会自动通过、不经人工，
- * 但仍需给其他人一条反馈通道。举报成立后内容转待审或删除，不成立则保留原样。
+ * 举报是「免审内容」的兜底：被信任用户的内容自动通过，但仍需给他人的反馈通道。
+ * 用 targetType + targetId 软关联而非两张举报表：字段几乎一样，拆开只是复制逻辑，
+ * 还让跨类型查询变成两次查询再合并。
  *
- * 为什么用 targetType + targetId 的软关联，而不是帖子/评论各建一张举报表：
- * 两张表的字段几乎完全一样（举报人、理由、处理状态、处理人、处理结果），
- * 拆开只是把同一套逻辑复制两份，还会让「待处理举报列表」这类跨类型查询变成两次查询 + 内存合并。
- *
- * 这个取舍的代价必须记牢：数据库无法用外键保证 targetId 指向真实存在的内容。
- * 因此删除帖子或评论时，必须在应用层一并处置其举报记录（逻辑删除对应举报，或标记为无需处理），
- * 否则会留下永远查不到目标的悬空举报，把待处理列表污染掉。
- *
- * 唯一索引 uk_target_reporter 带了 deletedAt：
- * 与 uk_account_deleted、uk_userid_deleted 是同一套路。
- * 不带的话，一条举报被删除后同一人就无法再次举报同一内容了（唯一键冲突），
- * 而「误举报后撤销、看清问题再举报」是真实会发生的场景。
+ * 坑：没有外键保证 targetId 指向真实内容，删除帖子或评论时必须同事务处置其举报，
+ * 否则会留下悬空举报污染待处理列表；uk_target_reporter 带 deletedAt，否则误报撤销后无法再举报同一内容。
  *
  * @author shaoshing
  */
@@ -43,11 +34,7 @@ public class StudioPostReport implements Serializable {
     @TableId(type = IdType.ASSIGN_ID)
     private Long id;
 
-    /**
-     * 举报目标类型：post-帖子, comment-评论
-     *
-     * 取值定义见 com.bhu.runshistudioweb.model.enums.ReportTargetTypeEnum。
-     */
+    /** 举报目标类型：post-帖子，comment-评论，取值见 ReportTargetTypeEnum */
     private String targetType;
 
     /** 举报目标 ID（指向 studio_post.id 或 studio_post_comment.id，由 targetType 决定） */
@@ -59,11 +46,7 @@ public class StudioPostReport implements Serializable {
     /** 举报理由（举报人填写） */
     private String reason;
 
-    /**
-     * 处理状态：0-待处理, 1-已处置, 2-举报不成立
-     *
-     * 取值定义见 com.bhu.runshistudioweb.model.enums.ReportStatusEnum。
-     */
+    /** 处理状态：0-待处理，1-已处置，2-举报不成立，取值见 ReportStatusEnum */
     private Integer status;
 
     /** 处理人 ID（管理员） */
@@ -72,12 +55,7 @@ public class StudioPostReport implements Serializable {
     /** 处理时间 */
     private LocalDateTime handleAt;
 
-    /**
-     * 处理结果说明（内部复盘用）
-     *
-     * 它不返回给举报人——举报人只看到「已处理」这个结论，
-     * 处理细节留在后台，避免被人研究出「什么样的举报会被受理」。
-     */
+    /** 处理结果说明（内部复盘用）：不返回给举报人，避免被研究出「什么样的举报会被受理」 */
     private String handleResult;
 
     /** 创建人 ID：插入时由 MyMetaObjectHandler 填充 */

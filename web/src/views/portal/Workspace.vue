@@ -11,11 +11,10 @@ import type { AttendanceBoardItem, AttendanceRecord } from '@/api/types';
 /**
  * 成员工作台（考勤）
  *
- * 准入：只有在队成员能用（与发帖同一套判定，认 studio_member 表）。
- * 非成员进来会被拦下并送回首页——不是报错，因为「不是成员」是正常的身份状态。
+ * 准入：只有在队成员能用（认 studio_member 表）。非成员被拦下并送回首页——
+ * 不是报错，「不是成员」是正常的身份状态。
  *
- * 隐私：看板数据刻意不含 IP / UA / 账号，这里只呈现「是否内网」的布尔结论，
- * 不展示任何位置或网段信息。
+ * 隐私：看板不含 IP / UA / 账号，只呈现「是否内网」的布尔结论。
  */
 const router = useRouter();
 const user = useUserStore();

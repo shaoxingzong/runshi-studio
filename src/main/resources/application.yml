@@ -101,6 +101,11 @@ studio:
     api-key: ${AI_API_KEY:}
     model: ${AI_MODEL:deepseek-chat}
     embedding-model: ${AI_EMBEDDING_MODEL:text-embedding-3-small}
+    # 向量库类型：memory（默认，开发/测试）| redis（生产，需要 Redis 8.4+ 的 Query Engine + JSON）
+    # 默认 memory 是刻意的：本地与测试不强制安装 Redis 模块；生产由 application-prod.yml 覆盖为 redis
+    vector-store-type: ${VECTOR_STORE_TYPE:memory}
+    # 启动时比对切分块数与向量数，不一致则自动重建；测试环境由 surefire 置 false
+    rag-startup-check-enabled: ${RAG_STARTUP_CHECK_ENABLED:true}
     # 单次回答的最大输出 token 数（含推理模型的思考过程）。
     # ⚠️ 推理模型（deepseek-v4-pro 等）**必须**设：思考过程同样消耗额度，
     #    不设时可能全被思考耗尽、正文为空 → 后端判「回答为空」→ 用户看到 C0200。

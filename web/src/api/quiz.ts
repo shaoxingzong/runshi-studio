@@ -16,13 +16,10 @@ import type {
 /**
  * 刷题接口（仅工作室成员，与考勤共用同一套身份判定）
  *
- * 全部接口只挂 `@SaCheckLogin`，真正的成员准入由后端查 `studio_member` 表判定
- * （认表不认角色），非成员会拿到 A0301 无权限。
+ * 接口只挂 `@SaCheckLogin`，准入由后端查 `studio_member` 表判定，非成员拿到 A0301。
  *
- * 答案的边界：`batch` 返回的题目结构上没有答案；
- * 答案与解析只在 `answer` 的返回值里出现，且只针对刚提交的那一题；
- * `skip` 什么都不返回（否则跳过就成了看答案的捷径）；
- * `wrongPage` 不含答案，`wrongDetail` 才含。
+ * 答案边界：`batch` 返回的题目结构上没有答案；答案与解析只在 `answer` 里出现且只针对刚提交的那题；
+ * `skip` 什么都不返回（否则跳过就成了看答案的捷径）；`wrongPage` 不含答案，`wrongDetail` 才含。
  */
 export const quizApi = {
     // 教材 → 章节树（只统计启用题）
@@ -69,9 +66,8 @@ export const quizApi = {
 /**
  * 题库管理接口（全部要求 admin）
  *
- * 与 C 端的 `quizApi` 分开命名空间：两套接口的鉴权、返回结构、
- * 甚至「章节题数」的口径都不同（管理端含停用题，C 端只数启用题），
- * 混在一个对象里迟早用错。
+ * 与 C 端的 `quizApi` 分命名空间：鉴权和「章节题数」的口径都不同
+ * （管理端含停用题，C 端只数启用题），混在一个对象里迟早用错。
  */
 export const adminQuizApi = {
     questionPage: (params: Record<string, unknown>) =>

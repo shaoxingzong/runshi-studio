@@ -10,19 +10,14 @@ import java.util.List;
 /**
  * 项目视图对象（C 端列表使用，游客可获取）
  *
- * 脱敏套路与其它模块一致：靠「目标 VO 没有这些字段」实现，而不是拷完再手动置空。
- * 本类刻意不包含：
- * - content——text 大字段（Markdown 正文）。
- * 列表查询若带上它，每一行都要把整篇正文传回前端，响应体积会膨胀几十倍；
- * 只有详情接口（ ProjectFrontDetailVO）才取；
- * - leaderId——内部关联字段，游客无需知道它指向哪个成员档案；
- * - sortOrder——运营置顶权重，属于后台配置，不该被前台感知；
- * - createdAt / updatedAt / createdBy / updatedBy / deletedAt——审计字段。
- * 由于 BeanUtils.copyProperties 只拷贝「两边都存在且类型一致」的属性，
- * 这些字段结构上不可能被带出去。以后实体新增敏感字段时，只要不加进本类就自动被挡住。
+ * 脱敏靠「目标 VO 没有这些字段」而不是拷完再手动置空：刻意不含 content（text 大字段，
+ * 列表每行都带上它响应体积会膨胀几十倍，只有详情 VO 才取）、leaderId（内部关联字段）、
+ * sortOrder（运营置顶权重）与 createdAt / updatedAt / createdBy / updatedBy / deletedAt（审计字段）。
+ * BeanUtils.copyProperties 只拷贝「两边都存在且类型一致」的属性，以后实体新增敏感字段时，
+ * 只要不加进本类就自动被挡住。
  *
- * 保留 status 是因为官网要按状态渲染标签（研发中 / 已上线 / 已结题），
- * 保留 techStack 是因为卡片上要展示技术栈标签——它们都属于「愿意给所有人看」的信息。
+ * 保留 status 是因为官网要按状态渲染标签（研发中 / 已上线 / 已结题），保留 techStack 是因为卡片上
+ * 要展示技术栈标签——它们都属于「愿意给所有人看」的信息。
  *
  * @author shaoshing
  */

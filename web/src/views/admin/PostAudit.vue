@@ -8,9 +8,8 @@ import type { PageResult, PostAudit } from '@/api/types';
 /**
  * 帖子待审队列（管理员）
  *
- * 队列里为什么绝大多数是「AI 拿不准」的：三分法下，AI 判「安全」的已自动通过、
- * 判「违规」的已自动驳回，两者都不会出现在这里。
- * 管理员真正要处理的只有「灰色」和「AI 不可用」两类——这正是这套机制减负的地方。
+ * 队列里绝大多数是「AI 拿不准」的：AI 判安全已自动通过、判违规已自动驳回，都不会出现在这里。
+ * 管理员只需处理「灰色」和「AI 不可用」两类，这正是这套机制减负的地方。
  */
 const page = reactive({ current: 1, pageSize: 10 });
 const result = ref<PageResult<PostAudit> | null>(null);
@@ -59,7 +58,6 @@ function turn(delta: number) {
  * 批量处置
  *
  * 驳回必须填理由：后端强校验，且理由要给作者看——没理由等于让作者猜。
- * 这里用弹窗收集，比让用户先选再跳到别处填更顺手。
  */
 async function audit(approved: boolean) {
     if (selected.value.length === 0) {

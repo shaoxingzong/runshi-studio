@@ -5,6 +5,7 @@ import DOMPurify from 'dompurify';
 import { portalApi } from '@/api/portal';
 import { usePageMeta } from '@/composables/usePageMeta';
 import ErrorRetry from '@/components/ErrorRetry.vue';
+import SmartImage from '@/components/SmartImage.vue';
 import {
     bindCodeCopy,
     MARKDOWN_ALLOWED_ATTR,
@@ -20,57 +21,34 @@ const route = useRoute();
 const router = useRouter();
 const detail = ref<ProjectDetailType | null>(null);
 const loading = ref(false);
-/** 加载失败（含 id 不存在）：此前提炼只有 v-if="detail"，失败时整页空白 */
+/** 加载失败（含 id 不存在）：只判断 detail 的话，失败时整页空白 */
 const error = ref('');
 
-/** 站内默认封面：封面文件缺失 / 404 时用它顶上，而不是留一块空白 */
-const DEFAULT_COVER = '/uploads/defaults/cover.svg';
-
 /**
- * 加载失败的头像 URL
+ * 封面与头像的兜底统一交给 SmartImage
  *
- * 头像可能指向一个已经不存在的历史文件（换过图床、文件被清理），
- * 浏览器拿到的就是 404 —— 不处理会留下一个裂图占位。
- * 记具体 URL 而不是一个布尔：单个成员的头像坏掉，不该让所有人都退回首字。
+ * 不要自己维护默认图 / 坏 URL 集合：前者依赖一个「站内默认图」文件，文件缺失就是连环 404；
+ * 「首字 + 渐变块」不依赖任何图片文件，永远不会裂图。
  */
-const brokenAvatars = ref<Set<string>>(new Set());
-
-function markAvatarBroken(url: string) {
-    brokenAvatars.value = new Set(brokenAvatars.value).add(url);
-}
-
-/**
- * 封面加载失败 → 换成站内默认封面
- *
- * 加 endsWith 判断是为了防死循环：默认图自己再失败时不再递归替换。
- */
-function onCoverError(e: Event) {
-    const img = e.target as HTMLImageElement;
-    if (!img.src.endsWith(DEFAULT_COVER)) {
-        img.src = DEFAULT_COVER;
-    }
-}
 
 const STATUS_TEXT: Record<string, string> = { 0: '研发中', 1: '已上线', 2: '已结题' };
+
+/**
+ * 参与成员（永远返回数组）
+ *
+ * 后端 members 声明成 List 却没加 @NotNull，历史数据可能返回 null；在 null 上取 .length 会抛
+ * TypeError 并中断整个组件渲染，表现为「页面显示到一半就没了」。
+ */
+const members = computed(() => detail.value?.members ?? []);
 
 /** 正文容器：代码块复制与目录高亮都要在真实 DOM 上接线（v-html 的内容 Vue 管不着） */
 const bodyRef = ref<HTMLElement | null>(null);
 
 /**
- * 正文是 Markdown，渲染链路是：共享工具（renderMarkdown）→ 白名单清洗 → v-html
+ * 正文渲染：renderMarkdown → 白名单清洗 → v-html
  *
- * 为什么必须清洗：marked 只负责「Markdown 转 HTML」，它 v15 起已移除内置的
- * sanitize——原文里的 `<script>`、`onerror=` 会被原样保留。而 `v-html` 是直接写入
- * DOM，等于把正文作者当成了可信来源。
- *
- * 因此这里统一走 DOMPurify 白名单清洗：
- * - 保留正文需要的标签（标题/列表/代码/链接/图片）；
- * - 剥掉脚本、事件属性、`javascript:` 协议等注入载体。
- * 「管理员录入」不能替代清洗——账号被盗、越权、导入外部数据都可能让正文不可信。
- *
- * 白名单里额外放行 div/button/id/type/aria-label/loading/decoding：
- * 这些是共享 renderer 的增强输出（代码块包装、复制按钮、标题锚点、图片懒加载），
- * 不放行会被静默洗掉——表现是「复制按钮不见了但没人报错」。
+ * 必须清洗：marked v15 起移除了内置 sanitize，而 v-html 直接写 DOM；「管理员录入」也不能免检
+ * ——账号被盗、越权都可能让正文不可信。白名单须放行 renderer 的增强输出，否则会被静默洗掉。
  */
 const rendered = computed(() => {
     const result = renderMarkdown(detail.value?.content ?? '');
@@ -134,8 +112,7 @@ onMounted(load);
 
 // 标签页标题用真实项目名（与 PostDetail 同一理由：详情页是收录与分享的主体）
 //
-// description 取项目摘要——它是给搜索引擎与分享预览看的浓缩介绍，
-// 比 index.html 里那句全站通用描述准确得多。
+// description 取项目摘要，比 index.html 里那句全站通用描述准确得多。
 usePageMeta({
     title: computed(() => detail.value?.title ?? '项目详情'),
     description: computed(() => detail.value?.description ?? ''),
@@ -154,13 +131,10 @@ usePageMeta({
         </template>
         <template v-else>
             <div class="card">
-                <img
-                    v-if="detail.coverImage"
-                    :src="detail.coverImage"
-                    :alt="detail.title"
-                    class="cover"
-                    @error="onCoverError"
-                />
+                <!-- 封面失败时不再留裂图：SmartImage 会退成「项目名首字 + 渐变块」 -->
+                <div v-if="detail.coverImage" class="cover-wrap">
+                    <SmartImage :src="detail.coverImage" :alt="detail.title" :seed="detail.id" />
+                </div>
                 <h1>{{ detail.title }}</h1>
                 <span class="tag" :class="detail.status === 1 ? 'green' : 'gray'">
                     {{ STATUS_TEXT[String(detail.status)] || detail.status }}
@@ -196,26 +170,27 @@ usePageMeta({
                         {{ item.text }}
                     </a>
                 </nav>
+                <!-- 正文为空时给出说明，而不是留一块空白让人以为加载失败 -->
+                <el-empty v-if="!contentHtml" description="这个项目还没有补充详细说明" />
                 <!-- eslint-disable-next-line vue/no-v-html -->
-                <div ref="bodyRef" class="markdown-body" v-html="contentHtml" />
+                <div v-else ref="bodyRef" class="markdown-body" v-html="contentHtml" />
             </div>
 
             <div class="card block">
-                <h2>参与成员（{{ detail.members.length }}）</h2>
-                <el-empty v-if="detail.members.length === 0" description="暂无成员" />
+                <!-- 成员列表可能为 null（历史数据 / 字段未装配）：用 ?? [] 兜底，
+                     直接写 detail.members.length 会在 null 上抛错，整个详情区渲染中断 -->
+                <h2>参与成员（{{ members.length }}）</h2>
+                <el-empty v-if="members.length === 0" description="暂无成员" />
                 <div v-else class="grid cards-3">
                     <!-- 成员信息「不对外展示」（业务规则）：这里只作为项目参与者的信息卡，**不做跳转**——
                          官网没有成员详情路由，跳转会命中兜底路由静默回到首页 -->
-                    <div v-for="member in detail.members" :key="member.id" class="member">
+                    <div v-for="member in members" :key="member.id" class="member">
                         <div class="member-head">
-                            <img
-                                v-if="member.avatar && !brokenAvatars.has(member.avatar)"
-                                :src="member.avatar"
-                                :alt="member.name"
-                                class="avatar"
-                                @error="markAvatarBroken(member.avatar)"
-                            />
-                            <span v-else class="avatar fallback">{{ member.name.slice(0, 1) }}</span>
+                            <!-- 头像地址可能是外部图床（会失效）或已被清理的文件：
+                                 交给 SmartImage 兜底成「姓名首字 + 渐变块」，不留裂图 -->
+                            <span class="avatar">
+                                <SmartImage :src="member.avatar" :alt="member.name" :seed="member.id" />
+                            </span>
                             <div class="who">
                                 <div class="name">{{ member.name }}</div>
                                 <span v-if="member.teamPosition" class="tag gray">{{ member.teamPosition }}</span>
@@ -245,13 +220,14 @@ usePageMeta({
 </template>
 
 <style scoped>
-.cover {
+/* 封面容器：给出确定高度，让 SmartImage 的图片与兜底色块都能填满 */
+.cover-wrap {
     width: 100%;
-    max-height: 320px;
-    object-fit: cover;
+    height: 320px;
     border-radius: var(--radius-sm);
     margin-bottom: 16px;
-    display: block;
+    overflow: hidden;
+    display: flex;
 }
 
 h1 {
@@ -290,19 +266,14 @@ h1 {
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    object-fit: cover;
+    overflow: hidden;
     flex-shrink: 0;
+    display: inline-flex;
 }
 
-/* 没有头像时用姓名首字兜底，避免出现空框 */
-.avatar.fallback {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, #2563eb, #1d4ed8);
-    color: #fff;
+/* 头像兜底（姓名首字）时字号小一些，40px 的圆里不会显得挤 */
+.avatar :deep(.img-fallback__box) {
     font-size: 16px;
-    font-weight: 600;
 }
 
 .who {

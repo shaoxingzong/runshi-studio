@@ -10,23 +10,16 @@ import type { PageResult, PostAdminDetail, PostAudit } from '@/api/types';
 /**
  * 帖子管理（管理员）
  *
- * 与「帖子审核」的分工：
- * - 帖子审核页只面对待审队列——一种状态、批量处置、先进先出；
- * - 本页管理全部帖子——三种状态都能查，能删、能置顶、能代改。
- * 审核是治理的一个环节，不是全部：已通过的帖子要能置顶 / 下架，
- * 已驳回的要能看看作者改过没有，出问题的要能直接删掉。
+ * 与「帖子审核」分工：审核页只面对待审队列（一种状态、批量处置），本页管全部帖子——
+ * 三种状态都能查，能删、能置顶、能代改。审核是治理的一环，不是全部。
  *
- * 编辑后为什么文章会「消失」：保存时后端把非待审的帖子重置为待审
- * 重新送审（先审后发的后门必须堵住）。所以保存成功的提示里必须说清这件事，
- * 否则管理员会以为改坏了。
+ * 保存后文章会「消失」：后端把非待审的帖子重置为待审重新送审（先审后发的后门必须堵住），
+ * 成功提示里必须说清这件事，否则管理员会以为改坏了。
  */
 const page = reactive({ current: 1, pageSize: 10 });
 
 /**
- * 筛选条件
- *
- * status 用 null 表示「全部状态」——与后端口径一致
- * （不传该参数即不按状态过滤）。这与待审队列的关键区别就在这里。
+ * 筛选条件：status 用 null 表示「全部状态」，与后端口径一致（不传该参数即不过滤）
  */
 const filters = reactive({
     status: null as number | null,
@@ -109,11 +102,8 @@ function turn(delta: number) {
 /**
  * 置顶 / 取消置顶
  *
- * 只有「已通过」的行开关可点（后端同规则）：置顶待审帖在公开列表里
- * 没有效果——公开列表只展示已通过的内容，属于典型误操作。
- *
- * 失败时必须刷新：开关会停在用户点到的位置，与后端真实状态不一致，
- * 不刷新的话界面就在撒谎。
+ * 只有「已通过」的行开关可点（后端同规则）：置顶待审帖在公开列表里没有效果。
+ * 失败时必须刷新——开关会停在用户点到的位置，不刷新界面就在撒谎。
  */
 async function togglePin(row: PostAudit, pinned: number) {
     loading.value = true;
@@ -176,9 +166,8 @@ const form = reactive({
 /**
  * 打开编辑弹窗
  *
- * 列表 VO 不含正文（后端刻意如此：一页十条全文会撑爆响应体），
- * 所以这里先把已知字段填进去让弹窗立刻可交互，再去拉正文——
- * 正文没回来之前保存按钮不可用，避免「半模态数据」被提交。
+ * 列表 VO 不含正文（一页十条全文会撑爆响应体），所以先填已知字段让弹窗立刻可交互，
+ * 再去拉正文；正文回来前保存按钮不可用，避免「半模态数据」被提交。
  */
 async function openEdit(row: PostAudit) {
     form.id = row.id;
@@ -258,6 +247,7 @@ onMounted(load);
                 class="filter"
                 placeholder="标题关键词"
                 clearable
+                maxlength="64"
                 @keyup.enter="query"
             />
             <el-input
@@ -265,6 +255,7 @@ onMounted(load);
                 class="filter"
                 placeholder="作者（昵称 / 账号 / 成员姓名）"
                 clearable
+                maxlength="64"
                 @keyup.enter="query"
             />
             <div class="ops">
@@ -328,10 +319,8 @@ onMounted(load);
                 <el-table-column label="置顶" width="80">
                     <template #default="{ row }">
                         <!--
-                          禁用条件只挡「置顶」、不挡「取消置顶」：后端同规则
-                          （置顶要求已通过，取消不限制）。不能反过来一刀切禁用——
-                          帖子被编辑后会打回待审但 pinned 仍为 1，
-                          那时若取消不了置顶，管理员就卡在一个改不回来的状态里
+                          禁用只挡「置顶」、不挡「取消置顶」（后端同规则）：帖子被编辑后打回待审
+                          但 pinned 仍为 1，一刀切禁用会让管理员卡在改不回来的状态里
                         -->
                         <el-switch
                             :model-value="row.pinned === 1"
@@ -349,9 +338,8 @@ onMounted(load);
                     <template #default="{ row }">
                         <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
                         <!--
-                          待审行禁用删除：后端同规则（删了作者什么都收不到，该走驳回）。
-                          在**点之前**就说明原因，而不是等用户点了才收到报错——
-                          tooltip 套一层 span 是因为禁用态的按钮不派发鼠标事件
+                          待审行禁用删除（后端同规则）：删了作者什么都收不到，该走驳回。
+                          在点之前说明原因；tooltip 套 span 是因为禁用态按钮不派发鼠标事件
                         -->
                         <el-tooltip
                             v-if="(row.status ?? 0) === 0"

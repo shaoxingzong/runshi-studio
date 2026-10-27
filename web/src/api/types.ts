@@ -1,9 +1,9 @@
 // 与后端 VO 一一对应的类型定义
 //
-// 约定两点（与后端 JsonConfig 的全局序列化有关，前端必须知道）：
-// 1. ID 是字符串：雪花 ID 超出 JS 安全整数范围，后端统一序列化成字符串；
-// 2. 分页元数据也是字符串（total / current / size / pages），
-// 而计数字段是数字（后端刻意用 Integer）——两者的类型不一致是设计使然，不要"顺手统一"。
+// 两点约定（与后端 JsonConfig 的全局序列化有关）：
+// 1. ID 是字符串：雪花 ID 超出 JS 安全整数范围；
+// 2. 分页元数据（total / current / size / pages）也是字符串，而计数字段是数字——
+//    两者的类型不一致是设计使然，不要「顺手统一」。
 
 /** 统一响应体 */
 export interface ApiResponse<T> {
@@ -29,8 +29,8 @@ export interface PageResult<T> {
 /**
  * 首页大盘
  *
- * 只剩证书维度：业务规则「团队成员不对外展示」，
- * 接口里没有 memberTotal / memberInTeam / memberGraduated 这些 key，不要渲染团队人数。
+ * 只剩证书维度：业务规则「团队成员不对外展示」，接口里没有 memberTotal 这类 key，
+ * 不要渲染团队人数。
  */
 export interface Overview {
     certificateTotal: number;
@@ -41,9 +41,8 @@ export interface Overview {
 /**
  * 成员（脱敏）
  *
- * 它只出现在项目详情的「参与成员」里（产品确认保留的例外）——
- * 官网没有成员列表页 / 详情页，也不要用它去调 `/member/list` 或 `/member/detail`
- * （后端没有这些接口，调用会 404）。
+ * 只出现在项目详情的「参与成员」里：官网没有成员列表页 / 详情页，
+ * 后端也没有 `/member/list`、`/member/detail`，调用会 404。
  */
 export interface Member {
     id: string;
@@ -71,8 +70,7 @@ export interface Certificate {
 /**
  * 后台证书视图（后端 CertificateVO）
  *
- * 与 AdminProject 同理：比 C 端的 Certificate 多出 sortOrder / 审计时间，
- * 只在 admin 面前出现，不要与脱敏的 C 端类型混用。
+ * 比 C 端多出 sortOrder / 审计时间，只在 admin 面前出现，不要与脱敏的 C 端类型混用。
  */
 export interface AdminCertificate extends Certificate {
     sortOrder?: number | null;
@@ -101,8 +99,7 @@ export interface ProjectDetail extends Project {
 /**
  * 后台项目：比 C 端多出 leaderId 等内部字段
  *
- * 注意它与 ProjectDetail 是两种视图——后台要能看到并编辑队长，
- * C 端则刻意不暴露（leaderId 属于内部字段）。不要图省事共用一个类型。
+ * 与 ProjectDetail 是两种视图——后台要能编辑队长，C 端刻意不暴露，不要共用一个类型。
  */
 export interface AdminProject extends Project {
     leaderId: string;
@@ -177,8 +174,7 @@ export interface ChatMessage {
 /**
  * 登录结果 / 当前用户（后端 LoginUserVO）
  *
- * 只有 `/user/login` 会返回 token；`/user/current` 返回同一结构但不含 token
- * （前端已有令牌，重复下发只会增加泄露面）。
+ * 只有 `/user/login` 返回 token，`/user/current` 返回同一结构但不含 token。
  */
 export interface LoginResult {
     id: string;
@@ -198,13 +194,8 @@ export interface LoginResult {
 /**
  * 站内通知（后端 NotificationVO）
  *
- * `type` 的四种取值（与后端 NotificationTypeEnum 一致）：
- * `POST_APPROVED` 帖子通过 / `POST_REJECTED` 帖子被驳回 /
- * `COMMENT_REPLIED` 评论被回复 / `MEMBER_GRANTED` 获得成员身份。
- *
  * `bizType` + `bizId` 是跳转指针，允许悬空（来源被删后不可点，通知本身仍可读）。
- * 注意 COMMENT_REPLIED 的 biz 是帖子而非评论——同一帖子下的多次回复
- * 按话题聚合成一条（后端幂等键的语义），跳转目标自然是帖子详情。
+ * COMMENT_REPLIED 的 biz 指向帖子而非评论——同一帖子下的多次回复按话题聚合成一条。
  */
 export interface Notification {
     id: string;
@@ -223,7 +214,7 @@ export interface Notification {
 /**
  * 后台用户（后端 UserVO，脱敏、无 token）
  *
- * 「成员」身份就是在这里给的：管理员把注册用户的 userRole 从 `user` 改成 `member`。
+ * 「成员」身份就是在这里给的：管理员把 userRole 从 `user` 改成 `member`。
  */
 export interface AdminUser {
     id: string;
@@ -248,6 +239,8 @@ export interface Post {
     authorId: string;
     // 作者名（成员姓名，由后端批量查出后填充）
     authorName?: string | null;
+    // 作者头像（成员档案里的头像；未上传或查不到档案时为空，前端用姓名首字兜底）
+    authorAvatar?: string | null;
     viewCount?: number | null;
     commentCount?: number | null;
     // 点赞数（后端冗余列维护，点赞时原子自增）
@@ -272,9 +265,8 @@ export interface PostDetail extends Post {
 /**
  * 带审核状态的帖子（后端 PostVO）
  *
- * 它同时服务于三处：「我的发帖」（作者看自己的）、「管理端待审队列」与
- * 「管理端帖子管理」（管理员看全部）。三者拿到的是同一个 VO，因为管理员需要看
- * 作者看得到的全部信息，再额外多给一份只会造成两套类型漂移。
+ * 「我的发帖」「待审队列」「帖子管理」三处共用同一个 VO：管理员本就要看到作者看得到的全部信息，
+ * 另起一套只会造成类型漂移。
  */
 export interface PostAudit {
     id: string;
@@ -309,10 +301,9 @@ export interface PostAudit {
 }
 
 /**
- * 管理端帖子详情（后端 PostAdminDetailVO = PostVO + Markdown 正文）
+ * 管理端帖子详情（后端 PostAdminDetailVO = PostVO + 正文）
  *
- * 编辑弹窗回填正文专用：列表 VO 刻意不带 content，而公开详情只返回
- * 「已通过」的帖子且会自增浏览量，两者都满足不了编辑场景。
+ * 编辑弹窗回填正文专用：列表 VO 不带 content，公开详情只返回已通过的帖子且会自增浏览量。
  */
 export interface PostAdminDetail extends PostAudit {
     // 正文（Markdown，图片内嵌其中；成员提交的内容，按需做清洗处理）
@@ -322,8 +313,7 @@ export interface PostAdminDetail extends PostAudit {
 /**
  * 作者看自己「未公开」帖子的详情（后端 PostSelfDetailVO = PostVO + 正文）
  *
- * 改驳回稿的前置步骤：公开详情只返回已通过的帖子，驳回稿的正文只能从这里读。
- * 仅本人 + 仅待审/已驳回，且不累加浏览量（自己预览不算一次访问）。
+ * 改驳回稿的前置步骤：公开详情只返回已通过的帖子。仅本人 + 仅待审/已驳回，不累加浏览量。
  */
 export interface PostSelfDetail extends PostAudit {
     content?: string | null;
@@ -348,8 +338,7 @@ export interface PageTraffic {
 /**
  * 流量总览（管理端「流量分析」页）
  *
- * UV 口径：按前端 localStorage 的随机 uuid 去重，
- * 因此同一人换设备 / 清缓存 / 无痕浏览会算成多个 UV——页面需注明。
+ * UV 按前端 localStorage 的随机 uuid 去重，换设备 / 清缓存 / 无痕浏览都会算成新 UV，页面需注明。
  */
 export interface TrafficOverview {
     totalPv: number;
@@ -366,6 +355,8 @@ export interface PostComment {
     postId: string;
     authorId: string;
     authorName?: string | null;
+    // 评论人头像（未上传时为空，前端用姓名首字兜底）
+    authorAvatar?: string | null;
     // null 表示直接评论帖子；非 null 表示回复某条评论
     parentId?: string | null;
     content: string;
@@ -401,8 +392,7 @@ export interface PostCommentAudit {
 /**
  * 签到结果（后端 AttendanceCheckInVO）
  *
- * 接口刻意不返回 ip / userAgent，网络信息只以 inLan 布尔出现——
- * 前端也不要试图展示网段或位置信息。
+ * 刻意不返回 ip / userAgent，网络信息只以 inLan 布尔出现，前端也不要展示网段或位置。
  */
 export interface AttendanceCheckIn {
     userId: string;
@@ -417,8 +407,8 @@ export interface AttendanceCheckIn {
 /**
  * 今日出勤看板项（后端 AttendanceBoardVO；仅工作室成员可见）
  *
- * 未打卡的成员同样在列表里，用 checkedIn 为 false + checkInAt 为 null 表示，
- * 便于前端区分「今天还没来」而不是直接消失。
+ * 未打卡的成员同样在列表里（checkedIn=false + checkInAt=null），
+ * 前端才能区分「今天还没来」而不是直接消失。
  */
 export interface AttendanceBoardItem {
     userId: string;
@@ -450,8 +440,7 @@ export interface AttendanceRecord {
 /**
  * 后台成员视图（后端 MemberVO）
  *
- * 比 C 端的 Member 多出 userId / sortOrder 等内部字段，只在 admin 面前出现——
- * 与 AdminProject 扩展 Project 是同一套路，不要图省事共用 C 端类型。
+ * 比 C 端多出 userId / sortOrder 等内部字段，只在 admin 面前出现，不要共用 C 端类型。
  */
 export interface AdminMember extends Member {
     // 绑定的登录账号 ID；未绑定为 null
@@ -476,16 +465,12 @@ export interface AiSession {
 /**
  * 刷题模式：0-顺序，1-错题重刷，2-随机
  *
- * 三种模式的职责不重叠：顺序负责「覆盖」（排除已作答的题），
- * 错题负责「消灭」（只出待复习），随机负责「抽查」。
+ * 三者职责不重叠：顺序负责「覆盖」（排除已作答），错题负责「消灭」（只出待复习），随机负责「抽查」。
  */
 export type QuizMode = 0 | 1 | 2;
 
 /**
- * 题型：只有选择题
- *
- * 0-单选（恰好 1 个正确项，UI 用 radio，点击即提交）
- * 1-多选（≥2 个正确项，UI 用 checkbox，需点提交按钮；全对才得分）
+ * 题型：0-单选（点击即提交），1-多选（需点提交，全对才得分）
  *
  * 没有「判断」：判断题就是选项为「正确 / 错误」的单选。
  */
@@ -500,8 +485,7 @@ export interface QuizOption {
 /**
  * 题目（答题前）
  *
- * 结构上没有 correctLabels / analysis：
- * 正确答案与解析只出现在提交后的 QuizVerdict 里。
+ * 结构上没有 correctLabels / analysis，答案与解析只在提交后的 QuizVerdict 里。
  * 不要为了「前端先判一下」往这里加字段——那等于把答案发给了客户端。
  */
 export interface QuizQuestion {

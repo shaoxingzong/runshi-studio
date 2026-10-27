@@ -10,13 +10,11 @@ import java.time.LocalDateTime;
 /**
  * 登录用户视图对象（VO）
  *
- * 为什么要有 VO，不直接把 SysUser 返回给前端：
- * - 脱敏：实体里有 userPassword（BCrypt 哈希串），
- * 直接返回等于把密码送到前端，哈希串一旦泄露就可离线爆破；VO 里根本没有这个字段，
- * 从结构上杜绝了「不小心返回密码」；
- * - 解耦：接口契约与数据库表结构分离，加字段、改列名不会直接影响前端。
+ * 用 VO 而不直接返回 SysUser：一是脱敏，实体里有 userPassword（BCrypt 哈希串），
+ * 直接返回等于把密码送到前端，哈希串一旦泄露就可离线爆破，VO 里根本没有这个字段；
+ * 二是解耦，接口契约与数据库表结构分离，加字段、改列名不会直接影响前端。
  *
- * 注意：VO 只用于「往外返回」，不要拿它接收前端参数；接收参数请用 DTO。
+ * 注意：VO 只用于往外返回，不要拿它接收前端参数；接收参数请用 DTO。
  *
  * @author shaoshing
  */
@@ -28,13 +26,12 @@ public class LoginUserVO implements Serializable {
     /**
      * 用户 ID（雪花算法，19 位）
      *
-     * 这里显式声明 JsonSerialize（注意导入的是 tools.jackson，
-     * 即 Jackson 3 的注解）：
-     * - 19 位 Long 超出 JS Number 的安全整数范围（2^53-1），以数字返回会被前端截断（末位变 0）；
-     * - 全局 JsonConfig 已把 Long 统一转字符串，这里再标一次是「字段级兜底」，
-     * 保证即使哪天全局规则被调整，用户 ID 也不会退化成数字；
-     * - 坑：早先这里写的是 com.fasterxml.jackson.databind.annotation.JsonSerialize
-     * （Jackson 2 的注解），在 Boot 4 的 Jackson 3 下会被静默忽略，等于没写。
+     * 显式声明 JsonSerialize（注意导入的是 tools.jackson，即 Jackson 3 的注解）：
+     * 19 位 Long 超出 JS 的安全整数范围，以数字返回会被前端截断；全局 JsonConfig 已统一转字符串，
+     * 这里再标一次是字段级兜底。
+     *
+     * 坑：不能导入 com.fasterxml.jackson.databind.annotation.JsonSerialize（Jackson 2 的注解），
+     * 在 Boot 4 的 Jackson 3 下会被静默忽略，等于没写。
      */
     @JsonSerialize(using = ToStringSerializer.class)
     private Long id;
@@ -50,9 +47,8 @@ public class LoginUserVO implements Serializable {
 
     /**
      * 用户角色（user / member / admin）
-     * 与 @SaCheckRole 的比较值完全一致，取值定义见
-     * com.bhu.runshistudioweb.model.enums.UserRoleEnum；
-     * 前端按角色渲染菜单时，请用这里的原始值判断，不要自己写死「admin」之类的中文或大小写变体
+     * 与 @SaCheckRole 的比较值完全一致，取值见 UserRoleEnum；
+     * 前端按角色渲染菜单时请用这里的原始值，不要自己写死「admin」之类的大小写变体
      */
     private String userRole;
 

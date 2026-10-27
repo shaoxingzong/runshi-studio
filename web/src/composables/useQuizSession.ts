@@ -5,22 +5,9 @@ import type { QuizMode, QuizQuestion, QuizVerdict } from '@/api/types';
 /**
  * 一轮刷题的状态机
  *
- * 为什么用 composable 而不是 Pinia store：会话状态只属于当前页面，
- * 刷新后由 sessionStorage 恢复；放进全局 store 反而要处理「离开页面后何时清空」。
- * 项目里 Pinia 目前只承载登录态（`stores/user.ts`），保持这个边界。
- *
- * 为什么进度存在 sessionStorage：服务端不持久化批次（题目不含答案，
- * 整批交给前端即可），所以刷新页面后只能靠本地恢复。用 sessionStorage 而不是
- * localStorage：关掉标签页就该结束这一轮，而不是下次打开还停在三周前的第 7 题。
- *
- * 三个 phase 的含义：
- * - idle：还没选答案，或提交失败退回（保留已选）；
- * - submitting：请求在飞，选项与提交按钮禁用；
- * - graded：已拿到判定，选项全部禁用——防止「看到答案再改选」。
- *
- * 提交失败不本地判分：判分是服务端的职责，前端兜底判分会与后端规则分叉
- * （例如多选题的部分分规则），而且用户会看到与统计不一致的结果。
- * 失败时回到 idle，由请求层统一弹提示。
+ * 用 composable 而不是 Pinia：会话状态只属于当前页面。进度存 sessionStorage 而非 localStorage：
+ * 关标签页这一轮就该结束，刷新则要能接着答。
+ * phase：idle 未作答（提交失败也退回这里）/ submitting 请求在飞 / graded 已判定且禁用选项。
  */
 export type QuizPhase = 'idle' | 'submitting' | 'graded';
 
@@ -45,12 +32,7 @@ interface StoredBatch {
 /**
  * 刷题会话：一批题的完整生命周期（开批 → 答题 / 跳过 → 下一题 → 结算）
  *
- * 为什么把状态放进 sessionStorage 而不是 Pinia：
- * 刷题是「一次访问内」的临时状态，关掉标签页就该结束；
- * sessionStorage 正好是「标签页级」的生命周期，也顺手解决了刷新丢进度的问题。
- * 题目本身不含答案，存浏览器没有泄露风险。
- *
- * @returns 会话状态与操作方法；页面卸载时无需手动清理
+ * 题目本身不含答案，存浏览器没有泄露风险；页面卸载时无需手动清理。
  */
 export function useQuizSession() {
     const batch = ref<StoredBatch | null>(null);
@@ -137,7 +119,6 @@ export function useQuizSession() {
     /**
      * 开一批并进入答题
      *
-     * @param params 开批参数（mode 必填）
      * @return 是否成功；失败时 `error` 有值
      */
     async function start(params: {
@@ -175,12 +156,9 @@ export function useQuizSession() {
     // ==================== 选择与提交 ====================
 
     /**
-     * 切换某个选项
+     * 切换某个选项：单选直接覆盖，多选加入或移除
      *
-     * 单选：直接覆盖（只有一个值）；多选：加入或移除。
-     * 已判定时忽略——选项在 graded 阶段是禁用的，这里再挡一层防键盘事件绕过。
-     *
-     * @param label 选项标签（A–F）
+     * 已判定时忽略——选项此时已禁用，这里再挡一层防键盘事件绕过。
      */
     function toggle(label: string) {
         if (phase.value !== 'idle') {
@@ -198,7 +176,7 @@ export function useQuizSession() {
     /**
      * 提交当前题
      *
-     * @return 判定结果；失败时返回 null（`error` 有值，`phase` 回到 idle 且保留已选）
+     * @return 判定结果；失败返回 null（`error` 有值，`phase` 回到 idle 且保留已选）
      */
     async function submit(): Promise<QuizVerdict | null> {
         const data = batch.value;
@@ -233,12 +211,9 @@ export function useQuizSession() {
     }
 
     /**
-     * 跳过当前题
+     * 跳过当前题：不产生判定、不进错题本、不返回答案
      *
-     * 跳过不产生判定、不进错题本、不返回答案。
-     * 前端直接前移指针即可——服务端只落一条「跳过过」的记录。
-     *
-     * @return 是否成功
+     * 前端直接前移指针即可，服务端只落一条「跳过过」的记录。
      */
     async function skip(): Promise<boolean> {
         const data = batch.value;

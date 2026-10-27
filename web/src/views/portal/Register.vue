@@ -7,11 +7,8 @@ import { userApi } from '@/api/user';
 /**
  * 门户注册（C 端）
  *
- * 业务规则：注册只能得到普通用户（user）。
- * 「成员」是管理给的——注册完之后由管理员在后台「用户管理」里把角色改成 `member`。
- *
- * 后台（`/admin/*`）不提供注册：管理员账号由管理方分配，
- * 自助注册一个账号并不能进后台（路由守卫 + 后端 @SaCheckRole("admin") 双重拦）。
+ * 注册只能得到普通用户（user），「成员」由管理员在后台「用户管理」里授予。
+ * 后台不提供注册：自助注册的账号进不了 /admin/*（路由守卫 + 后端 @SaCheckRole 双重拦）。
  */
 const router = useRouter();
 
@@ -21,8 +18,7 @@ const loading = ref(false);
 /**
  * 前端先按后端同一套规则挡一遍（省一次往返、提示更及时）
  *
- * 权威校验永远在后端（UserRegisterRequest 的注解 + Service）——
- * 前端校验是体验，不是安全边界，别指望它能防住直接调接口的人。
+ * 权威校验永远在后端（UserRegisterRequest 的注解 + Service）——前端校验是体验，不是安全边界。
  */
 const ACCOUNT_PATTERN = /^[a-zA-Z0-9_]+$/;
 

@@ -1,21 +1,15 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 import { portalApi } from '@/api/portal';
+import SmartImage from '@/components/SmartImage.vue';
 import type { Project } from '@/api/types';
 
 /**
  * 首页「项目精选」轮播
  *
- * 数据驱动，而不是写死的图片轮播：内容直接来自 GET /project/list，
- * 运营在后台增删项目，首页自动跟着变。写死图片的做法会让轮播与后台脱节——
- * 后台改了项目，首页却不更新，那是最难发现的一类不一致。
- *
- * 封面策略（先占位，后续可替换）：
- * - 项目填了 coverImage → 用它（运营一上传就自动生效，无需改代码）；
- * - 没填 → 用「渐变底 + 项目名首字」占位，不依赖任何图片资源。
- *
- * 失败与空数据的区别：失败（接口报错）显示一条错误提示 + 重试按钮——
- * 与门户其它页面同一套错误态；确实没有项目时才整块不渲染（空轮播框比没有轮播更糟）。
+ * 数据来自 GET /project/list，不写死图片：运营在后台增删项目，首页自动跟着变。
+ * 封面有图用图，无图用「渐变底 + 项目名首字」占位，不依赖任何图片资源。
+ * 接口失败显示错误条 + 重试；确实没有项目才整块不渲染（空轮播框比没有更糟）。
  */
 const MAX_COUNT = 6;
 
@@ -26,19 +20,9 @@ const STATUS: Record<number, { text: string; type: 'success' | 'warning' | 'info
     2: { text: '已结题', type: 'info' },
 };
 
-/** 占位封面渐变色板：按序号循环，避免所有卡片长得一样 */
-const COVER_GRADIENTS = [
-    'linear-gradient(135deg, #4f7cff 0%, #7aa2ff 100%)',
-    'linear-gradient(135deg, #0e7490 0%, #22d3ee 100%)',
-    'linear-gradient(135deg, #6d28d9 0%, #a78bfa 100%)',
-    'linear-gradient(135deg, #b45309 0%, #fbbf24 100%)',
-    'linear-gradient(135deg, #be123c 0%, #fb7185 100%)',
-    'linear-gradient(135deg, #0f766e 0%, #2dd4bf 100%)',
-];
-
 const projects = ref<Project[]>([]);
 const failed = ref(false);
-/** 失败原因：展示给用户而不是静默消失（此前 failed 时整块无提示） */
+/** 失败原因：展示给用户而不是静默消失，否则首页看起来像「没有项目」 */
 const failedReason = ref('');
 
 /** 拉取项目；失败置标记 + 记原因，供模板展示错误条与重试 */
@@ -64,14 +48,8 @@ function retry() {
 
 onMounted(loadProjects);
 
-function gradientOf(index: number): string {
-    return COVER_GRADIENTS[index % COVER_GRADIENTS.length];
-}
-
-/** 首字：用于占位封面上的大字（中文取首字，英文自动大写） */
-function initialOf(title: string): string {
-    return title ? title.trim().charAt(0).toUpperCase() : '?';
-}
+// 封面兜底（首字 + 渐变）统一交给 SmartImage：
+// 各页各写一套会让字号、渐变、颜色都对不上，统一后全站「图挂了长什么样」只有一种答案。
 
 function statusOf(status?: number | null) {
     return STATUS[status ?? 0] ?? STATUS[0];
@@ -79,8 +57,7 @@ function statusOf(status?: number | null) {
 </script>
 
 <template>
-    <!-- 失败时显示一条带重试的提示：此前是整块静默消失，
-         首页看起来像「没有项目」，与「项目接口坏了」完全无法区分 -->
+    <!-- 失败要显式提示：整块静默消失时，首页看起来像「没有项目」，无法与接口故障区分 -->
     <el-alert
         v-if="failed"
         type="error"
@@ -102,12 +79,11 @@ function statusOf(status?: number | null) {
         pause-on-hover
         class="spotlight"
     >
-        <el-carousel-item v-for="(item, index) in projects" :key="item.id">
+        <el-carousel-item v-for="item in projects" :key="item.id">
             <div class="slide">
-                <!-- 封面：有图用图，无图用「渐变 + 首字」占位 -->
-                <div class="cover" :style="{ background: gradientOf(index) }">
-                    <img v-if="item.coverImage" :src="item.coverImage" :alt="item.title" />
-                    <span v-else class="initial">{{ initialOf(item.title) }}</span>
+                <!-- 封面：有图用图，无图或加载失败都用「渐变 + 首字」占位 -->
+                <div class="cover">
+                    <SmartImage :src="item.coverImage" :alt="item.title" :seed="item.id" />
                 </div>
 
                 <div class="info">
@@ -176,20 +152,17 @@ function statusOf(status?: number | null) {
     display: flex;
     align-items: center;
     justify-content: center;
+    overflow: hidden;
 }
 
-.cover img {
+/* SmartImage 的图片与兜底色块都铺满封面区；兜底时字号大一些，
+   让「项目名首字」在 42% 宽的区块里也足够醒目 */
+.cover :deep(.img-fallback__img),
+.cover :deep(.img-fallback__box) {
     width: 100%;
     height: 100%;
     object-fit: cover;
-}
-
-.initial {
     font-size: 96px;
-    font-weight: 700;
-    color: rgb(255 255 255 / 92%);
-    text-shadow: 0 2px 12px rgb(0 0 0 / 18%);
-    user-select: none;
 }
 
 .info {

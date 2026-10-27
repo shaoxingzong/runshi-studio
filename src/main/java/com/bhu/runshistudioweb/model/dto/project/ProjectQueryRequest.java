@@ -1,5 +1,6 @@
 package com.bhu.runshistudioweb.model.dto.project;
 
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.io.Serializable;
@@ -7,20 +8,12 @@ import java.io.Serializable;
 /**
  * 项目查询请求（管理端分页列表与 C 端公开列表共用）
  *
- * 与 MemberQueryRequest 完全同一套路：普通参数载体 + 自己声明分页字段，
- * 由 Service 转成 MyBatis-Plus 的 Page。
+ * 管理端用 current / pageSize / sortField / sortOrder，排序字段走白名单映射
+ * （ORDER BY 无法参数化，只能靠白名单防注入）；C 端只用分页，忽略排序参数——
+ * 公开接口的排序由产品定义（sort_order DESC → created_at DESC → id DESC）。
  *
- * 两端对参数的用法：
- * - 管理端 /project/list/page：使用 current / pageSize / sortField / sortOrder，
- * 排序字段走白名单映射（ORDER BY 无法参数化，只能靠白名单防注入）；
- * - C 端 /project/list：使用 current / pageSize，
- * 忽略 sortField / sortOrder——公开接口的排序由产品定义
- * （固定 sort_order DESC → created_at DESC → id DESC），不接受请求方指定。
- *
- * 刻意没有 techStack 筛选参数：tech_stack 是 JSON 字符串列，
- * 按它筛选只能写 LIKE '%Java%'，既走不了索引又会误匹配
- * （搜 "Java" 命中 "JavaScript"）。DESIGN 3.3 的取舍是「不筛、不建索引」，
- * 将来若要按技术栈筛选，正确做法是拆标签表而不是加 LIKE 条件。
+ * 刻意没有 techStack 筛选：tech_stack 是 JSON 字符串列，按它筛选只能 LIKE '%Java%'，
+ * 既走不了索引又会误匹配（搜 Java 命中 JavaScript）。真要按技术栈筛选应拆标签表。
  *
  * @author shaoshing
  */
@@ -32,7 +25,8 @@ public class ProjectQueryRequest implements Serializable {
     /** 项目 id（精确匹配） */
     private Long id;
 
-    /** 项目名称（模糊匹配） */
+    /** 项目名称（模糊匹配；上限 64，与前端搜索框 maxlength 对齐） */
+    @Size(max = 64, message = "搜索关键词不能超过 64 个字符")
     private String title;
 
     /**

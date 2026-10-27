@@ -33,6 +33,9 @@ studio:
     api-key: ${AI_API_KEY}
     model: ${AI_MODEL}
     embedding-model: ${AI_EMBEDDING_MODEL}
+    # 生产固定使用 Redis 向量库：重启/多实例不丢向量。
+    # 前置条件：Redis 8.4+ 且包含 Query Engine + JSON 模块；缺失时启动失败并给出升级指引
+    vector-store-type: ${VECTOR_STORE_TYPE:redis}
 
   attendance:
     # ⚠️ 生产必须配置真实工作室网段：留空不会启动失败，

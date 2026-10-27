@@ -6,6 +6,7 @@ import DOMPurify from 'dompurify';
 import { postApi } from '@/api/post';
 import { usePageMeta } from '@/composables/usePageMeta';
 import ErrorRetry from '@/components/ErrorRetry.vue';
+import SmartImage from '@/components/SmartImage.vue';
 import {
     bindCodeCopy,
     MARKDOWN_ALLOWED_ATTR,
@@ -45,9 +46,8 @@ const commentsRef = ref<HTMLElement | null>(null);
 /**
  * 跳到评论区
  *
- * 用 scrollIntoView 而不是改 location.hash：本页路由已带 hash 语义（目录锚点），
- * 再塞一个 #comments 会污染前进后退历史；prevent 掉默认跳转后手动滚动，
- * 顺带把焦点交给输入框附近，键盘用户也能直接就位。
+ * 用 scrollIntoView 而不是改 location.hash：本页 hash 已用于目录锚点，再塞 #comments 会污染
+ * 前进后退历史；prevent 掉默认跳转后手动滚动，顺带把焦点交给输入框附近。
  */
 function scrollToComments() {
     commentsRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -57,20 +57,10 @@ function scrollToComments() {
 const bodyRef = ref<HTMLElement | null>(null);
 
 /**
- * 正文渲染：共享工具（renderMarkdown）→ 白名单清洗 → v-html
+ * 正文渲染：renderMarkdown → 白名单清洗 → v-html
  *
- * 为什么必须清洗：marked 只负责「Markdown 转 HTML」，它 v15 起已移除内置 sanitize——
- * 正文里的 `<script>`、`onerror=` 会被原样保留，而 `v-html` 是直接写 DOM，
- * 等于把发帖人当成了可信来源。
- *
- * 比项目详情页更严一步：帖子是成员自己提交的，
- * 可信度低于管理员录入的项目正文，因此这里额外限制 `img` 的 `src`
- * 只能是站内 `/uploads/` 路径——外链图既会被后端拒绝，
- * 也可能成为追踪像素泄露访客 IP。
- *
- * 白名单里额外放行 div/button/id/type/aria-label/loading/decoding：
- * 这些是共享 renderer 的增强输出（代码块包装、复制按钮、标题锚点、图片懒加载），
- * 不放行会被静默洗掉——表现是「复制按钮不见了但没人报错」。
+ * 必须清洗：marked v15 起移除了内置 sanitize，而 v-html 直接写 DOM，等于把发帖人当成可信来源。
+ * 比项目详情更严一步：帖子的 `img` 只允许站内 `/uploads/`——外链图可作追踪像素泄露访客 IP。
  */
 const rendered = computed(() => {
     const result = renderMarkdown(detail.value?.content ?? '');
@@ -196,12 +186,8 @@ async function submitReply(parentId: string) {
 /**
  * 删除评论（管理员）
  *
- * 为什么删除入口在这里而不是审核队列：本页的评论列表本身只含已通过的内容，
- * 正好符合后端「只能删除已通过评论」的约束；而审核队列里全是待审内容，
- * 在那里删会被后端拒绝（待审应当走驳回，让作者收到反馈）。
- *
- * 删除是级联的：删顶层评论会连它的回复一起删，
- * 不留「父已删、子还在」的孤儿回复——所以确认文案必须说清楚会连带影响回复。
+ * 入口在本页而不是审核队列：本页评论只含已通过的，正好符合后端「只能删已通过评论」的约束。
+ * 删除是级联的，删顶层会连回复一起删，所以确认文案必须说清会连带影响回复。
  */
 async function removeComment(id: string, withReplies: boolean) {
     try {
@@ -223,11 +209,8 @@ async function removeComment(id: string, withReplies: boolean) {
 /**
  * 点赞（只能赞、不能取消）
  *
- * 数字以后端返回为准，不做乐观 +1：后端是幂等的，
- * 前端自己加 1 会出现「重复点击数字跳两次」的错乱。
- *
- * 已赞后按钮即禁用：本模块没有取消点赞的能力，
- * 界面上就不该再留一个可点的入口。
+ * 数字以后端返回为准，不做乐观 +1：后端是幂等的，前端自己加会出现「重复点击跳两次」的错乱。
+ * 已赞后按钮禁用：没有取消能力，界面就不该留可点入口。
  */
 async function like() {
     if (!requireLogin('点赞')) {
@@ -249,9 +232,8 @@ onMounted(load);
 
 // 标签页标题用真实帖子名（数据异步回来，与路由 meta 的「帖子详情」占位衔接）
 //
-// 为什么值得做：详情页是搜索引擎唯一可能收录的内容页，
-// 标题停在「帖子详情 - 润石工作室」等于没录。分享链接时对方看到的也是真名。
-// description 取摘要兜底（没有就保持 index.html 的静态描述，不写空值）。
+// 详情页是搜索引擎唯一可能收录的内容页，标题停在「帖子详情」等于没录。
+// description 取摘要兜底，没有就保持 index.html 的静态描述，不写空值。
 usePageMeta({
     title: computed(() => detail.value?.title ?? '帖子详情'),
     description: computed(() => detail.value?.summary ?? ''),
@@ -275,6 +257,14 @@ usePageMeta({
                      正文之前先给读者一个上下文 -->
                 <div class="meta">
                     <div class="author-box">
+                        <!-- 作者头像：有真实头像就用，没有则显示姓名首字 -->
+                        <span class="author-avatar">
+                            <SmartImage
+                                :src="detail.authorAvatar"
+                                :alt="detail.authorName || '工作室成员'"
+                                :seed="detail.authorId"
+                            />
+                        </span>
                         <span class="author">{{ detail.authorName || '工作室成员' }}</span>
                         <span class="date">{{ detail.createdAt?.slice(0, 16) }}</span>
                     </div>
@@ -285,9 +275,8 @@ usePageMeta({
                     <a class="stat stat-link" href="#comments" @click.prevent="scrollToComments">
                         评论 {{ detail.commentCount ?? 0 }}
                     </a>
-                    <!-- 只能赞不能取消：已赞后禁用，不提供取消入口。
-                         尺寸从 small 提到默认档并加粗——点赞是正文页最主要的互动，
-                         原先它和「浏览」字号相同，视觉上等同于一条统计信息 -->
+                    <!-- 只能赞不能取消：已赞后禁用。尺寸与字重要比统计文字重一档，
+                         否则它和「浏览」同级，看起来只是一条统计信息 -->
                     <el-button
                         class="like-btn"
                         :type="detail.liked ? 'primary' : 'default'"
@@ -345,6 +334,14 @@ usePageMeta({
                 <div v-else class="comment-list">
                     <div v-for="comment in comments" :key="comment.id" class="comment">
                         <div class="comment-head">
+                            <!-- 评论人头像：与作者区同一套兜底（无头像时显示姓名首字） -->
+                            <span class="comment-avatar">
+                                <SmartImage
+                                    :src="comment.authorAvatar"
+                                    :alt="comment.authorName || '用户'"
+                                    :seed="comment.authorId"
+                                />
+                            </span>
                             <span class="author">{{ comment.authorName || '用户' }}</span>
                             <span v-if="comment.floor" class="floor">{{ comment.floor }} 楼</span>
                             <span class="date">{{ comment.createdAt?.slice(0, 16) }}</span>
@@ -364,6 +361,13 @@ usePageMeta({
                         <!-- 楼中楼：只两层，children 由后端挂好，这里直接渲染 -->
                         <div v-if="comment.children?.length" class="replies">
                             <div v-for="reply in comment.children" :key="reply.id" class="reply">
+                                <span class="reply-avatar">
+                                    <SmartImage
+                                        :src="reply.authorAvatar"
+                                        :alt="reply.authorName || '用户'"
+                                        :seed="reply.authorId"
+                                    />
+                                </span>
                                 <span class="author">{{ reply.authorName || '用户' }}</span>
                                 <span class="reply-text">{{ reply.content }}</span>
                                 <span class="date">{{ reply.createdAt?.slice(0, 16) }}</span>
@@ -468,13 +472,78 @@ h1 {
 
 .author-box {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
     line-height: 1.35;
+}
+
+/* 作者头像：圆形，与姓名同排；无头像时用首字兜底 */
+.author-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    display: inline-flex;
+    /* 细边框：浅色兜底块在白色卡片上不描边会「糊」在背景里 */
+    box-shadow: 0 0 0 1px rgb(15 23 42 / 8%);
+}
+
+.author-avatar :deep(.img-fallback__box) {
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.author-avatar :deep(.img-fallback__img) {
+    object-fit: cover;
+}
+
+/* 评论人头像：比作者头像小一号，避免评论区太抢眼 */
+.comment-avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    display: inline-flex;
+    margin-right: 6px;
+    box-shadow: 0 0 0 1px rgb(15 23 42 / 8%);
+}
+
+.comment-avatar :deep(.img-fallback__box) {
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.comment-avatar :deep(.img-fallback__img) {
+    object-fit: cover;
+}
+
+/* 楼中楼回复的头像更小：回复是次要信息，不必与顶层评论同等视觉重量 */
+.reply-avatar {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    display: inline-flex;
+    margin-right: 5px;
+    box-shadow: 0 0 0 1px rgb(15 23 42 / 8%);
+}
+
+.reply-avatar :deep(.img-fallback__box) {
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.reply-avatar :deep(.img-fallback__img) {
+    object-fit: cover;
 }
 
 .author {
     color: #1f2937;
-    font-weight: 500;
+    font-weight: 600;
 }
 
 .spacer {

@@ -12,28 +12,14 @@ import java.io.Serializable;
 import java.time.LocalDateTime;
 
 /**
- * 知识库文档实体（对应 studio_knowledge_doc，RAG 源文档的元数据）
+ * 知识库文档实体（对应 studio_knowledge_doc，RAG 源文档元数据）
  *
- * 本表最需要理解的一点：它不存向量。
- * 向量本体存放在 LangChain4j 的 EmbeddingStore 中（本期为内存实现，
- * 后续可替换为 Redis / PGVector / Milvus 而无需改表），
- * 库里只存「这份文档是什么、来自哪条业务数据、切了几块、索引到哪一步」。
- * 这样划分的理由：向量是「可重建的派生数据」，而元数据与溯源是不可重建的业务事实——
- * 把两者混在一张表里，换向量库时会连元数据一起被迫迁移。
+ * 不存向量：向量在 LangChain4j 的 EmbeddingStore 里（换库不必改表），
+ * 本表只存「是什么、来自哪条业务数据、切了几块、索引到哪一步」。
+ * 向量可重建，元数据与溯源不可重建，混在一起换库时就得连元数据一起迁。
  *
- * sourceType + sourceId 是 R2 的溯源字段：
- * 检索命中后要走 chunk → doc.source_type / source_id → 业务数据，
- * 才能回答「这个答案是依据哪条项目/成员/证书生成的」。
- * manual（手工录入）来源没有业务数据，sourceId 为 null。
- *
- * contentHash 用于增量更新去重：重建索引前先比对哈希，
- * 内容没变就整份跳过——Embedding 调用既慢又要钱，重算整库是纯粹的浪费。
- *
- * status 与 chunkCount：
- * 0-待处理 / 1-已索引 / 2-失败（失败要能重试，所以必须落库）；
- * chunkCount 与 StudioKnowledgeChunk 的实际行数对齐，用于校验切分是否完整。
- *
- * 审计字段、逻辑删除、雪花主键三条全局约定与其它主表完全一致。
+ * sourceType + sourceId 是溯源字段（manual 来源的 sourceId 为 null）；
+ * contentHash 做增量去重（Embedding 既慢又要钱）；status 0-待处理 / 1-已索引 / 2-失败。
  *
  * @author shaoshing
  */
@@ -51,21 +37,12 @@ public class StudioKnowledgeDoc implements Serializable {
     /** 文档标题（检索结果溯源展示用） */
     private String title;
 
-    /**
-     * 来源类型：manual 手工录入 / project 项目案例 /
-     * member 成员档案 / certificate 荣誉证书
-     *
-     * 取值字典以 db/user.sql 的列注释为准（DDL 注释即取值字典）；
-     * 等第一个消费方（同步/检索 Service）落地时再补一个枚举类统一取值，
-     * 现在只有 DDL 与实体注释两处，不会漂移
-     */
+    /** 来源类型：manual 手工录入 / project 项目案例 / member 成员档案 / certificate 荣誉证书 */
     private String sourceType;
 
     /**
-     * 来源业务数据 ID（R2 溯源字段）：指向对应业务表主键；manual 来源为 null
-     *
-     * 刻意不建数据库外键：来源可能是项目/成员/证书三张不同表，
-     * 外键约束表达不了这种「多态来源」，只能靠 source_type 配合应用层解释
+     * 来源业务数据 ID（溯源用）：指向对应业务表主键，manual 来源为 null
+     * 刻意不建外键：来源可能是三张不同的表，外键表达不了这种多态来源
      */
     private Long sourceId;
 
@@ -94,12 +71,7 @@ public class StudioKnowledgeDoc implements Serializable {
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 
-    /**
-     * 逻辑删除毫秒时间戳（0-未删除，非0-已删除）
-     *
-     * 文档逻辑删除时，其下所有 chunk 也必须逻辑删除（同一事务），
-     * 否则检索会命中「文档已删、块还活着」的孤儿数据
-     */
+    /** 逻辑删除毫秒时间戳（0-未删除，非0-已删除）；文档逻辑删除时其下 chunk 必须同事务一并删除 */
     @TableLogic
     private Long deletedAt;
 }

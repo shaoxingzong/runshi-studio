@@ -9,8 +9,7 @@ import java.io.Serializable;
 /**
  * 删除单条内容的请求
  *
- * 与 common/DeleteRequest 的区别：那个是通用 DTO，本类用于帖子模块的删除场景，
- * 语义上明确指向"删一条评论（会连带删除它的回复）"。
+ * 与 common/DeleteRequest 的区别：本类用于帖子模块，语义明确指向「删一条评论（连带删除它的回复）」。
  *
  * @author shaoshing
  */

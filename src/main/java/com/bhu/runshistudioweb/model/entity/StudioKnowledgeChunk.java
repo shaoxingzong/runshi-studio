@@ -14,23 +14,12 @@ import java.time.LocalDateTime;
 /**
  * 知识库切分块实体（对应 studio_knowledge_chunk）
  *
- * 一份文档（ StudioKnowledgeDoc）被切分成若干块，每块一行。
- * 检索的落点是「块」而不是「文档」：只有块级向量才能给出精准的语义匹配，
- * 命中后再通过 docId 回到文档、再通过 sourceType / sourceId 回到业务数据。
+ * 检索落点是块而非文档：块级向量才能精准匹配，命中后再靠 docId 回到文档。
+ * embeddingId 是向量库与本表的桥，可空：块入库与写向量是两步，
+ * 允许「块已入库、向量写入中」，失败时按状态重试而不必回滚整份切分。
  *
- * embeddingId 是两边关联的桥：
- * 向量检索返回的是 EmbeddingStore 里的条目 ID，
- * 用它反查本表就能拿到块的正文与所属文档（走 idx_embedding）。
- * 它是可空的：创建块与写入向量是两步，允许「块已入库、向量写入中」的中间状态，
- * 这样即使向量库这一步失败，也能靠 status=2 重试而不必回滚整份切分。
- *
- * chunkIndex 从 0 开始递增：检索命中多个块时按它排序拼接，
- * 保证送给模型的上下文是原文顺序（乱序拼接会明显降低回答质量）。
- * 唯一索引 uk_doc_chunk (doc_id, chunk_index, deleted_at) 带上了
- * deleted_at——整份文档重建时先逻辑删除旧块再插新块，
- * 不带它的话第二次重建会直接撞唯一键。
- *
- * 审计字段、逻辑删除、雪花主键三条全局约定与其它主表完全一致。
+ * 坑：chunkIndex 从 0 递增，命中多块时按它排序拼接，乱序会降低回答质量；
+ * uk_doc_chunk 带 deleted_at，否则整份文档第二次重建会撞唯一键。
  *
  * @author shaoshing
  */
@@ -54,11 +43,7 @@ public class StudioKnowledgeChunk implements Serializable {
     /** 块正文（切分后的文本） */
     private String content;
 
-    /**
-     * 向量库条目 ID（LangChain4j EmbeddingStore 的条目标识）
-     *
-     * 可空：允许「块已入库、向量尚未写入」的中间状态，便于失败重试
-     */
+    /** 向量库条目 ID（LangChain4j EmbeddingStore）；可空，允许「块已入库、向量未写入」以便重试 */
     private String embeddingId;
 
     /** 创建人 ID：插入时由 MyMetaObjectHandler 填充 */
@@ -77,11 +62,7 @@ public class StudioKnowledgeChunk implements Serializable {
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 
-    /**
-     * 逻辑删除毫秒时间戳（0-未删除，非0-已删除）
-     *
-     * 它参与唯一索引 uk_doc_chunk，因此「删旧块 + 插新块」的重建流程不会撞键
-     */
+    /** 逻辑删除毫秒时间戳（0-未删除，非0-已删除）；参与 uk_doc_chunk，「删旧块 + 插新块」不会撞键 */
     @TableLogic
     private Long deletedAt;
 }

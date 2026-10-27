@@ -9,13 +9,10 @@ import java.io.Serializable;
 /**
  * 判定结果（C 端）—— 答案与解析在本模块唯一的下发出口
  *
- * 它只在 POST /quiz/answer 成功之后产生，且只针对刚刚提交的那一题。
- * 这与「题目 VO 不带答案」是一对配套设计：
+ * 只在 POST /quiz/answer 成功之后产生，且只针对刚刚提交的那一题。这与「题目 VO 不带答案」是一对配套设计：
  * 答题前拿不到答案，答题后只拿到这一题的答案——不存在「一次拿到整批答案」的路径。
  *
- * wrongBookAction 是本 VO 里唯一与错题本相关的字段，
- * 前端据此给不同的提示（「已加入错题本」/「再答对 1 次即消解」/「已消解」）。
- * 它的取值是字符串而不是数字：前端拿它做 switch 分支，字符串可读性远好于魔法数字，
+ * wrongBookAction 用字符串而不是数字：前端拿它做 switch 分支，字符串可读性远好于魔法数字，
  * 且它不落库、不参与统计，没有「必须与 DDL 同源」的约束。
  *
  * @author shaoshing
@@ -65,7 +62,6 @@ public class QuizVerdictVO implements Serializable {
      * 前端拼会把 resolve-streak 的值复制一份到前端。
      */
     private Integer remainingStreak;
-
     /** 累计作答（不含跳过，含重做）：前端用它即时刷新「学习概览」 */
     private Integer answeredTotal;
 

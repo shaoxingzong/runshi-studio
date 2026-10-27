@@ -10,24 +10,8 @@ import java.time.LocalDateTime;
 /**
  * 今日出勤看板视图对象（仅工作室成员可见）
  *
- * 看板回答三个问题：谁打卡了（ userName）、几点打卡（ checkInAt）、
- * 这个月来了几次（ monthCount）。未打卡的成员同样出现在列表里，
- * 用 checkedIn=false + checkInAt=null 表示，方便前端区分「今天还没来」。
- *
- * 隐私红线（本 VO 存在的理由）：它没有、也不可以有
- * ip / userAgent / userAccount 这三个字段。
- * 脱敏靠的是目标 VO 的字段结构——用 BeanUtils.copyProperties 从实体拷贝时，
- * 实体里那些敏感的审计字段根本无处可去。这比「拷完再手动置空」可靠：
- * 将来给 studio_attendance 加新的敏感列时，不会被漏掉。
- *
- * 展示名取 studio_member.name（管理员后台录入的成员姓名），
- * 不取 sys_user.user_account——后者是登录凭据的一部分，
- * 一旦出现在可被其他成员看到的列表里就成了信息泄露。
- *
- * userId 上的 JsonSerialize 与
- * com.bhu.runshistudioweb.model.vo.user.LoginUserVO 同理：
- * 全局 JsonConfig 已把 Long 统一转字符串，这里再标一次是字段级兜底，
- * 保证即使哪天全局规则被调整，用户 ID 也不会退化成数字而被前端截断精度。
+ * 看板回答三个问题：谁打卡了（userName）、几点打卡（checkInAt）、这个月来了几次（monthCount）。
+ * 未打卡的成员同样出现在列表里，用 checkedIn=false + checkInAt=null 表示。
  *
  * @author shaoshing
  */
@@ -46,11 +30,8 @@ public class AttendanceBoardVO implements Serializable {
     /**
      * 今日打卡时刻（东八区），精确到秒
      *
-     * 同一天可能有多条签到记录（每隔一段时间才能再签一次），
-     * 这里取的是当天最早的一次——语义上回答的是「几点到的」。
-     *
-     * 未打卡时为 null；checkedIn 就是由它是否为 null 决定的冗余标记，
-     * 单独给一个字段是为了让前端不必自己判空。
+     * 同一天可能有多条签到记录，这里取当天最早的一次——语义上回答的是「几点到的」。
+     * 未打卡时为 null；checkedIn 就是由它是否为 null 决定的冗余标记，单独给一个字段是为了让前端不必自己判空。
      */
     private LocalDateTime checkInAt;
 
@@ -60,8 +41,7 @@ public class AttendanceBoardVO implements Serializable {
     /**
      * 本月打卡次数（自然月内的签到记录条数）
      *
-     * 注意语义：统计的是自然月内的签到次数，同一天多次签到会分别计数。
-     * 这与考勤惯例略有出入，但本项目的签到记录就是「到场凭证」，
+     * 注意语义：同一天多次签到会分别计数。这与考勤惯例略有出入，但签到记录就是「到场凭证」，
      * 保留原始条数比在展示层去重更诚实（去重会掩盖重复打卡的异常）。
      */
     private Integer monthCount;
@@ -69,8 +49,8 @@ public class AttendanceBoardVO implements Serializable {
     /**
      * 今日是否内网签到（true-命中工作室网段，false-外网）
      *
-     * 只给布尔结论，不给具体 IP 或网段名——它回答的是「人在不在工作室」，
-     * 至于从哪个地址连进来属于位置信息，留在数据库里做审计即可。
+     * 只给布尔结论，不给具体 IP 或网段名：它回答的是「人在不在工作室」，
+     * 从哪个地址连进来属于位置信息，留在数据库里做审计即可。
      */
     private Boolean inLan;
 }

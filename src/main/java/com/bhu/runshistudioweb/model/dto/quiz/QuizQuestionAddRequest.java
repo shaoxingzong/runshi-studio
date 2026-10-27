@@ -11,16 +11,13 @@ import java.util.List;
 /**
  * 新增题目请求（管理端）
  *
- * 为什么 options 是 List<QuizOptionItem> 而不是 JSON 字符串：
- * 让前端拼 JSON 字符串等于把序列化责任推给调用方，且后端无法用 @Valid
- * 逐项校验（选项正文长度、标签非空）。收成列表后，字段级校验自动生效，
- * 序列化由 Service 用容器里的 JsonMapper 完成（与 techStack 同一套路）。
+ * options 用 List<QuizOptionItem> 而不是 JSON 字符串：让前端拼 JSON 等于把序列化责任推给调用方，
+ * 且后端无法用 @Valid 逐项校验（选项正文长度、标签非空）。收成列表后字段级校验自动生效，
+ * 序列化由 Service 用容器里的 JsonMapper 完成。
  *
- * 为什么 type 与 correctLabels 没有 @Pattern 之类的注解：
- * 它们的约束是跨字段的（单选必须恰好 1 个正确项、多选至少 2 个、
- * 正确项必须是已有选项、标签必须连续），注解表达不了。
- * 这类校验统一放在 QuizQuestionServiceImpl#validateQuestion，
- * 好处是「新增 / 修改 / 导入」三条入口共用同一套规则，不会各写一份。
+ * type 与 correctLabels 没有 @Pattern 之类的注解：它们的约束是跨字段的（单选恰好 1 个正确项、
+ * 多选至少 2 个、正确项必须是已有选项、标签必须连续），注解表达不了。这类校验统一放在
+ * QuizQuestionServiceImpl#validateQuestion，让新增 / 修改 / 导入三条入口共用同一套规则。
  *
  * @author shaoshing
  */
@@ -67,9 +64,8 @@ public class QuizQuestionAddRequest implements Serializable {
     /**
      * 正确选项标签（必填，升序无分隔，如 "B" / "ABD"）
      *
-     * 不做格式注解："ca"、"C,A" 都会被
-     * QuizLabelUtils.normalize 归一化，归一化后不合法才报错。
-     * 在注解里写死正则会把「大小写/顺序不同」这种无害输入也拒掉。
+     * 不做格式注解："ca"、"C,A" 都会被 QuizLabelUtils.normalize 归一化，归一化后不合法才报错；
+     * 在注解里写死正则会把「大小写、顺序不同」这种无害输入也拒掉。
      */
     @NotBlank(message = "正确答案不能为空")
     @Size(max = 8, message = "正确答案最多 6 个标签")

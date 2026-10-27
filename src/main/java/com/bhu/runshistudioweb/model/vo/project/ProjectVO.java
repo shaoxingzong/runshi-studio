@@ -11,19 +11,14 @@ import java.util.List;
 /**
  * 项目视图对象（管理端列表 / 详情使用）
  *
- * 与 C 端两个 VO 的分工（和成员、证书模块完全同一套路）：
- * - ProjectVO：给管理员看，字段齐全——含 content 正文、
- * leaderId、sortOrder 与审计时间，后台编辑页面需要这些；
- * - ProjectFrontVO：给游客看的列表项，不含 content 大字段，
- * 也不含 leaderId / sortOrder / 审计字段；
- * - ProjectFrontDetailVO：给游客看的详情，= 列表字段 + content。
+ * 与 C 端两个 VO 的分工：本类给管理员看，字段齐全——含 content 正文、leaderId、sortOrder 与审计时间，
+ * 后台编辑页面需要这些；ProjectFrontVO 给游客看的列表项，不含 content 大字段，也不含 leaderId / sortOrder / 审计字段；
+ * ProjectFrontDetailVO 给游客看的详情，= 列表字段 + content。
  *
- * techStack 在本 VO 里是 List<String>：
- * 数据库存的是 JSON 快照字符串，接口层统一用列表（存储形态不外泄），
+ * techStack 在本 VO 里是 List<String>：数据库存的是 JSON 快照字符串，接口层统一用列表（存储形态不外泄），
  * 转换在 Service 里做，解析失败（脏数据）时返回空列表而不是抛异常。
  *
- * id 与 leaderId 显式标注 Jackson 3 的 ToStringSerializer：
- * 雪花 ID 是 19 位、超出 JS Number 安全整数范围，序列化为字符串避免前端精度丢失
+ * id 与 leaderId 显式标注 ToStringSerializer：雪花 ID 是 19 位、超出 JS 安全整数范围
  * （全局 JsonConfig 已统一处理，这里是字段级兜底）。
  *
  * @author shaoshing
@@ -77,13 +72,11 @@ public class ProjectVO implements Serializable {
     /**
      * 首页轮播排名（仅管理端列表返回，1-6 表示排官网首页第 N 位；null 表示不进首页）
      *
-     * 首页轮播取的是「官网口径前 6 条」，而官网口径是
-     * sort_order DESC → created_at DESC → id DESC。运营在后台要能一眼看出
-     * 「这条排第几、能不能进首页」——否则只能凭权重数字猜，而猜错的代价是
-     * 「后台改了权重，首页却没动静」这类难排查的困惑。
+     * 首页轮播取的是「官网口径前 6 条」（sort_order DESC → created_at DESC → id DESC）。
+     * 运营在后台要能一眼看出「这条排第几、能不能进首页」，否则只能凭权重数字猜，
+     * 而猜错的代价是「后台改了权重，首页却没动静」这类难排查的困惑。
      *
-     * 刻意不放进 ProjectFrontVO：排名是运营视角的信息，
-     * 对外暴露它等于告诉访客「我们是怎么排首页的」。
+     * 刻意不放进 ProjectFrontVO：排名是运营视角的信息，对外暴露等于告诉访客我们是怎么排首页的。
      */
     private Integer homeRank;
 

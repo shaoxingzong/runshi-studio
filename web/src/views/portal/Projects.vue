@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { portalApi } from '@/api/portal';
 import ErrorRetry from '@/components/ErrorRetry.vue';
+import SmartImage from '@/components/SmartImage.vue';
 import type { PageResult, Project } from '@/api/types';
 
 /** 项目案例列表（C 端真分页，列表 VO 不含正文——正文只在详情页取） */
@@ -56,6 +57,7 @@ onMounted(load);
                 v-model="filter.title"
                 placeholder="项目名称"
                 clearable
+                maxlength="64"
                 style="width: 200px"
                 @keyup.enter="search"
             />
@@ -73,22 +75,20 @@ onMounted(load);
             <el-empty v-if="result && result.records.length === 0" description="没有符合条件的项目" />
             <div v-else class="grid cards-3">
                 <!--
-                  卡片整块可点：用「伸展式链接」（stretched link）实现，而不是把 <div> 换成 <router-link>。
-
-                  为什么不能直接换：卡片内部还有「在线体验 / 开源仓库」两个外链，
-                  嵌套 <a> 是非法 HTML，浏览器会把它们拆开，点击行为彻底混乱。
-
-                  做法：让标题链接的伪元素铺满整张卡片（见 .title::after），
-                  卡片内任意空白处点击都会命中这个覆盖层。
-                  外链用 position: relative + z-index 抬到覆盖层之上，
-                  保证点「在线体验」不会被卡片跳转吃掉。
+                  卡片整块可点，用「伸展式链接」而不是换成 <router-link>：卡内还有两个外链，
+                  嵌套 <a> 是非法 HTML。做法：标题伪元素铺满整卡，外链再抬到覆盖层之上
                 -->
                 <div v-for="project in result?.records ?? []" :key="project.id" class="project-card">
                     <!-- 封面不做独立链接：整卡点击已由标题的伸展式伪元素接管，
                          再套一层 <router-link> 只会多出一个 Tab 停留点，键盘用户要按两次 -->
                     <div class="cover">
-                        <img v-if="project.coverImage" :src="project.coverImage" :alt="project.title" />
-                        <span v-else class="cover-fallback">{{ project.title.slice(0, 1) }}</span>
+                        <!-- 封面可能是外部图床链接（会失效）或已清理的上传文件，
+                             交给 SmartImage 兜底成「项目名首字 + 渐变块」，不留裂图 -->
+                        <SmartImage
+                            :src="project.coverImage"
+                            :alt="project.title"
+                            :seed="project.id"
+                        />
                     </div>
                     <div class="body">
                         <div class="head">
@@ -169,30 +169,20 @@ onMounted(load);
 }
 
 .cover {
-    display: block;
+    display: flex;
     aspect-ratio: 16 / 9;
     background: #eff6ff;
     /* 封面不参与点击（交给整卡覆盖层），但也不该挡住图片本身的拖拽/右键另存 */
     flex-shrink: 0;
+    overflow: hidden;
 }
 
-.cover img {
+/* SmartImage 的图片与兜底块都填满封面区（兜底时显示项目名首字 + 渐变底色） */
+.cover :deep(.img-fallback__img),
+.cover :deep(.img-fallback__box) {
     width: 100%;
     height: 100%;
-    object-fit: cover;
-    display: block;
-}
-
-/* 没有封面时用标题首字兜底，卡片不会出现大片空白 */
-.cover-fallback {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     font-size: 34px;
-    font-weight: 600;
-    color: #2563eb;
 }
 
 .body {
@@ -217,12 +207,10 @@ onMounted(load);
 }
 
 /**
- * 伸展式链接：这个伪元素铺满整张卡片，使卡片任意位置都能点进详情。
+ * 伸展式链接：伪元素铺满整张卡片，卡片任意位置都能点进详情
  *
- * 为什么不用「把卡片包进 <router-link>」：卡片里有 demoUrl / githubUrl 两个外链，
- * 嵌套 <a> 非法，浏览器会拆标签。
- * 为什么不用 onclick + router.push：那样中键 / Ctrl+点击「新标签打开」会失效，
- * 而伪元素是真正的 <a>，浏览器的默认行为（新标签、右键「在新标签页打开」）全都保留。
+ * 不能用「把卡片包进 <router-link>」：卡内两个外链会形成嵌套 <a>，浏览器会拆标签。
+ * 不能用 onclick + router.push：中键 / Ctrl+点击「新标签打开」会失效，伪元素则保留原生行为。
  */
 .title::after {
     content: '';

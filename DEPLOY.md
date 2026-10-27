@@ -10,7 +10,7 @@
 |---|---|---|
 | JDK | 21 | 后端构建与运行 |
 | MySQL | 8.0+ | 库名 `studio_db`，字符集 utf8mb4 |
-| Redis | **6.2+** | Sa-Token 用 `KEEPTTL`（6.0+）、AI 配额回刷用 `GETDEL`（6.2+）；低于 6.0 登录接口直接 500 |
+| Redis | **6.2+（登录/限流）；8.4+（RAG）** | Sa-Token 用 `KEEPTTL`（6.0+）、AI 配额回刷用 `GETDEL`（6.2+）；RAG 向量检索需要 8.4+ 的 Query Engine + JSON，缺少时 `VECTOR_STORE_TYPE=redis` 启动失败 |
 | Nginx | 任意稳定版 | 反向代理 + 静态资源 + HTTPS 终止（配置样例见 `deploy/nginx.conf`） |
 | Node.js | 20+ | 仅构建前端需要 |
 
@@ -98,6 +98,14 @@ mysql -uroot -p < db/user.sql
 | `WEB_ALLOWED_ORIGINS` | `https://你的域名`（占位符） | 前后端**不同域**部署时必须填真实域名；同域部署（Nginx 代理 `/api`）则无需跨域，保持占位即可 |
 | `AUTH_RATE_LIMIT_ENABLED` | `true` | 一般不用动；排查误伤时可临时关闭 |
 | `AI_GUEST_IP_LIMITS_ENABLED` | `true` | 同上 |
+| `VECTOR_STORE_TYPE` | `redis`（prod） | 生产固定 `redis`；本地/测试可 `memory`（重启丢向量） |
+| `RAG_STARTUP_CHECK_ENABLED` | `true` | 启动比对切分块数与向量数，不一致自动重建；测试环境已关闭 |
+
+> **RAG 向量索引（Redis 8.4+）**：生产使用 `VECTOR_STORE_TYPE=redis` 前，先确认 Redis 含 Query Engine + JSON：
+> `redis-cli FT._LIST` 不报错。首次全量同步后执行
+> `redis-cli FT.INFO studio-rag-chunks`，其中 `num_docs` 应与 `studio_knowledge_chunk` 的存活行数一致。
+> 向量索引会占用 Redis 内存，需纳入 `maxmemory` 规划；不要让它被 LRU 淘汰（建议独立实例/库或 `noeviction`）。
+> `VECTOR_STORE_TYPE=memory` 仅用于本地开发，重启会丢失向量。
 
 ### 3.3 启动
 

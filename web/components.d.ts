@@ -55,6 +55,7 @@ declare module 'vue' {
     QuestionCard: typeof import('./src/components/quiz/QuestionCard.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
+    SmartImage: typeof import('./src/components/SmartImage.vue')['default']
     StatTiles: typeof import('./src/components/quiz/StatTiles.vue')['default']
     WrongBookDrawer: typeof import('./src/components/quiz/WrongBookDrawer.vue')['default']
   }

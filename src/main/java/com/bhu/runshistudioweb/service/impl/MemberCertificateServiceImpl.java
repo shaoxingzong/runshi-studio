@@ -24,31 +24,13 @@ import java.util.List;
 /**
  * 成员-证书关联服务实现
  *
- * 依赖方向铁律：本类只注入 Mapper
- * （StudioMemberMapper / StudioCertificateMapper），
- * 绝不注入 StudioMemberService / CertificateService——
- * 那两个 Service 反过来要依赖本类做级联清理，一旦这里再依赖回去就是循环依赖，
- * Spring Boot 默认禁止循环引用，启动直接失败（每次都失败，不是偶发）。
- * 代价是三个 VO 转换要在本类各写一遍 BeanUtils.copyProperties
- * （照抄对应 Service 里的写法），这个代价是明确且可接受的。
+ * 依赖方向铁律：本类只注入 Mapper，绝不注入 StudioMemberService / CertificateService——
+ * 它们反过来依赖本类做级联清理，再依赖回去就是循环依赖，启动直接失败。
  *
- * 查询策略：两步查询，而不是 JOIN。
- * 一次 JOIN 的索引路径本身没问题，这里刻意不那样做：
- * - 项目目前没有任何 XML Mapper，为了一个 JOIN 引入手写 SQL，
- * 就多了一层「漏写 deleted_at = 0」的风险——主表是逻辑删除的，
- * 手写 JOIN 一旦漏掉这个条件，就会查出已删除成员 / 证书的悬空数据；
- * - 两步查询里第二步走的是主表 Mapper 的 selectList，
- * MyBatis-Plus 会自动追加 deleted_at = 0，于是「证书已被删」的悬空关联
- * 被天然过滤掉（查询侧防御），不需要我们记得写；
- * - 一名成员的证书只有十几张，多一次数据库往返的成本可以忽略。
- * 这个取舍写在这里，是为了让「设计与实现不一致」这件事有据可查，而不是装作没看见。
+ * 查询用两步而不是 JOIN：手写 SQL 多一层「漏写 deleted_at = 0」的风险，
+ * 而两步查询的第二步由 MyBatis-Plus 自动追加该条件，悬空关联被天然过滤。
  *
- * 第一步取 ID 时只 select 需要的那一列：where member_id = ? 走
- * uk_member_cert 的最左前缀，只取 certificate_id 属于覆盖索引（不回表）；
- * 反向查成员时同理走 idx_cert_member。
- *
- * 排序三键：sort_order 倒序 → award_date 倒序 → id 倒序，与证书模块默认排序一致；
- * 追加 id 作为最终键，保证前两个键都相同时分页次序稳定（不会翻页时乱序）。
+ * 排序三键：sort_order 倒序 → award_date 倒序 → id 倒序，与证书模块一致。
  *
  * @author shaoshing
  */
@@ -67,31 +49,17 @@ public class MemberCertificateServiceImpl extends ServiceImpl<StudioMemberCertif
     /**
      * 绑定成员与证书（管理员显式动作）
      *
-     * <p>为什么这样设计：两次防御缺一不可。
-     * 先 count 查重，是为了给出「该成员已绑定此证书」这种可读提示；
-     * 单靠唯一索引的话，报错是英文的 SQLException，落到全局兜底后变成 B0001。
-     * 再 catch DuplicateKeyException，是为了兜住并发竞态——
-     * 两个请求同时通过上面的查重时，后到的会被唯一索引 uk_member_cert 拦下。
-     * 应用层管友好提示，索引管「绝对不出现脏数据」，两者职责不同，不能互相替代。
+     * 两次防御缺一不可：先 count 查重是为了给出可读提示，单靠唯一索引的话报错是英文 SQLException，
+     * 落到全局兜底后变成 B0001；catch DuplicateKeyException 是为了兜住并发竞态。
+     * 应用层管友好提示，索引管「绝对不出现脏数据」，两者不能互相替代。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 校验两个 id 为正数：雪花 ID 恒为正，0 与负数一定是调用方传错；</li>
-     *     <li>② 校验成员与证书都存在（逻辑删除的等同不存在），
-     *         必须排在插入之前，否则会写出指向不存在实体的关联；</li>
-     *     <li>③ 应用层查重，命中就给可读提示；</li>
-     *     <li>④ 插入，并捕获并发下的唯一索引冲突，翻成与第 ③ 步完全相同的文案。</li>
-     * </ol>
-     *
-     * <p>容易踩的坑：第 ④ 步的文案必须与第 ③ 步一致。
-     * 对调用方而言，「先查出来的重复」与「并发撞上唯一索引的重复」是同一件事，
-     * 给出两种提示只会让人以为是两个不同的问题。
+     * 坑：catch 处的文案必须与查重处的完全一致——对调用方而言，「先查出来的重复」与
+     * 「并发撞上唯一索引的重复」是同一件事。
      *
      * @param memberId 成员 ID，必须大于 0
      * @param certificateId 证书 ID，必须大于 0
      * @return true 表示绑定成功
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数非法或已绑定时抛出（A0401）；
-     *         成员 / 证书不存在时抛出（A0402）
+     * @throws BusinessException 参数非法或已绑定抛 A0401，成员 / 证书不存在抛 A0402
      */
     @Override
     public boolean bind(long memberId, long certificateId) {
@@ -125,27 +93,16 @@ public class MemberCertificateServiceImpl extends ServiceImpl<StudioMemberCertif
     /**
      * 解绑成员与证书（物理删除：本实体没有 @TableLogic）
      *
-     * <p>为什么这样设计：先查关系是否存在再删。不存在时要明确返回 A0402
-     * 「该成员未绑定此证书」，而不是返回 false 让前端去猜
-     * 「是没删掉，还是本来就没有」。这两种情况的处理方式完全不同：
-     * 前者要重试或报错，后者只需要刷新列表。
+     * 先查关系是否存在再删：不存在时要明确返回 A0402「该成员未绑定此证书」，而不是返回 false
+     * 让前端去猜「是没删掉，还是本来就没有」——前者要重试或报错，后者只需刷新列表。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 校验两个 id 为正数；</li>
-     *     <li>② 先确认关联存在，不存在给 A0402；</li>
-     *     <li>③ 物理删除关联行。</li>
-     * </ol>
-     *
-     * <p>容易踩的坑：关联表用物理删除是刻意的。若给它加 deleted_at 做逻辑删除，
-     * 唯一索引 uk_member_cert 会被已删除的行占用，
-     * 于是「先解绑、再重新绑定同一张证书」这个正常操作会一直冲突。
+     * 坑：关联表用物理删除是刻意的。若加 deleted_at 做逻辑删除，uk_member_cert 会被已删除的行占用，
+     * 「先解绑、再重新绑定同一张证书」这个正常操作会一直冲突。
      *
      * @param memberId 成员 ID，必须大于 0
      * @param certificateId 证书 ID，必须大于 0
      * @return true 表示解绑成功
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 参数非法时抛出（A0401）；
-     *         关系不存在时抛出（A0402）
+     * @throws BusinessException 参数非法抛 A0401，关系不存在抛 A0402
      */
     @Override
     public boolean unbind(long memberId, long certificateId) {
@@ -166,26 +123,15 @@ public class MemberCertificateServiceImpl extends ServiceImpl<StudioMemberCertif
     /**
      * 查某成员持有的全部证书（管理端视图）
      *
-     * <p>为什么这样设计：采用两步查询而非 JOIN。先从关联表取 ID 列表
-     * （覆盖索引、不回表），再 IN 查主表——主表查询时 MyBatis-Plus 会自动追加
-     * deleted_at = 0，于是「证书已被删」的悬空关联被天然过滤（查询侧防御）。
-     * 手写 JOIN 就没有这层自动保护了，一旦漏写条件就会查出已删除的证书。
+     * 两步查询而非 JOIN：先从关联表取 ID 列表（覆盖索引、不回表），再 IN 查主表，
+     * 主表查询会自动追加 deleted_at = 0，「证书已被删」的悬空关联被天然过滤。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 校验 id 为正数；</li>
-     *     <li>② 校验成员存在，不存在给 A0402；</li>
-     *     <li>③ 两步查询取证书实体，再逐条转成管理端 VO。</li>
-     * </ol>
-     *
-     * <p>容易踩的坑：返回空列表有两种含义——「该成员确实没有证书」与
-     * 「关联都在，但证书全被逻辑删除了」。两者对前端都是空态，
-     * 所以这里不需要额外区分；但排查数据问题时要知道有第二种可能。
+     * 坑：返回空列表有两种含义——「该成员确实没有证书」与「关联都在，但证书全被逻辑删除了」，
+     * 对前端都是空态，排查数据问题时要知道有第二种可能。
      *
      * @param memberId 成员 ID，必须大于 0
      * @return 证书列表（按 sort_order → award_date → id 倒序）；无证书时返回空列表
-     * @throws com.bhu.runshistudioweb.exception.BusinessException id 不合法时抛出（A0401）；
-     *         成员不存在时抛出（A0402）
+     * @throws BusinessException id 不合法抛 A0401，成员不存在抛 A0402
      */
     @Override
     public List<CertificateVO> listCertificatesByMember(long memberId) {
@@ -202,27 +148,15 @@ public class MemberCertificateServiceImpl extends ServiceImpl<StudioMemberCertif
     /**
      * 查某证书关联的全部成员（反向查询，走 idx_cert_member）
      *
-     * <p>为什么这样设计：与正向查询是同一套实现思路，只是换了索引方向。
-     * 这里把两步查询直接写在方法里而没有抽成私有方法，是因为它只在
-     * 这一个地方用到，抽出去反而多一层跳转。
+     * 与正向查询同一套思路，只是换了索引方向。两步查询直接写在方法里而不抽私有方法，
+     * 是因为它只在这一处用到。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 校验 id 为正数；</li>
-     *     <li>② 校验证书存在，不存在给 A0402；</li>
-     *     <li>③ 从关联表取 member_id 列表（走 idx_cert_member 最左前缀）；</li>
-     *     <li>④ 空集合提前返回——拿空集合拼 IN () 是语法错误，MySQL 会直接报错；</li>
-     *     <li>⑤ IN 查成员主表并转 VO，主表查询自动过滤逻辑删除的成员。</li>
-     * </ol>
-     *
-     * <p>容易踩的坑：第 ④ 步不能省。有人会觉得「空集合 IN 查出来自然是空」，
-     * 但 IN () 在 MySQL 里是语法错误，整个请求会直接 500，
+     * 坑：空集合必须提前返回——拿空集合拼 IN () 在 MySQL 里是语法错误，整个请求直接 500，
      * 而这条路径只在「证书存在但没人绑定」时触发，测试时很容易漏掉。
      *
      * @param certificateId 证书 ID，必须大于 0
      * @return 成员列表（按 sort_order → id 倒序）；无成员时返回空列表
-     * @throws com.bhu.runshistudioweb.exception.BusinessException id 不合法时抛出（A0401）；
-     *         证书不存在时抛出（A0402）
+     * @throws BusinessException id 不合法抛 A0401，证书不存在抛 A0402
      */
     @Override
     public List<MemberVO> listMembersByCertificate(long certificateId) {
@@ -261,24 +195,15 @@ public class MemberCertificateServiceImpl extends ServiceImpl<StudioMemberCertif
     /**
      * 清理某成员的全部证书关联（供 deleteMember 在同一事务内调用）
      *
-     * <p>为什么这样设计：成员被删后，他持有的证书绑定关系没有保留价值，
-     * 而且这些行会继续占用唯一索引，导致「同一个成员 ID 重新绑进证书」时冲突。
-     * 用 baseMapper.delete() 而不是 Service 的 remove()：前者返回被删除的行数
-     * （便于日志核对），后者只返回 boolean。
-     * 物理删除是刻意的：关联表没有 deleted_at，也不该有。
+     * 成员被删后这些行会继续占用唯一索引，导致「同一个成员 ID 重新绑进证书」时冲突。
+     * 用 baseMapper.delete() 而不是 Service 的 remove()：前者返回被删除的行数，便于日志核对。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 校验 id 为正数；</li>
-     *     <li>② 按 member_id 物理删除，返回行数。</li>
-     * </ol>
-     *
-     * <p>容易踩的坑：本方法必须在调用方的事务里执行。它自己不加 @Transactional，
-     * 因为「清关联 + 删主表」要作为一个整体提交，在这里另开事务反而破坏原子性。
+     * 坑：本方法必须在调用方的事务里执行，自己不加 @Transactional——
+     * 在这里另开事务会让「清关联 + 删主表」失去原子性。
      *
      * @param memberId 成员 ID，必须大于 0
      * @return 被删除的行数（0 表示该成员本来就没有绑定任何证书）
-     * @throws com.bhu.runshistudioweb.exception.BusinessException id 不合法时抛出（A0401）
+     * @throws BusinessException id 不合法时抛出（A0401）
      */
     @Override
     public long removeByMemberId(long memberId) {
@@ -294,22 +219,13 @@ public class MemberCertificateServiceImpl extends ServiceImpl<StudioMemberCertif
     /**
      * 清理某证书的全部关联关系（供 deleteCertificate 在同一事务内调用）
      *
-     * <p>为什么这样设计：与 removeByMemberId 完全对称——删证书时也要把
-     * 「谁持有它」的关系一次性清掉，否则会留下指向已删除证书的悬空关联，
-     * 并持续占用唯一索引。同样必须在调用方的事务内执行。
+     * 与 removeByMemberId 对称：不清掉会留下指向已删除证书的悬空关联，并持续占用唯一索引。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 校验 id 为正数；</li>
-     *     <li>② 按 certificate_id 物理删除，返回行数。</li>
-     * </ol>
-     *
-     * <p>容易踩的坑：删除证书的调用方必须先执行本方法、再删主表。
-     * 顺序反了的话，主表删掉、清理失败就会留下悬空关联，而且不会报错。
+     * 坑：调用方必须先执行本方法、再删主表。顺序反了，主表删掉、清理失败就会留下悬空关联，且不报错。
      *
      * @param certificateId 证书 ID，必须大于 0
      * @return 被删除的行数（0 表示这张证书本来就没有绑定任何成员）
-     * @throws com.bhu.runshistudioweb.exception.BusinessException id 不合法时抛出（A0401）
+     * @throws BusinessException id 不合法时抛出（A0401）
      */
     @Override
     public long removeByCertificateId(long certificateId) {
@@ -369,7 +285,7 @@ public class MemberCertificateServiceImpl extends ServiceImpl<StudioMemberCertif
     /**
      * 按 (member_id, certificate_id) 构造关联查询条件
      *
-     * 把条件收在一处：查重与解绑都用它，避免某处少写一个 eq
+     * 把条件收在一处：查重与解绑都用它，避免某处少写一个 eq，
      * 导致「查到了别人绑定同一张证书的记录」。
      *
      * @param memberId 成员 ID
@@ -408,8 +324,7 @@ public class MemberCertificateServiceImpl extends ServiceImpl<StudioMemberCertif
     /**
      * 实体转管理端证书 VO（写法与 CertificateServiceImpl 一致）
      *
-     * 本类不能注入 CertificateService（那会构成循环依赖），
-     * 所以这几行 BeanUtils 拷贝是刻意重复的。
+     * 本类不能注入 CertificateService（那会构成循环依赖），所以这几行拷贝是刻意重复的。
      *
      * @param certificate 证书实体
      * @return 管理端 VO

@@ -15,11 +15,10 @@ import type { QuizMode, QuizOverview, QuizTextbook } from '@/api/types';
 /**
  * 刷题首页（对照设计稿：选择模式 / 教材章节 / 开始 / 学习概览 / 错题本）
  *
- * 准入：只有在队成员能用（与考勤同一套判定，认 studio_member 表）。
- * 非成员进来会被拦下并送回首页——不是报错，因为「不是成员」是正常的身份状态。
+ * 准入：只有在队成员能用（认 studio_member 表）。非成员被拦下送回首页——
+ * 不是报错，「不是成员」是正常的身份状态。
  *
- * 为什么三个请求并发拉：教材树、概览、继续上次的批次互不依赖，
- * 串行拉会让首屏多等两个往返。任一失败走 ErrorRetry，而不是留一个空白页面。
+ * 教材树、概览、上次批次三个请求并发拉：互不依赖，串行会多等两个往返。
  */
 const router = useRouter();
 const user = useUserStore();
@@ -143,12 +142,10 @@ async function resume() {
 
 onMounted(async () => {
     usePageMeta({ title: '刷题', description: '政治选择题刷题：顺序、错题重刷与随机抽题，错题本自动收录。' });
-    // 布局不会在路由切换时重建，这里主动拉一次确保身份是最新的。
+    // 布局不会在路由切换时重建，这里主动拉一次确保身份最新。
     //
-    // 必须自己兜住异常：onMounted 是 async 的，这里 await 的请求一旦失败
-    // （典型场景是退出登录后仍停留在本页），rejection 会冒泡到 Vue 的全局
-    // 错误处理器，弹出「页面显示异常，请刷新重试」——而实际上页面好好的，
-    // 只是登录态没了。这里静默降级，由下面的 isMember 判断统一收口。
+    // 必须自己兜住异常：onMounted 是 async 的，退出登录后仍停留在本页时请求会失败，
+    // rejection 冒泡到全局处理器会弹出「页面显示异常」——而页面其实好好的。
     try {
         await user.loadMemberProfile();
     } catch {

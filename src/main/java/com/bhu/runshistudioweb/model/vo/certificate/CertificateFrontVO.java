@@ -10,16 +10,12 @@ import java.time.LocalDate;
 /**
  * 证书视图对象（C 端官网展示使用，游客可获取）
  *
- * 脱敏套路与 的成员 C 端 VO 一致：靠「目标 VO 没有这些字段」来实现脱敏。
- * 本类刻意不包含：
- * - sortOrder——运营置顶权重，属于后台配置，不该由前台感知；
- * - createdAt / updatedAt / createdBy / updatedBy / deletedAt——审计字段，
- * 与官网展示无关。
- * 由于 BeanUtils.copyProperties 只会拷贝「两边都存在且类型一致」的属性，
- * 这些字段结构上不可能被带出去。比「拷完再手动置空」可靠：
- * 以后实体新增敏感字段时，只要不加进这个 VO，就自动被挡住。
+ * 脱敏靠「目标 VO 没有这些字段」：刻意不含 sortOrder（运营置顶权重，属于后台配置）与
+ * createdAt / updatedAt / createdBy / updatedBy / deletedAt（审计字段）。
+ * BeanUtils.copyProperties 只拷贝「两边都存在且类型一致」的属性，这些字段结构上不可能被带出去——
+ * 以后实体新增敏感字段时，只要不加进这个 VO 就自动被挡住，比「拷完再手动置空」可靠。
  *
- * 将来官网要加展示字段时，先问一句「这个字段愿意给所有人看吗」，愿意才加到本类。
+ * 将来要加展示字段时，先问一句「这个字段愿意给所有人看吗」，愿意才加到本类。
  *
  * @author shaoshing
  */

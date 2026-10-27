@@ -9,14 +9,11 @@ import java.io.Serializable;
 /**
  * 批量导入题目请求（管理端）
  *
- * 为什么是「粘贴文本」而不是文件上传：题库的来源几乎都是
- * 从文档/网页里复制一段题目，粘贴比下载模板再上传少两步；
- * 且文本解析的失败信息可以精确到行号，比「上传的文件解析失败」有用得多。
+ * 用「粘贴文本」而不是文件上传：题库来源多是文档、网页里复制的一段题目，粘贴少两步，
+ * 且文本解析的失败信息可以精确到行号。
  *
- * dryRun 的作用：前端「校验」按钮先传 true，
- * 拿到解析结果与错误行号后展示预览；用户确认后再传 false 真正落库。
- * 这样「导入了一半发现第 12 行错了」的尴尬就不会发生——
- * 即使真正导入，也是整批全成功或全失败。
+ * dryRun 供前端「校验」按钮先传 true 拿到解析结果与错误行号做预览，确认后再传 false 落库；
+ * 真正导入时也是整批全成功或全失败，不会导入一半。
  *
  * @author shaoshing
  */
@@ -50,10 +47,8 @@ public class QuizQuestionImportRequest implements Serializable {
     /**
      * 待解析的文本（必填）
      *
-     * 格式见 QuizImportParser 的类注释。长度不设注解上限：
-     * 真正要防的是「几 MB 的粘贴」，由 Service 按题目数量
-     * （ QuizConstant.IMPORT_MAX_QUESTIONS）拦截——
-     * 用「题目数」比用「字符数」更贴近真实约束。
+     * 格式见 QuizImportParser 的类注释。长度不设注解上限，由 Service 按题目数量
+     * （QuizConstant.IMPORT_MAX_QUESTIONS）拦截——用题目数比用字符数更贴近真实约束。
      */
     @NotBlank(message = "导入内容不能为空")
     private String text;

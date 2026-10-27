@@ -44,8 +44,7 @@ const pickedMember = ref('');
  * 是否为当前队长
  *
  * 队长由 `project.leaderId` 决定，后端拒绝把队长从成员列表里移除。
- * 这里提前判断并禁用按钮，而不是让用户点了才知道——后端的约束是对的，
- * 但错误的时机应该是「点之前」而不是「报错之后」。
+ * 这里提前禁用按钮，而不是让用户点了才收到报错。
  */
 function isLeader(memberId: string): boolean {
     return String(form.leaderId ?? '') === memberId;
@@ -247,9 +246,8 @@ onMounted(load);
                 </template>
             </el-table-column>
             <!--
-              权重与首页排名：这是「首页项目怎么放」的唯一抓手。
-              排名由后端按官网口径（权重倒序 → 创建时间倒序 → id 倒序）算出前 6 条，
-              列表默认顺序与之相同，所以这里看到的名次就是门户首页上的名次
+              权重是「首页项目怎么放」的唯一抓手：后端按官网口径（权重倒序 → 创建时间倒序 → id 倒序）
+              取前 6 条，列表默认顺序与之相同，所以这里看到的名次就是门户首页的名次
             -->
             <el-table-column label="权重" width="80">
                 <template #default="{ row }">

@@ -4,11 +4,9 @@ import type { AttendanceBoardItem, AttendanceCheckIn, AttendanceRecord } from '.
 /**
  * 考勤接口（仅工作室成员，与发帖共用同一套身份判定）
  *
- * 三个接口都只挂 `@SaCheckLogin`，真正的成员准入由后端查 `studio_member` 表判定
- * （认表不认角色），非成员会拿到 A0301 无权限。
- *
- * 签到接口的入参为空：内外网判定所需的 IP 与 UA 由服务端从请求头取，
- * 客户端传什么都不作数——这是刻意的设计，否则任何人都能伪造「我在工作室」。
+ * 接口只挂 `@SaCheckLogin`，真正的准入由后端查 `studio_member` 表判定（认表不认角色），
+ * 非成员拿到 A0301。签到的入参为空：内外网判定所需的 IP 与 UA 由服务端从请求头取，
+ * 客户端传什么都不作数，否则任何人都能伪造「我在工作室」。
  */
 export const attendanceApi = {
     // 签到

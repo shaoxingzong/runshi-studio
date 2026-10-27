@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { postApi } from '@/api/post';
 import ErrorRetry from '@/components/ErrorRetry.vue';
+import SmartImage from '@/components/SmartImage.vue';
 import { useUserStore } from '@/stores/user';
 import type { PageResult, Post } from '@/api/types';
 
@@ -78,8 +79,9 @@ onMounted(load);
                     class="post-card"
                 >
                     <div class="cover">
-                        <img v-if="post.coverImage" :src="post.coverImage" :alt="post.title" />
-                        <div v-else class="cover-fallback">{{ post.title.slice(0, 1) }}</div>
+                        <!-- 封面可能是外部图床链接（会失效）或已被清理的上传文件，
+                             交给 SmartImage 兜底成「标题首字 + 渐变块」，不留裂图 -->
+                        <SmartImage :src="post.coverImage" :alt="post.title" :seed="post.id" />
                         <span v-if="post.pinned === 1" class="pin">置顶</span>
                     </div>
 
@@ -87,6 +89,14 @@ onMounted(load);
                         <h3>{{ post.title }}</h3>
                         <p class="summary">{{ post.summary || '暂无摘要' }}</p>
                         <div class="meta">
+                            <!-- 作者头像：成员档案里有就用真实头像，没有则用姓名首字 -->
+                            <span class="author-avatar">
+                                <SmartImage
+                                    :src="post.authorAvatar"
+                                    :alt="post.authorName || '工作室成员'"
+                                    :seed="post.authorId"
+                                />
+                            </span>
                             <span class="author">{{ post.authorName || '工作室成员' }}</span>
                             <span class="date">{{ post.createdAt?.slice(0, 10) }}</span>
                             <span class="spacer" />
@@ -141,25 +151,17 @@ onMounted(load);
     position: relative;
     aspect-ratio: 16 / 9;
     background: #eff6ff;
-}
-
-.cover img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-}
-
-/* 没有封面时用标题首字兜底，避免卡片出现大片空白 */
-.cover-fallback {
-    width: 100%;
-    height: 100%;
+    /* 兜底色块要铺满封面区，因此这里给出确定尺寸，由 SmartImage 填满 */
     display: flex;
-    align-items: center;
-    justify-content: center;
+    overflow: hidden;
+}
+
+/* SmartImage 的图片与兜底块都填满封面区 */
+.cover :deep(.img-fallback__img),
+.cover :deep(.img-fallback__box) {
+    width: 100%;
+    height: 100%;
     font-size: 34px;
-    font-weight: 600;
-    color: #2563eb;
 }
 
 .pin {
@@ -171,6 +173,27 @@ onMounted(load);
     background: #2563eb;
     color: #fff;
     font-size: 12px;
+}
+
+/* 作者头像：卡片底部最显眼的身份标识，28px 才看得出是头像（20px 只剩一个小色点） */
+.author-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    display: inline-flex;
+    /* 细边框让浅色兜底块与卡片背景分得开 */
+    box-shadow: 0 0 0 1px rgb(15 23 42 / 8%);
+}
+
+.author-avatar :deep(.img-fallback__box) {
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.author-avatar :deep(.img-fallback__img) {
+    object-fit: cover;
 }
 
 .body {
@@ -209,7 +232,7 @@ h3 {
 
 .author {
     color: #4b5563;
-    font-weight: 500;
+    font-weight: 600;
 }
 
 .empty-title {

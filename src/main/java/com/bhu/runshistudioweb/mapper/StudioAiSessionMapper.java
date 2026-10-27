@@ -5,14 +5,11 @@ import com.bhu.runshistudioweb.model.entity.StudioAiSession;
 import org.apache.ibatis.annotations.Mapper;
 
 /**
- * AI 会话数据访问层（对应 studio_ai_session）
+ * studio_ai_session 表的数据访问层（AI 会话）
  *
- * 继承 BaseMapper 即自动获得单表 CRUD，本类不需要写任何方法：
- * 会话的定位（按 ID 查）、创建、刷新 updated_at 都是单条操作。
- *
- * 逻辑删除由 @TableLogic 驱动：所有查询自动追加 deleted_at = 0。
- * 这一点在会话场景格外重要——已删除的会话必须查不出来，
- * 否则用户凭旧 ID 还能继续往「已删除会话」里写消息。
+ * 继承 BaseMapper 即得单表 CRUD，故接口为空。三个自动行为只对 MP 方法生效：逻辑删除
+ * （查询自动加 deleted_at = 0、deleteById 实为 UPDATE）、审计填充、分页须走 selectPage。
+ * 坑：已删除会话必须查不出来，否则用户凭旧 ID 还能继续往里写消息。
  *
  * @author shaoshing
  */

@@ -3,19 +3,10 @@ import { baseUrl, tokenStore } from './request';
 import type { ApiResponse } from './types';
 
 /**
- * 通用文件上传
+ * 通用文件上传：必须单独走 fetch（http.post 发的是 JSON，手写 Content-Type 会让后端解析不到
+ * 文件），且不经过拦截器，所以要手动带 `satoken` 头。
  *
- * 后端 `POST /file/upload` 走 `multipart/form-data`、字段名 `file`，且要求登录
- * （该接口不在 Sa-Token 白名单里——匿名上传等于给攻击者一个免费图床）。
- * 返回的是站内相对访问路径（如 `/uploads/2026/10/xxxx.png`），
- * 开发态由 Vite 的 `/uploads` 代理指向后端，直接用作 `src` 即可展示。
- *
- * 为什么不用 request.ts 的 http.post：那个方法发的是 JSON，
- * 而上传必须让浏览器自己补 multipart 的 boundary——手写 `Content-Type` 会让后端解析不到文件。
- * 所以这里单独走 `fetch`，并手动带上 `satoken` 头（`fetch` 不经过 axios 拦截器）。
- *
- * @param file 图片文件（后端只接受 PNG / JPEG，真实类型由魔数判定，不看扩展名）
- * @returns 站内相对访问路径，如 `/uploads/2026/10/xxxx.png`
+ * @returns 站内相对访问路径，如 `/uploads/2026/10/xxxx.png`，可直接用作 src
  */
 export async function uploadFile(file: File): Promise<string> {
     const form = new FormData();

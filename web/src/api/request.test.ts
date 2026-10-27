@@ -260,6 +260,42 @@ describe('网络层兜底', () => {
     });
 });
 
+describe('HTTP 层错误：框架/网关拒绝', () => {
+    it('414（URL 超长）：翻译为可读文案，页面不再显示英文/网络异常', async () => {
+        mockGet.mockRejectedValue(
+            Object.assign(new Error('Request failed with status code 414'), {
+                response: { status: 414, data: '<html>414 Request-URI Too Large</html>' },
+            }),
+        );
+
+        const err = await catchRequestError(http.get('/project/list'));
+
+        expect(err.kind).toBe('client');
+        expect(err.retryable).toBe(false);
+        expect(err.message).toContain('过长');
+        expect(messageError).toHaveBeenCalledWith(err.message);
+        expect(messageError).toHaveBeenCalledTimes(1);
+    });
+
+    it('400 + JSON：优先使用后端 message 与错误码', async () => {
+        mockGet.mockRejectedValue(
+            Object.assign(new Error('Request failed with status code 400'), {
+                response: {
+                    status: 400,
+                    data: { code: 'A0401', message: '搜索关键词不能超过 64 个字符' },
+                },
+            }),
+        );
+
+        const err = await catchRequestError(http.get('/project/list'));
+
+        expect(err.kind).toBe('client');
+        expect(err.code).toBe('A0401');
+        expect(err.message).toBe('搜索关键词不能超过 64 个字符');
+        expect(messageError).toHaveBeenCalledTimes(1);
+    });
+});
+
 describe('http.long：长耗时请求', () => {
     it('用更长的超时发 POST', async () => {
         mockPost.mockResolvedValue(ok(true));

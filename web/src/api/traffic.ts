@@ -4,8 +4,7 @@ import type { TrafficOverview } from './types';
 /**
  * 流量埋点 / 统计接口
  *
- * 埋点（ report）匿名可访问——游客的访问也要统计。
- * 统计（ overview）只给管理端。
+ * 埋点（report）匿名可访问——游客的访问也要统计；统计（overview）只给管理端。
  */
 export const trafficApi = {
     // 上报一次页面访问
@@ -25,15 +24,8 @@ export const trafficApi = {
 /**
  * 生成 uuid 的兜底实现
  *
- * 为什么需要它：`crypto.randomUUID()` 只在「安全上下文」（HTTPS 或 localhost）
- * 存在。本站用局域网 HTTP 访问（如 http://10.193.10.244），`crypto.randomUUID`
- * 直接是 undefined——而 visitorId() 又在路由 afterEach 里被同步调用，
- * 于是一次抛错就会让**每一次页面跳转**都被全局错误处理器接住，
- * 表现为「点哪里都弹页面显示异常」。
- *
- * `crypto.getRandomValues()` 不受安全上下文限制，用它手拼 v4 uuid；
- * 连它都不可用时退回时间戳 + 随机数——访客标识只用于 UV 去重，
- * 不需要密码学强度，但绝不能因为「生成不了 ID」把整站导航搞崩。
+ * `crypto.randomUUID()` 只在安全上下文（HTTPS / localhost）存在，局域网 HTTP 下是 undefined；
+ * 而 visitorId() 在路由 afterEach 里同步调用，一次抛错就让**每次页面跳转**都弹「页面显示异常」。
  */
 function fallbackUuid(): string {
     try {
@@ -53,14 +45,7 @@ let memoryVisitorId = '';
 /**
  * 取访客标识（localStorage 持久化的随机 uuid）
  *
- * 为什么放前端而不是后端：后端拿不到「同一个人」的稳定标识——
- * 未登录时 IP 会变（移动网络）、UA 会撞（同款手机）。
- * 前端 localStorage 的 uuid 至少在同一浏览器内稳定，这正是 UV 去重要的全部依据。
- *
- * 已知边界：换设备 / 清缓存 / 无痕模式会算成新的 UV。
- * 这是轻量埋点的固有代价（不记 IP、不记设备指纹的取舍），
- * 管理端页面需注明这个口径。
- *
+ * 放前端而不是后端：未登录时 IP 会变、UA 会撞。已知边界是换设备 / 清缓存 / 无痕会算成新 UV。
  * 本函数**永不抛错**：它在路由 afterEach 里同步执行，抛出去就是全站导航报错。
  */
 export function visitorId(): string {
@@ -88,8 +73,7 @@ export function visitorId(): string {
 /**
  * 设备类型粗分：pc / mobile
  *
- * 只按 UA 里的关键词判断，不引特性检测库——这个维度只是参考，
- * 为它加一个依赖不值得。
+ * 只按 UA 关键词判断，不引特性检测库——这个维度只是参考，加依赖不值得。
  */
 export function deviceType(): string {
     return /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? 'mobile' : 'pc';
@@ -98,8 +82,7 @@ export function deviceType(): string {
 /**
  * 来源域名（外站跳转进来才有值）
  *
- * 只取 host，不取完整 URL：query 里可能带 token。
- * 解析失败时返回空串而不是抛错——埋点不能把页面搞坏。
+ * 只取 host 不取完整 URL：query 里可能带 token。解析失败返回空串，埋点不能把页面搞坏。
  */
 export function referrerHost(): string {
     try {

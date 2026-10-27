@@ -8,11 +8,10 @@ import java.util.List;
 /**
  * 批量导入结果（管理端）
  *
- * dryRun 与真实导入共用本 VO：前者只填 parsed 与 errors，
- * imported 恒为 0。前端因此可以用同一套渲染逻辑做「预览」与「结果」。
+ * dryRun 与真实导入共用本 VO：前者只填 parsed 与 errors，imported 恒为 0，
+ * 前端因此可以用同一套渲染逻辑做「预览」与「结果」。
  *
- * errors 里带行号是刻意的：粘贴一大段文本时，
- * 「第 12 行多选题只标了 1 个正确项」能让人立刻定位；
+ * errors 里带行号是刻意的：粘贴一大段文本时，「第 12 行多选题只标了 1 个正确项」能让人立刻定位，
  * 只说「有 3 个错误」等于没说。
  *
  * @author shaoshing
@@ -51,9 +50,7 @@ public class QuizImportResultVO implements Serializable {
         /** 可读原因（直接展示给管理员） */
         private String message;
 
-        /**
-         * 供 Jackson 反序列化使用
-         */
+        /** 供 Jackson 反序列化使用 */
         public ImportError() {
         }
 

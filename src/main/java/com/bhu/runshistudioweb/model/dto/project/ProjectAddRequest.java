@@ -12,20 +12,14 @@ import java.util.List;
 /**
  * 管理端：新增项目请求
  *
- * 三个必填项的理由都来自 DDL：
- * - title / description 是 NOT NULL 列，不校验会直接抛 SQL 错误；
- * - leaderId 是 NOT NULL，而且它是「队长」的权威数据源——
- * 新增时由 Service 在同一事务内同步进关联表，所以必填不只是为了入库，
- * 更是为了保证「项目一定有一个队长」。
+ * title / description 必填是因为 DDL 里是 NOT NULL 列，不校验会直接抛 SQL 错误。
+ * leaderId 也是 NOT NULL，而且它是「队长」的权威数据源——新增时由 Service 在同一事务内同步进关联表，
+ * 必填不只为了入库，更是为了保证「项目一定有一个队长」。
  *
- * techStack 用 List<String> 而不是字符串：
- * 数据库里存的是 JSON 快照字符串，但那是存储形态，不该泄漏到接口契约上。
- * 转换与长度校验（varchar(256) 上限）由 Service 负责，超出会返回 A0401
- * 「技术栈标签过长或过多」——不校验的话，前端塞 20 个标签会直接撞数据库的 SQL 错误。
+ * techStack 用 List<String> 而不是字符串：数据库存的是 JSON 快照，但那是存储形态，不该泄漏到接口契约上。
+ * 转换与长度校验由 Service 负责，超出返回 A0401——不校验的话前端塞 20 个标签会直接撞 SQL 错误。
  *
- * status 不做注解白名单（理由与其它模块一致）：枚举一加取值注解就过期，
- * 合法性由 Service 用 com.bhu.runshistudioweb.model.enums.ProjectStatusEnum 校验，
- * 提示文案用 valuesText() 生成；不传时按 DDL 默认值 1（已上线）处理。
+ * status 不做注解白名单（枚举一加取值注解就过期），由 Service 用枚举校验；不传按 DDL 默认值 1（已上线）处理。
  *
  * @author shaoshing
  */

@@ -28,26 +28,15 @@ import java.util.List;
 /**
  * 荣誉证书服务实现
  *
- * 继承 ServiceImpl<StudioCertificateMapper, StudioCertificate> 后单表 CRUD 已由
- * MyBatis-Plus 提供，本类只写「业务动作」：校验、排序、VO 转换。
+ * 继承 ServiceImpl 后单表 CRUD 已由 MyBatis-Plus 提供，本类只写业务动作：校验、排序、VO 转换。
  *
- * 本模块四个设计点在实现里的落点：
- * - 级别与类型正交：两个字段分别用 CertificateLevelEnum /
- * CertificateTypeEnum 校验，绝不接收「国家级竞赛」这种合并写法。
- * 合并成一个字段后，想查「所有国家级证书」只能写 LIKE '%national%'，
- * 既走不了组合索引，也会误匹配；两个维度拆开后才能各自独立筛选与统计；
- * - 获奖日期：非空 + 不得晚于今天（isAfter(LocalDate.now()) 即拒绝）；
- * 字段类型是 LocalDate 而不是 LocalDateTime——它只表达「哪一天」，
- * 用 LocalDateTime 会凭空多出 00:00:00 的时分秒，前端还得再截断；
- * - 证书图片：非空校验（DDL 中 image_url 是 NOT NULL，不校验会直接抛 SQL 错误）；
- * - 默认排序：sort_order 倒序 + award_date 倒序，
- * 与 idx_type_date / idx_level_date 的 (维度列, award_date DESC) 索引结构同向。
+ * 级别与类型正交，各自用枚举校验，绝不接收「国家级竞赛」这种合并写法——合并后想查
+ * 「所有国家级证书」只能写 LIKE，既走不了组合索引也会误匹配。
+ * 获奖日期用 LocalDate 而不是 LocalDateTime：它只表达「哪一天」，用后者会凭空多出 00:00:00。
+ * 默认排序 sort_order 倒序 + award_date 倒序，与 idx_type_date / idx_level_date 同向。
  *
- * 事务说明：deleteCertificate 是「清理关联表 + 逻辑删除主表」两次写，
- * 加了 @Transactional(rollbackFor = Exception.class)；
- * 新增与更新只是一次写，数据库自身的原子性足够，不加事务。
- * 写 rollbackFor = Exception.class 的原因：Spring 默认只回滚 RuntimeException，
- * 显式声明才能覆盖受检异常。
+ * deleteCertificate 是两次写，加了 @Transactional(rollbackFor = Exception.class)；
+ * 新增与更新只是一次写，不加事务。
  *
  * @author shaoshing
  */
@@ -81,32 +70,15 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
     /**
      * 新增证书
      *
-     * <p>为什么这样设计：四个必填项对应四种「不拦住就会出事」的情况。
-     * 其中 imageUrl 的非空校验尤其重要——DDL 里该列是 NOT NULL，
-     * 不在这里拦的话，用户看到的会是数据库抛出的 B0001「系统错误」，
-     * 既不知道是哪个字段错了，也不知道该补什么。
-     * 级别与类型是两个正交维度，必须各自独立校验：合并成「国家级竞赛」这种
-     * 单字段写法后，任一维度都无法单独筛选与统计。
+     * 五个必填项里 imageUrl 尤其重要：DDL 里该列是 NOT NULL，不在这里拦的话用户看到的是
+     * 数据库抛出的 B0001「系统错误」，既不知道哪个字段错了也不知道该补什么。
+     * 级别与类型是两个正交维度，必须各自独立校验，否则任一维度都无法单独筛选与统计。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 拦空请求体：@Valid 只在真的有请求体时生效，整体为 null 时它什么也不做，
-     *         不兜这一层，后面拆箱就会变成 500；</li>
-     *     <li>② 校验标题、级别、类型、获奖日期、图片五项：
-     *         全部排在组装实体之前，任何一项不合法都不该产生一次数据库往返；</li>
-     *     <li>③ 组装实体并落库：sortOrder 不传时显式置 0，而不是留给 DDL 默认值。</li>
-     * </ol>
+     * 坑：sortOrder 显式赋 0 而不是依赖 DDL 默认值——数据库改了默认值，Java 侧行为会跟着悄悄漂移。
      *
-     * <p>容易踩的坑：sortOrder 显式赋值 0 而不是依赖数据库默认值。
-     * 依赖默认值意味着「数据库改了默认值，Java 侧行为就跟着漂移」，
-     * 而这种漂移不会在任何代码里留下痕迹，排查时很难想到。
-     *
-     * @param certificateAddRequest 新增请求，不允许为 null；名称、级别、类型、
-     *                              获奖日期、图片五项必填
+     * @param certificateAddRequest 新增请求，不允许为 null；名称、级别、类型、获奖日期、图片五项必填
      * @return 新证书 ID（19 位 Long，接口层序列化成字符串）
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 请求体为空、必填项为空、
-     *         级别或类型不在枚举内、获奖日期晚于今天时抛出（A0401）；
-     *         落库失败时抛出（B0001）
+     * @throws BusinessException 必填项为空、级别或类型不在枚举内、获奖日期晚于今天时抛出（A0401）
      */
     @Override
     public long addCertificate(CertificateAddRequest certificateAddRequest) {
@@ -145,29 +117,15 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
     /**
      * 更新证书（部分更新：字段为 null 表示不修改）
      *
-     * <p>为什么这样设计：两个刻意的处理。
-     * 第一，先查存在再更新——updateById 失败时只返回 false，
-     * 前端只能看到「更新失败」，先查一次才能给出 A0402「证书不存在」。
-     * 第二，传了才校验（包括「传空串要拦住」）——不传表示不改，
-     * 传了空串是想清空，而 NOT NULL 列不允许清空，必须在这里拦成 A0401。
+     * 先查存在再更新：updateById 失败只返回 false，前端只能看到「更新失败」，先查一次才能给出 A0402。
+     * 传了才校验，且传空串要拦住——不传表示不改，传空串是想清空，而 NOT NULL 列不允许清空。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 校验 id 并先查一次，确认目标存在；</li>
-     *     <li>② 对「传了的字段」逐一校验，与新增走同一套枚举与日期规则，
-     *         避免新增能过、更新不能过的两套标准；</li>
-     *     <li>③ 组装只含白名单字段的更新对象并 updateById。</li>
-     * </ol>
+     * 坑：updateById 默认跳过 null 字段，这正是「传 null 表示不修改」成立的基础；
+     * 不要为了「统一处理」给字段填默认值，否则「不修改」会变成「改成默认值」。
      *
-     * <p>容易踩的坑：updateById 默认跳过 null 字段，这正是
-     * 「传 null 表示不修改」语义成立的基础。所以千万不要为了「统一处理」
-     * 给字段填默认值，否则「不修改」会变成「改成默认值」。
-     *
-     * @param certificateUpdateRequest 更新请求，不允许为 null；id 必填，
-     *                                 其余字段为 null 表示保持原值
+     * @param certificateUpdateRequest 更新请求，不允许为 null；id 必填，其余字段为 null 表示保持原值
      * @return true 表示更新成功；证书不存在时抛异常而不是返回 false
-     * @throws com.bhu.runshistudioweb.exception.BusinessException id 为空、标题或图片传空串、
-     *         级别或类型非法、获奖日期晚于今天时抛出（A0401）；证书不存在时抛出（A0402）
+     * @throws BusinessException 字段非法、日期晚于今天抛 A0401；证书不存在抛 A0402
      */
     @Override
     public boolean updateCertificate(CertificateUpdateRequest certificateUpdateRequest) {
@@ -215,28 +173,16 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
     /**
      * 删除证书（逻辑删除 + 同一事务内清理成员-证书关联）
      *
-     * <p>为什么这样设计：顺序是「先清关联、再删主表」，且两次写必须在同一事务内。
-     * 反过来（先删主表）一旦清理失败，就会留下指向已删除证书的悬空关联；
-     * 而现在的顺序下，主表删除失败会让整个事务回滚，
-     * 不会出现「证书还在、关联却没了」的静默数据丢失。
-     * 主表用逻辑删除保留可追溯性，关联表用物理删除——
-     * 「谁持有了一张已不存在的证书」没有保留价值。
+     * 顺序是「先清关联、再删主表」，且两次写必须同一事务。反过来一旦清理失败，
+     * 就会留下指向已删除证书的悬空关联；现在的顺序下主表删除失败会让整个事务回滚。
+     * 主表逻辑删除保留可追溯性，关联表物理删除——「谁持有一张已不存在的证书」没有保留价值。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 校验 id 并查一次，不存在给 A0402；</li>
-     *     <li>② 清关联表，必须排在删主表之前；</li>
-     *     <li>③ 逻辑删除主表，失败会连带回滚第 ② 步。</li>
-     * </ol>
-     *
-     * <p>容易踩的坑：@Transactional 的 rollbackFor 必须显式写 Exception.class。
-     * Spring 默认只回滚 RuntimeException，漏了它等于「事务声明了一半」：
-     * 遇到受检异常时两次写只回滚一次，悬空数据照样会出现。
+     * 坑：rollbackFor 必须显式写 Exception.class，Spring 默认只回滚 RuntimeException，
+     * 漏了它遇到受检异常时两次写只回滚一次，悬空数据照样出现。
      *
      * @param id 证书 ID，必须大于 0
      * @return true 表示删除成功
-     * @throws com.bhu.runshistudioweb.exception.BusinessException id 不合法时抛出（A0401）；
-     *         证书不存在时抛出（A0402）
+     * @throws BusinessException id 不合法抛 A0401，证书不存在抛 A0402
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -257,25 +203,15 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
     /**
      * 按 id 查证书（管理端视图）
      *
-     * <p>为什么这样设计：查不到要抛 A0402 而不是返回 null。
-     * 返回 null 会让前端收到「code=0 但 data 为空」——它分不清这是
-     * 「没有数据」还是「出错了」，只能靠猜决定展示空态还是错误提示。
+     * 查不到要抛 A0402 而不是返回 null：返回 null 时前端收到「code=0 但 data 为空」，
+     * 分不清是「没有数据」还是「出错了」。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 校验 id 为正数，省掉一次必然失败的数据库往返；</li>
-     *     <li>② 查实体，逻辑删除的记录被自动过滤；</li>
-     *     <li>③ 转管理端 VO。</li>
-     * </ol>
-     *
-     * <p>容易踩的坑：本方法只返回单条，所以可以放心带全部字段；
-     * 列表接口不要复用它，管理端 VO 虽然不含正文，但字段越多，
-     * 一页十条的响应体也越大。
+     * 坑：本方法只返回单条，可以放心带全部字段；列表接口不要复用它，
+     * 字段越多，一页十条的响应体也越大。
      *
      * @param id 证书 ID，必须大于 0
      * @return 含图片、置顶权重与审计字段的证书信息，永不为 null
-     * @throws com.bhu.runshistudioweb.exception.BusinessException id 不合法时抛出（A0401）；
-     *         证书不存在或已逻辑删除时抛出（A0402）
+     * @throws BusinessException id 不合法抛 A0401，证书不存在或已逻辑删除抛 A0402
      */
     @Override
     public CertificateVO getCertificateById(long id) {
@@ -292,23 +228,10 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
     /**
      * 管理端分页查询
      *
-     * <p>为什么这样设计：分页参数在这里做兜底纠正而不是抛异常——
-     * 页码小于 1 视为 1、pageSize 收敛到 50。传错页码没必要让整个查询失败，
-     * 收敛到合理区间继续查体验更好；但上限必须真的收住，
-     * 否则一个 pageSize=999999 就能把整表拉进内存。
-     * 排序字段走白名单 switch：ORDER BY 位置无法用占位符参数化，
-     * 把前端字符串直接拼进去就是最典型的 SQL 注入入口。
+     * 分页参数兜底纠正而不是抛异常：页码小于 1 视为 1、pageSize 收敛到 50。
+     * 排序字段走白名单 switch：ORDER BY 位置无法用占位符参数化，拼前端字符串就是注入入口。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 请求为 null 时换空对象，后续不用到处判空；</li>
-     *     <li>② 纠正分页参数；</li>
-     *     <li>③ 拼筛选条件并应用白名单排序；</li>
-     *     <li>④ 分页查询并转 VO，保留 total / current / size 供前端分页器使用。</li>
-     * </ol>
-     *
-     * <p>容易踩的坑：分页对象不要关掉 searchCount。关掉能省一次 COUNT，
-     * 但前端分页器拿不到 total 就画不出总页数，表现为「能翻页但页码永远是 0」。
+     * 坑：不要关掉 searchCount，省下的那一次 COUNT 换来的是前端分页器画不出总页数。
      *
      * @param certificateQueryRequest 查询条件，允许为 null（等价于无条件查第一页）
      * @return 分页结果，记录为管理端 VO；无数据时 records 为空列表、total 为 0
@@ -339,26 +262,14 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
     /**
      * C 端公开列表（游客可访问）
      *
-     * <p>为什么这样设计：与管理端分页有三点不同，都是公开接口的必要约束。
-     * 一是返回脱敏 VO（不含 sortOrder 与审计字段），靠「目标 VO 没有这些字段」
-     * 实现脱敏；二是固定排序，忽略请求里的 sortField / sortOrder——
-     * 排序由产品定义，不由请求方决定；三是强制上限，
-     * 游客流量不可控，无上限的 list 等于把整表拉回内存。
+     * 与后台分页的三点不同都是公开接口的必要约束：返回脱敏 VO（目标 VO 没有 sortOrder 与审计字段）、
+     * 固定排序（排序由产品定义，不由请求方决定）、强制上限（游客流量不可控）。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 请求为 null 时换空对象；</li>
-     *     <li>② 拼筛选条件；</li>
-     *     <li>③ 固定排序：置顶权重 → 获奖日期 → id 倒序；</li>
-     *     <li>④ 查一页（不数总数）并逐条转成脱敏 VO。</li>
-     * </ol>
-     *
-     * <p>容易踩的坑：排序的第三个键 id 不能省。置顶权重同为默认 0、
-     * 同一天获奖都很常见，前两个键完全相同时，缺少稳定次序会让翻页出现
-     * 「同一行出现在两页」或「某行被跳过」——这类问题只在数据量上来后才暴露。
+     * 坑：排序的第三个键 id 不能省。置顶权重同为 0、同一天获奖都很常见，缺少稳定次序会让翻页
+     * 出现「同一行出现在两页」或「某行被跳过」，这类问题只在数据量上来后才暴露。
      *
      * @param certificateQueryRequest 查询条件，允许为 null；可按级别、类型、标题筛选
-     * @return 脱敏后的证书列表，最多 200 条；无数据时返回空列表而不是 null
+     * @return 脱敏后的证书列表，最多 200 条；无数据时返回空列表
      */
     @Override
     public List<CertificateFrontVO> listFrontCertificates(CertificateQueryRequest certificateQueryRequest) {
@@ -388,20 +299,11 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
     /**
      * 实体转管理端 VO
      *
-     * <p>为什么这样设计：用 BeanUtils.copyProperties 而不是手写一长串 setXxx。
-     * 手写的话，实体加一个字段就要记得回来补一行，漏一个字段就是一个线上 bug；
-     * 自动拷贝不会漏。代价是类型不一致的属性会被静默跳过，
-     * 所以两边的字段名与类型必须严格对应。
+     * 用 copyProperties 而不是手写 setXxx：实体加一个字段就要记得回来补一行，漏一个就是线上 bug。
+     * 代价是类型不一致的属性会被静默跳过，两边的字段名与类型必须严格对应。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 入参为 null 时返回 null，纯转换方法不制造异常；</li>
-     *     <li>② 按属性名自动拷贝。</li>
-     * </ol>
-     *
-     * <p>容易踩的坑：这里能自动拷贝成功，前提是 awardDate 在实体与 VO 里
-     * 都是 LocalDate。若一边写成 LocalDateTime，结果不是报错，而是
-     * 「这个日期永远是 null」——不报错的 bug 最难查。
+     * 坑：能自动拷贝成功的前提是 awardDate 在实体与 VO 里都是 LocalDate；
+     * 一边写成 LocalDateTime 不会报错，只会让这个日期永远是 null。
      *
      * @param certificate 证书实体，允许为 null
      * @return 管理端 VO；入参为 null 时返回 null，调用方需要判空
@@ -421,19 +323,10 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
     /**
      * 实体转 C 端 VO
      *
-     * <p>为什么这样设计：脱敏靠「目标 VO 没有这些字段」实现——sortOrder 与审计字段在
-     * CertificateFrontVO 里根本不存在，copyProperties 也就拷不过去。
-     * 这比「拷完再手动置空」可靠：以后实体新增敏感字段时，
-     * 只要没人把它加进 VO，它就自动被挡住，不需要有人记得来改这个方法。
+     * 脱敏靠「目标 VO 没有这些字段」实现：sortOrder 与审计字段在 CertificateFrontVO 里根本不存在，
+     * 以后实体新增敏感字段时，只要没人把它加进 VO，它就自动被挡住。
      *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>① 入参为 null 时返回 null；</li>
-     *     <li>② 自动拷贝到脱敏 VO，多出来的字段自然被丢弃。</li>
-     * </ol>
-     *
-     * <p>容易踩的坑：本方法「什么都没做」就是正确的脱敏。
-     * 若为了「字段完整」给 CertificateFrontVO 加上 sortOrder，
+     * 坑：本方法「什么都没做」就是正确的脱敏，若为了「字段完整」给 CertificateFrontVO 加上 sortOrder，
      * 脱敏会在零代码改动的情况下失效。
      *
      * @param certificate 证书实体，允许为 null
@@ -456,8 +349,8 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
     /**
      * 解析并校验级别取值
      *
-     * 级别与类型各自一个方法而不是合成一个「校验两个维度」的方法：
-     * 两边的枚举不同、提示文案不同，合起来只会让 required 分支互相纠缠。
+     * 级别与类型各自一个方法而不是合成一个「校验两个维度」的方法：两边的枚举与提示文案都不同，
+     * 合起来只会让 required 分支互相纠缠。
      *
      * @param awardLevel 级别值，可为空
      * @param required 是否必填（新增必填、更新非必填）
@@ -479,8 +372,7 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
     /**
      * 解析并校验类型取值
      *
-     * 与 resolveLevel 结构完全对称：类型是独立维度，不能借用级别的校验逻辑，
-     * 否则两边枚举一改就会互相牵连。
+     * 与 resolveLevel 结构对称：类型是独立维度，不能借用级别的校验逻辑，否则两边枚举一改就互相牵连。
      *
      * @param awardType 类型值，可为空
      * @param required 是否必填
@@ -501,9 +393,8 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
     /**
      * 校验获奖日期：非空（必填时）+ 不得晚于今天
      *
-     * 为什么用 LocalDate 而不是 LocalDateTime：获奖日期表达的是「哪一天」，
-     * 不含时刻。用 LocalDateTime 会让库里凭空多出 00:00:00，
-     * 前端还要自己截断；而且「晚于今天」的判定也得先归一化到天，反而更绕。
+     * 用 LocalDate 而不是 LocalDateTime：获奖日期表达的是「哪一天」，不含时刻。
+     * 用后者会让库里凭空多出 00:00:00，前端还得自己截断。
      *
      * @param awardDate 获奖日期，可为空
      * @param required 是否必填
@@ -523,8 +414,7 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
     /**
      * 构建筛选条件（管理端与 C 端共用，保证两边筛选语义一致）
      *
-     * 用 LambdaQueryWrapper 而不是字符串版 QueryWrapper：
-     * 字段名写错在编译期就能发现，重构字段时也不会漏改 SQL 条件。
+     * 用 LambdaQueryWrapper 而不是字符串版 QueryWrapper：字段名写错在编译期就能发现。
      *
      * @param query 查询条件，调用方保证非 null
      * @return 查询包装类
@@ -544,9 +434,8 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
     /**
      * 应用排序规则（白名单映射）
      *
-     * 关键点：前端只能传「字段名」，由这里映射成实体字段引用。
-     * 如果把前端字符串直接拼进 ORDER BY，就是最典型的 SQL 注入入口——
-     * ORDER BY 位置无法用占位符参数化，只能靠白名单。
+     * 前端只能传「字段名」，由这里映射成实体字段引用。把前端字符串直接拼进 ORDER BY
+     * 就是最典型的注入入口——ORDER BY 位置无法用占位符参数化，只能靠白名单。
      *
      * @param wrapper 查询包装类
      * @param sortField 排序字段名，可为空（走默认排序）
@@ -574,8 +463,7 @@ public class CertificateServiceImpl extends ServiceImpl<StudioCertificateMapper,
     /**
      * 实体分页转 VO 分页（保留 total/size/current，前端分页组件依赖这三个值）
      *
-     * 新建一个 Page 而不是在原对象上改：泛型不同，无法就地转换。
-     * 三个分页元数据必须显式传过去，漏了 total 前端就画不出总页数。
+     * 新建一个 Page 而不是在原对象上改：泛型不同，无法就地转换；漏了 total 前端就画不出总页数。
      *
      * @param entityPage 实体分页
      * @return VO 分页

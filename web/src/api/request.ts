@@ -2,13 +2,11 @@ import axios, { type AxiosResponse } from 'axios';
 import { ElMessage } from 'element-plus';
 import type { ApiResponse } from './types';
 
-// 统一的请求层
+// 统一请求层：自动带 satoken、解包 {code,data,message}、A0201 时清理登录态
 //
-// 三件事集中在这里做，业务代码不要重复实现：
-// 1. 自动带上登录态（satoken 请求头）；
-// 2. 统一响应解包：后端恒返回 {code, data, message}，
-// 非 0 直接提示并抛错，调用方拿到的就是 data（不用每层判断 code）；
-// 3. A0201（未登录/登录失效）时清理本地令牌，避免带着过期 token 反复撞墙。
+// 业务代码拿到的是 data 本身，不必每层判断 code。
+// A0201 只清 localStorage 不够——内存里的登录态还在，界面照常显示「已登录」
+// 但每个请求都失败，所以还要派发事件让 store 回收。
 
 const TOKEN_KEY = 'satoken';
 
@@ -27,11 +25,8 @@ export const tokenStore = {
 /**
  * 错误类别：决定「提示什么」与「用户能做什么」
  *
- * 为什么要分类而不是直接显示后端 message：
- * 后端 message 描述的是「发生了什么」（如「请求参数错误」），
- * 但用户真正需要的是「我该怎么办」。两类信息不该由同一个字段承担——
- * 网络断了要检查网络，服务器挂了只能等，参数错了要改输入，
- * 这三句话指向三种完全不同的动作，混成一句「请求失败」等于什么都没说。
+ * 后端 message 说的是「发生了什么」，用户要的是「我该怎么办」——断网、服务器挂了、
+ * 参数错了对应三种动作，混成一句「请求失败」等于什么都没说。
  */
 export type ErrorKind =
     /** 没连上服务器：断网、DNS 失败、服务未启动、跨域被拦 */
@@ -48,16 +43,10 @@ export type ErrorKind =
     | 'unknown';
 
 /**
- * 统一的请求错误对象
+ * 统一的请求错误对象：业务代码 catch 到的就是它
  *
- * 业务代码 catch 到的就是它。相比裸 Error，多了三样东西：
- * - kind：错误类别，页面据此决定要不要显示「重试」按钮、文案怎么写；
- * - code：后端业务码（网络类错误没有）；
- * - notified：请求层是否已经弹过提示。
- *
- * notified 是解决「同一个错误弹两次」的关键：请求层负责弹一次全局提示，
- * 页面再 catch 时若还想在页内显示错误条，就不该再弹一次。调用方看到
- * notified=true 就该安静地更新页面状态，而不是重复 ElMessage.error。
+ * kind 决定页面要不要给「重试」、文案怎么写；notified 表示请求层已经弹过全局提示，
+ * 页面再 catch 时只更新状态、别再弹一次，否则同一个错误会提示两遍。
  */
 export class RequestError extends Error {
     readonly kind: ErrorKind;
@@ -86,9 +75,8 @@ export function isRequestError(e: unknown): e is RequestError {
 /**
  * 把后端业务码映射成错误类别
  *
- * 约定来自后端 ErrorCode 的号段设计（见 exception/ErrorCode.java）：
- * A 用户端、B 当前系统、C 第三方。这里按首字母归类，
- * 避免每加一个错误码就要来改一次前端。
+ * 号段约定见后端 ErrorCode：A 用户端、B 当前系统、C 第三方。按首字母归类，
+ * 后端新增错误码时前端不用跟着改。
  */
 function kindOfCode(code: string): ErrorKind {
     const head = code.charAt(0).toUpperCase();
@@ -107,11 +95,8 @@ function kindOfCode(code: string): ErrorKind {
 /**
  * 网络层错误的可读文案
  *
- * axios 在没到达服务器时抛的原始 message 是 "Network Error"、
- * "ECONNABORTED" 这类英文技术词。直接透给用户等于没说，
- * 而且每个页面都要各自判断「这是网络错还是业务错」。
- *
- * 这里按 kind 给出「原因 + 建议动作」，让用户知道下一步做什么。
+ * axios 原始的 "Network Error" / "ECONNABORTED" 直接透给用户等于没说，
+ * 这里按 kind 给出「原因 + 建议动作」。
  */
 function describeNetworkError(kind: ErrorKind): string {
     if (kind === 'timeout') {
@@ -136,17 +121,8 @@ instance.interceptors.request.use((config) => {
 /**
  * 把 HTTP 层错误翻译成可展示的 RequestError
  *
- * 为什么只处理 400/413/414/431：这几个状态码通常不是后端业务代码返回的，
- * 而是框架/网关在请求到达 Controller 之前就拒绝了——最常见的是搜索关键词过长，
- * URL 编码后超过 Nginx/Tomcat 的 ~8KB 请求行上限，响应体是 HTML 而不是统一 JSON。
- * 不翻译的话，axios 只会给出「Request failed with status code 414」这类英文文案，
- * 页面最终展示成「网络异常」，用户既不知道原因也不知道该缩短输入。
- *
- * 其余 4xx/5xx 保持原样抛出（含 5xx）：它们的响应结构与页面处置方式各不相同，
- * 不在本次范围内扩大改动面。
- *
- * @param error axios 错误对象（可能没有 response）
- * @return 可展示的 RequestError；不是 400/413/414/431 时返回 null，由调用方原样抛出
+ * 只处理 400/413/414/431：这几个是网关或框架在进 Controller 前就拒绝的，响应体是 HTML 而不是
+ * 统一 JSON（常见于搜索词过长，超出 ~8KB 请求行上限），不翻译页面只会显示「网络异常」。
  */
 function toHttpRequestError(error: unknown): RequestError | null {
     const response = (error as { response?: { status?: number; data?: unknown } })?.response;
@@ -178,15 +154,11 @@ function toHttpRequestError(error: unknown): RequestError | null {
     return new RequestError(message, 'client', code, true);
 }
 
-// 网络层兜底：没到达服务器（断网 / 超时 / 服务未启动）时的统一处理
+// 网络层兜底：根本没连上服务端（断网 / 超时 / 服务未启动）时的统一处理
 //
-// 与 unwrap 的分工：unwrap 管「服务端正常响应但业务码非 0」，
-// 本拦截器管「根本没连上服务端」—— error.response 为空正是后者的判据。
-// 有 response 的错误（4xx/5xx）不在这里走断网文案；其中 400/413/414/431
-// 先翻译成人话（见 toHttpRequestError），其余状态码原样抛出，交给页面按需处理。
-//
-// 这里把 axios 的英文错误改写成 RequestError：
-// 调用方拿到的 message 直接可展示，kind 可用于决定是否给「重试」按钮。
+// 与 unwrap 的分工：unwrap 管「有响应但业务码非 0」，这里管「error.response 为空」。
+// 400/413/414/431 先翻译成人话（见 toHttpRequestError），其余状态码原样抛出。
+// 产出的是 RequestError：message 可直接展示，kind 决定要不要给「重试」。
 instance.interceptors.response.use(
     (response) => response,
     (error) => {
@@ -243,12 +215,10 @@ async function unwrap<T>(promise: Promise<AxiosResponse<ApiResponse<T>>>, silent
 export interface RequestOptions {
     timeout?: number;
     /**
-     * 静默模式：失败时不弹全局错误提示，把「要不要告诉用户」交给调用方
+     * 静默模式：失败时不弹全局提示，把「要不要告诉用户」交给调用方
      *
-     * 给两类请求用：
-     * 1. 后台轮询（未读数）：旁路请求失败不该打扰用户，下一次轮询自然恢复；
-     * 2. 注销：登录态可能本就已失效，再弹一条红字会让用户误以为「退出出了问题」，
-     *    而实际上本地状态已经清理干净了。
+     * 用于后台轮询（未读数）和注销——注销时登录态可能本就已失效，
+     * 再弹一条红字会让用户误以为「退出失败」。
      */
     silent?: boolean;
 }
@@ -256,18 +226,16 @@ export interface RequestOptions {
 /**
  * 令牌失效事件名
  *
- * 用事件而不是直接 import store：stores/user.ts 反过来依赖本文件的
- * tokenStore，直接互引会形成循环依赖。事件让两边解耦。
+ * 用事件而不是直接 import store：stores/user.ts 反过来依赖本文件的 tokenStore，
+ * 直接互引会形成循环依赖。
  */
 export const AUTH_EXPIRED_EVENT = 'auth:expired';
 
 /**
  * 带超时的请求方法（默认 30 秒）
  *
- * 第三个参数专为耗时操作准备：全局 30 秒对「调用 Embedding」这类接口远远不够
- * （知识库的全量同步 / 重建向量 / 手工录入，后端要逐条调用模型）。
- * 这类接口必须显式传更长的超时——否则前端先超时报错，后端其实还在跑，
- * 用户既看不到结果，也不知道该等。
+ * 耗时接口（知识库同步 / 重建向量 / 手工录入）必须显式传更长的超时，
+ * 否则前端先超时报错，后端其实还在跑，用户既看不到结果也不知道该等。
  */
 export const http = {
     get<T>(url: string, params?: Record<string, unknown>, options?: RequestOptions): Promise<T> {

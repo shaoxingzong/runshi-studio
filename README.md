@@ -29,14 +29,16 @@
 | Java | 21 | 语言（虚拟线程、record、switch 表达式） |
 | MyBatis-Plus | 3.5.17 | 数据库访问 |
 | MySQL | 9.x | 数据库（20 张表，建库脚本 `db/user.sql`） |
-| Redis | 8.x | 登录态（Sa-Token）、AI 配额计数、限流 |
+| Redis | 8.4+ | 登录态（Sa-Token）、AI 配额计数、限流、RAG 向量索引（Query Engine） |
 | Sa-Token | 1.46.0 | 登录与角色鉴权 |
 | LangChain4j | 1.20.2 | AI 咨询与 RAG（同步 + SSE 流式） |
 | Vue 3 + TypeScript | 3.5 | 前端框架（`web/` 独立工程） |
 | Element Plus | 2.9 | 组件库 |
 | Vite | 7 | 前端构建与开发服务器 |
 
-> Redis 硬性要求 **6.2+**：Sa-Token 会话用 `KEEPTTL`（6.0+），AI 配额回刷用 `GETDEL`（6.2+）。低于 6.0 的症状是「登录接口 500」。
+> Redis 版本分两档：
+> - **6.2+**：Sa-Token 会话用 `KEEPTTL`（6.0+），AI 配额回刷用 `GETDEL`（6.2+）。低于 6.0 的症状是「登录接口 500」。
+> - **8.4+（RAG 向量检索）**：生产 `VECTOR_STORE_TYPE=redis` 需要 Redis Query Engine + JSON 模块；不含模块时启动会失败并给出升级指引。本地开发未升级 Redis 时可设 `VECTOR_STORE_TYPE=memory`，该模式重启会丢向量，仅用于开发/测试。
 
 ---
 

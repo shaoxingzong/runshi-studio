@@ -5,21 +5,12 @@ import com.bhu.runshistudioweb.model.entity.StudioQuizAnswer;
 import org.apache.ibatis.annotations.Mapper;
 
 /**
- * studio_quiz_answer 数据访问层
+ * studio_quiz_answer 表的数据访问层（作答记录）
  *
- * 继承 BaseMapper 即自动获得单表 CRUD，这里不写任何方法。
- *
- * 本表只增不改不删（与 StudioAttendanceMapper 同一条纪律）：
- * 作答是审计凭证，写进去就不再改动。因此这里不应该被调用
- * updateById / deleteById——需要「撤销」时靠逻辑删除标记，
- * 但那也应该由 DBA 手工处理，应用层不提供入口。
- *
- * 幂等靠唯一键，不靠先查后插：
- * uk_user_batch_question(user_id, batch_id, question_id, deleted_at)
- * 是「一题一批只判一次」的根基。并发双击时两个请求可能同时通过应用层查重，
- * 第二个会撞键抛 DuplicateKeyException，Service 必须接住它并
- * 重读已有记录、原样返回首次判定（而不是报错说「本题已答」）——
- * 断网重试是正常现象，让用户看到红条比看到判定结果更糟。
+ * 继承 BaseMapper 即得单表 CRUD，故接口为空。三个自动行为只对 MP 方法生效：逻辑删除
+ * （查询自动加 deleted_at = 0、deleteById 实为 UPDATE）、审计填充、分页须走 selectPage。
+ * 坑：本表只增不改不删，作答是审计凭证；幂等靠唯一键而非先查后插，并发双击撞键时
+ * Service 必须接住 DuplicateKeyException 并返回首次判定，而不是报「本题已答」。
  *
  * @author shaoshing
  */

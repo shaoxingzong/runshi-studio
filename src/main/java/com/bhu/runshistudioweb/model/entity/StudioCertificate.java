@@ -15,37 +15,11 @@ import java.time.LocalDateTime;
 /**
  * 荣誉证书实体（对应 studio_certificate）
  *
- * 字段与列的映射依赖 MyBatis-Plus 的「驼峰 ↔ 下划线」自动转换：
- * awardLevel → award_level、imageUrl → image_url，无需逐个写 @TableField。
+ * 级别（award_level）与类型（award_type）正交，禁止合并成单字段：
+ * 合并后任一维度都无法独立筛选统计，只能 LIKE 模糊匹配，既走不了索引也会误匹配。
  *
- * 本表最重要的设计：级别与类型是两个正交维度：
- * - award_level 级别：national / provincial / municipal
- * （见 com.bhu.runshistudioweb.model.enums.CertificateLevelEnum）；
- * - award_type 类型：competition / soft_copyright / patent / paper
- * （见 com.bhu.runshistudioweb.model.enums.CertificateTypeEnum）。
- * 二者必须分开存：禁止合并成「国家级竞赛」这种单字段写法。
- * 合并后任一维度都无法独立筛选与统计，只能用 LIKE 模糊匹配，
- * 既走不了索引（本表为两个维度各建了组合索引），也必然出现误匹配。
- *
- * 其它字段要点：
- * - award_date 是 date 类型，Java 侧必须用 LocalDate
- * （不是 LocalDateTime）。用错类型的典型症状是「时间字段莫名多了 00:00:00，
- * 或前端传「2026-09-30T10:00」这种带时分秒的值时报错」；业务上还要求它不得晚于今天
- * （还没发生的获奖日期没有意义，多半是填错）；
- * - image_url 是 NOT NULL：证书本身就是一张图，
- * 没有图的记录对官网展示毫无价值，因此必须在入参侧校验非空，
- * 别等数据库抛「Column 'image_url' cannot be null」;
- * - sort_order 是展示置顶权重（数值越大越靠前），
- * 与 award_date 共同决定默认排序（见下方「默认排序」说明）。
- *
- * 默认排序 = sort_order 倒序 + award_date 倒序：
- * 先按运营配置的置顶权重排，权重相同时按获奖时间从新到旧。
- * 这样排序与 idx_type_date / idx_level_date 的
- * (维度列, award_date DESC) 结构同向，按维度筛选时索引能直接提供有序结果，避免 filesort。
- *
- * 逻辑删除、时间填充、雪花主键三条全局约定与 SysUser、StudioMember 完全一致。
- * 注意：成员-证书关联表 studio_member_certificate 是物理删除，
- * 其实体不能带本类的 deletedAt 字段。
+ * 坑：award_date 用 LocalDate 且不得晚于今天；image_url 是 NOT NULL，须在入参侧校验；
+ * 默认排序 = sort_order 倒序 + award_date 倒序，与组合索引同向，避免 filesort。
  *
  * @author shaoshing
  */
@@ -63,29 +37,19 @@ public class StudioCertificate implements Serializable {
     /** 证书 / 获奖名称（NOT NULL） */
     private String title;
 
-    /**
-     * 级别维度：national / provincial / municipal
-     * 取值见 com.bhu.runshistudioweb.model.enums.CertificateLevelEnum
-     */
+    /** 级别维度：national / provincial / municipal，取值见 CertificateLevelEnum */
     private String awardLevel;
 
-    /**
-     * 类型维度：competition / soft_copyright / patent / paper
-     * 取值见 com.bhu.runshistudioweb.model.enums.CertificateTypeEnum
-     */
+    /** 类型维度：competition / soft_copyright / patent / paper，取值见 CertificateTypeEnum */
     private String awardType;
 
     /**
-     * 获奖 / 颁发日期（date 类型 → LocalDate）
-     *
-     * 业务约束：不得晚于今天（由 DTO 上的 @PastOrPresent 与 Service 双重校验保证）。
+     * 获奖 / 颁发日期（date → LocalDate），业务上不得晚于今天
+     * 由 DTO 的 @PastOrPresent 与 Service 双重校验
      */
     private LocalDate awardDate;
 
-    /**
-     * 证书图片 URL（NOT NULL）
-     * 一般先调 /file/upload 拿到 /uploads/... 相对路径再填到这里
-     */
+    /** 证书图片 URL（NOT NULL）：先调 /file/upload 拿到 /uploads/... 相对路径再填入 */
     private String imageUrl;
 
     /** 展示置顶权重：数值越大越靠前（默认排序的第一关键字） */
@@ -107,12 +71,7 @@ public class StudioCertificate implements Serializable {
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 
-    /**
-     * 逻辑删除毫秒时间戳（0-未删除，非0-已删除）
-     *
-     * 加 @TableLogic 后 MP 会自动改写 SQL：查询追加 deleted_at = 0，
-     * 删除改成 UPDATE（值取 yml 里配置的毫秒时间戳表达式）。
-     */
+    /** 逻辑删除毫秒时间戳（0-未删除，非0-已删除）；@TableLogic 让查询自动追加 deleted_at = 0，删除改写为 UPDATE */
     @TableLogic
     private Long deletedAt;
 }

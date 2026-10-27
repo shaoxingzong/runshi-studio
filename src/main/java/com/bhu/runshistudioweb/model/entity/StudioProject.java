@@ -14,33 +14,12 @@ import java.time.LocalDateTime;
 /**
  * 项目案例实体（对应 studio_project）
  *
- * 本表最重要的字段：leaderId 是「队长」的权威数据源（DESIGN 2.3）。
- * 它由本字段单独表达，同时在项目-成员关联表 studio_member_project 里
- * 冗余地存在一行（保证「队长必然出现在参与成员列表中」）。
- * 权威源只有一个（ leader_id），关联表那行是它的同步结果——
- * 读接口一律以 leader_id 为准，关联表只用于回答「谁参与了这个项目」。
- * 同步动作由 Service 在同一事务内完成（见 StudioProjectServiceImpl）。
+ * leaderId 是队长的权威数据源：studio_member_project 里冗余的那行只是它的同步结果，
+ * 读接口一律以 leader_id 为准，同步由 Service 在同一事务内完成。
  *
- * 其它字段要点：
- * - content 是 text 大字段（Markdown 正文，RAG 切分数据源）。
- * 列表接口绝不能带它——每一行都回传正文会让列表响应膨胀几十倍，
- * 所以 C 端列表 VO（ ProjectFrontVO）结构上就没有这个字段，
- * 只有详情 VO 才取；
- * - techStack 是 varchar(256) 的 JSON 快照，不是关联表。
- * 数据库里存的是字符串（如 ["Java","Spring Boot"]），
- * 接口对外是 List<String>，转换在 Service 里做；
- * 它不参与筛选与统计、不建索引（DESIGN 3.3：JSON 列用 LIKE 筛选会误匹配，
- * 例如搜 "Java" 会命中 "JavaScript"）。将来若产品真要按技术栈筛选，
- * 正确做法是拆出标签表，而不是给它加索引；
- * - title / description / leaderId 是 NOT NULL：
- * 必须在入参侧校验非空，别等数据库抛「Column cannot be null」；
- * - status 的 DDL 默认值是 1（已上线），
- * Service 的兜底默认值必须与之保持一致。
- *
- * 默认排序：sort_order 倒序 + created_at 倒序 + id 倒序，
- * 与 idx_status_sort_time (status, sort_order DESC, created_at DESC) 同向。
- *
- * 逻辑删除、时间填充、雪花主键三条全局约定与其它主表一致。
+ * 坑：content 是大字段，列表接口绝不能带（C 端列表 VO 结构上就没有它）；
+ * techStack 是 JSON 字符串快照，不参与筛选、不建索引——LIKE "Java" 会误中 "JavaScript"，
+ * 真要按技术栈筛选应拆标签表；status 的 DDL 默认值是 1，Service 兜底必须与之一致。
  *
  * @author shaoshing
  */
@@ -64,19 +43,10 @@ public class StudioProject implements Serializable {
     /** 项目摘要（NOT NULL，≤512）：列表页展示的短描述 */
     private String description;
 
-    /**
-     * 项目详情正文（Markdown，RAG 切分数据源）
-     *
-     * 大字段：只有详情接口才返回它（见 ProjectFrontDetailVO）
-     */
+    /** 项目详情正文（Markdown，RAG 切分数据源）：大字段，只有详情接口返回 */
     private String content;
 
-    /**
-     * 技术栈标签的 JSON 快照（数据库里的形态是字符串）
-     *
-     * 不要直接把它暴露给前端：接口层用 List<String>（见 VO），
-     * 序列化/反序列化与长度校验由 Service 负责
-     */
+    /** 技术栈的 JSON 字符串快照（如 ["Java","Spring Boot"]）：对外用 List<String>，转换在 Service */
     private String techStack;
 
     /** 在线体验地址 */
@@ -88,10 +58,7 @@ public class StudioProject implements Serializable {
     /** 项目队长 ID（NOT NULL，权威数据源，关联 studio_member.id） */
     private Long leaderId;
 
-    /**
-     * 项目状态：0-研发中，1-已上线，2-已结题（DDL 默认 1）
-     * 取值见 com.bhu.runshistudioweb.model.enums.ProjectStatusEnum
-     */
+    /** 项目状态：0-研发中，1-已上线，2-已结题（DDL 默认 1），取值见 ProjectStatusEnum */
     private Integer status;
 
     /** 展示置顶权重：数值越大越靠前（默认排序的第一关键字） */

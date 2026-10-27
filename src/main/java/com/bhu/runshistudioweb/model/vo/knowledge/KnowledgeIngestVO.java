@@ -7,20 +7,12 @@ import java.io.Serializable;
 /**
  * 知识库入库结果
  *
- * 六个字段回答了调用方最关心的四件事：
- * - 哪篇文档：docId；
- * - 切了几块、成功没有：chunkCount + status
- * （1-已索引 / 2-失败，失败要能重试）；
- * - 这次到底做没做：skipped——内容哈希没变时为 true，
- * 表示「零调用零写库」，前端/脚本据此判断要不要提示"无需重建"；
- * - 是新建还是重建：rebuilt——重建意味着旧块被替换，
- * 运维排查时要知道这一点。
+ * 回答调用方最关心的四件事：哪篇文档（docId）；切了几块、成功没有（chunkCount + status）；
+ * 这次到底做没做（skipped，内容哈希没变时为 true，即零调用零写库，前端据此提示「无需重建」）；
+ * 是新建还是重建（rebuilt 表示旧块已被替换）。
  *
- * 类型约定：docId 是雪花 ID，靠全局 JsonConfig 序列化成字符串，
- * 这里不要再加 @JsonSerialize 注解——全局约定已经覆盖，
- * 局部加注解属于重复且容易遗漏其它字段；
- * chunkCount / status 用 Integer，
- * 因为它们是「计数/状态」而不是 ID，必须让前端拿到数字（若用 Long 会变成 "3"）。
+ * docId 是雪花 ID，靠全局 JsonConfig 序列化成字符串，这里不要再加 @JsonSerialize——全局约定已覆盖；
+ * chunkCount / status 用 Integer，因为它们是计数与状态而不是 ID（用 Long 会变成 "3"）。
  *
  * @author shaoshing
  */

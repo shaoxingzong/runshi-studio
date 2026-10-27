@@ -10,10 +10,10 @@ import java.time.LocalDateTime;
 /**
  * 签到接口的返回值
  *
- * 签到成功后立刻把「这次签到的结论」回给前端：几点签的、算不算内网、本月累计几次。
- * 这样前端一次请求就能刷新页面，不必再回头调一次看板接口。
+ * 签到成功后立刻把这次签到的结论回给前端：几点签的、算不算内网、本月累计几次，
+ * 前端一次请求就能刷新页面，不必再调一次看板接口。
  *
- * 同样守 AttendanceBoardVO 的脱敏红线：不返回 ip / userAgent / userAccount，
+ * 守 AttendanceBoardVO 的脱敏红线：不返回 ip / userAgent / userAccount，
  * 网络信息只以 inLan 布尔的形式出现。
  *
  * @author shaoshing
