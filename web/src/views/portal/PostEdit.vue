@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { MdEditor } from 'md-editor-v3';
 import 'md-editor-v3/lib/style.css';
 import { postApi, uploadPostImage } from '@/api/post';
+import { generateMeta, polishStream } from '@/api/aiCompose';
 import { isRequestError } from '@/api/request';
 import { useUserStore } from '@/stores/user';
 
@@ -96,6 +97,7 @@ async function onUploadImg(files: Array<File>, callback: (urls: string[]) => voi
  */
 type EditorExpose = {
     insert: (generate: (selectedText: string) => { targetValue: string }) => void;
+    getSelectedText: () => string | undefined;
 };
 const editorRef = ref<EditorExpose | null>(null);
 
@@ -178,6 +180,136 @@ async function onCoverPicked(event: Event) {
     }
 }
 
+// ==================== AI 写作助手 ====================
+//
+// 两条链路都是「增强」而非依赖：润色失败不覆盖正文，生成失败不回填表单。
+// 润色结果先落在一个预览面板里，用户点「采用」才真正替换选区——
+// 直接流式写进编辑器会让用户在中途取消时无法还原原文。
+
+/** 润色结果（流式累积）；非空时显示「采用 / 取消」面板 */
+const polishText = ref('');
+/** 是否正在润色（含首字等待） */
+const polishing = ref(false);
+/** 本次润色的原文长度，仅用于界面提示 */
+const polishSourceLength = ref(0);
+/** 润色失败的提示（面板内展示，不打断用户） */
+const polishError = ref('');
+/** 当前润色请求的中止句柄：重复点击或取消时中断上一次 */
+let polishAbort: AbortController | null = null;
+
+/** 是否正在生成标题摘要 */
+const generatingMeta = ref(false);
+
+/**
+ * 润色当前选中的文字
+ *
+ * 必须先用 getSelectedText 取选区、再发请求：insert 的回调虽然也能拿到选中内容，
+ * 但它是同步的，没法等待异步的流式结果。所以采用「取选区 → 异步生成 → 采用时替换」。
+ */
+async function startPolish() {
+    const selected = editorRef.value?.getSelectedText() ?? '';
+    if (!selected.trim()) {
+        ElMessage.warning('请先在正文中选中要润色的文字');
+        return;
+    }
+    if (selected.length > 2000) {
+        ElMessage.warning('润色片段不能超过 2000 字，请分段处理');
+        return;
+    }
+
+    polishAbort?.abort();
+    polishAbort = new AbortController();
+    polishing.value = true;
+    polishText.value = '';
+    polishError.value = '';
+    polishSourceLength.value = selected.length;
+
+    try {
+        await polishStream(
+            { text: selected },
+            {
+                onDelta: (delta) => {
+                    polishText.value += delta;
+                },
+                onDone: (payload) => {
+                    // done 带完整文本：以它为准，避免增量丢失导致少字
+                    if (payload.text) {
+                        polishText.value = payload.text;
+                    }
+                },
+                onError: (payload) => {
+                    polishError.value = payload.message || '润色失败，请重试';
+                },
+            },
+            polishAbort.signal,
+        );
+    } catch (e) {
+        // 用户主动中止不算错误
+        if ((e as Error).name !== 'AbortError') {
+            polishError.value = (e as Error).message || '润色失败，请重试';
+        }
+    } finally {
+        polishing.value = false;
+    }
+}
+
+/** 采用润色结果：替换编辑器里当前选中的内容 */
+function applyPolish() {
+    if (!polishText.value.trim()) {
+        return;
+    }
+    editorRef.value?.insert(() => ({ targetValue: polishText.value }));
+    polishText.value = '';
+    polishError.value = '';
+    ElMessage.success('已替换选中内容');
+}
+
+/** 放弃本次润色结果（不改动正文） */
+function discardPolish() {
+    polishAbort?.abort();
+    polishAbort = null;
+    polishText.value = '';
+    polishError.value = '';
+}
+
+/**
+ * 生成标题与摘要
+ *
+ * 覆盖前必须确认：用户可能已经手写过满意的标题，静默覆盖等于丢数据。
+ */
+async function generateTitleSummary() {
+    if (!form.content.trim()) {
+        ElMessage.warning('请先写正文，再生成标题和摘要');
+        return;
+    }
+    if (form.title.trim() || form.summary.trim()) {
+        try {
+            await ElMessageBox.confirm('将覆盖当前的标题和摘要，是否继续？', 'AI 生成', {
+                confirmButtonText: '覆盖并生成',
+                cancelButtonText: '取消',
+                type: 'warning',
+            });
+        } catch {
+            return;
+        }
+    }
+
+    generatingMeta.value = true;
+    try {
+        const result = await generateMeta({
+            content: form.content,
+            title: form.title.trim() || undefined,
+        });
+        form.title = result.title;
+        form.summary = result.summary;
+        ElMessage.success('已生成标题和摘要');
+    } catch (e) {
+        ElMessage.error((e as Error).message || '生成失败，请重试');
+    } finally {
+        generatingMeta.value = false;
+    }
+}
+
 async function submit() {
     if (!form.title.trim()) {
         ElMessage.warning('请填写标题');
@@ -256,6 +388,53 @@ async function submit() {
                 />
             </div>
 
+            <div class="ai-panel">
+                <div class="ai-head">
+                    <span class="ai-title">AI 写作助手</span>
+                    <div class="ai-actions">
+                        <!-- @mousedown.prevent：点按钮不抢走编辑器焦点，否则选区会被清空 -->
+                        <el-button
+                            size="small"
+                            :loading="polishing"
+                            @mousedown.prevent
+                            @click="startPolish"
+                        >
+                            润色选中
+                        </el-button>
+                        <el-button size="small" :loading="generatingMeta" @click="generateTitleSummary">
+                            生成标题+摘要
+                        </el-button>
+                    </div>
+                </div>
+
+                <div v-if="polishing || polishText || polishError" class="ai-result">
+                    <div v-if="polishError" class="ai-error">{{ polishError }}</div>
+                    <template v-else>
+                        <div class="ai-result-head">
+                            <span>润色结果（原文 {{ polishSourceLength }} 字）</span>
+                            <span v-if="polishing" class="ai-status">生成中…</span>
+                        </div>
+                        <div class="ai-result-body">{{ polishText }}</div>
+                        <div class="ai-result-foot">
+                            <el-button
+                                size="small"
+                                type="primary"
+                                :disabled="polishing || !polishText.trim()"
+                                @click="applyPolish"
+                            >
+                                采用并替换
+                            </el-button>
+                            <el-button size="small" :disabled="polishing" @click="discardPolish">
+                                取消
+                            </el-button>
+                        </div>
+                    </template>
+                </div>
+                <p v-else class="ai-hint">
+                    在正文中选中一段文字后点「润色选中」；或写完后点「生成标题+摘要」。
+                </p>
+            </div>
+
             <div class="foot">
                 <span class="muted">
                     <template v-if="uploading">正在上传图片…</template>
@@ -323,5 +502,80 @@ async function submit() {
     align-items: center;
     justify-content: space-between;
     gap: 12px;
+}
+
+/* ==================== AI 写作助手 ==================== */
+
+.ai-panel {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    background: var(--surface-soft, #fafafa);
+}
+
+.ai-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.ai-title {
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.ai-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.ai-hint {
+    margin: 8px 0 0;
+    font-size: 12px;
+    color: var(--text-muted, #909399);
+}
+
+.ai-result {
+    margin-top: 10px;
+}
+
+.ai-result-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-muted, #909399);
+    margin-bottom: 6px;
+}
+
+.ai-status {
+    color: var(--primary, #409eff);
+}
+
+.ai-result-body {
+    max-height: 220px;
+    overflow-y: auto;
+    padding: 10px 12px;
+    border: 1px dashed var(--border);
+    border-radius: 6px;
+    background: var(--surface, #fff);
+    white-space: pre-wrap;
+    line-height: 1.7;
+    font-size: 14px;
+}
+
+.ai-result-foot {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.ai-error {
+    padding: 8px 12px;
+    border-radius: 6px;
+    background: #fef0f0;
+    color: #f56c6c;
+    font-size: 13px;
 }
 </style>

@@ -204,4 +204,25 @@ public class AiProperties {
      * 代价是文本量略增（约 10%），属可接受范围。
      */
     private Integer chunkOverlap = 50;
+
+    /**
+     * 创作助手系统提示词位置（AI 辅助发帖用）
+     *
+     * 与问答的 system prompt 分开：写作人设（篇幅、结构、Markdown 规范）和咨询人设
+     * 是两套行为约束，共用一个会让模型在「润色」时也端着咨询腔调。
+     * 与 systemPromptLocation 一样支持 classpath: 与 file: 两种写法。
+     */
+    private String composeSystemPromptLocation = "classpath:prompts/compose-system-prompt.txt";
+
+    /**
+     * 生成标题 / 摘要时参考的「历史优质帖」条数
+     *
+     * 取本站已通过审核、按点赞数排序的前 N 篇，作为 few-shot 风格示例。
+     * 设为 0 表示不参考历史帖（只靠知识库事实与创作规范）。
+     *
+     * <p>为什么用「高赞已通过帖」而不是把历史帖也向量化：
+     * 风格示例只需要「标题 + 摘要」这种短文本，一条 SQL 就能取到；
+     * 为它单独建一条向量化管道，成本远大于收益。
+     */
+    private Integer composeStyleExampleCount = 3;
 }

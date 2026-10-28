@@ -113,6 +113,10 @@ studio:
     max-tokens: ${AI_MAX_TOKENS:4096}
     # 想不改包换话术：设为 file:/opt/.../system-prompt.txt
     system-prompt-location: ${AI_SYSTEM_PROMPT_LOCATION:classpath:prompts/system-prompt.txt}
+    # 创作助手（AI 辅助发帖）的独立人设：不复用问答的 system prompt
+    compose-system-prompt-location: ${AI_COMPOSE_PROMPT_LOCATION:classpath:prompts/compose-system-prompt.txt}
+    # 生成标题/摘要时参考的高赞历史帖条数（0 表示不参考）
+    compose-style-example-count: ${AI_COMPOSE_STYLE_EXAMPLES:3}
 
     # 普通登录用户的提问次数上限（成员/管理员不限额、也不计数）；命中返回 A0501
     query-limit: 5

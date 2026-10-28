@@ -344,6 +344,48 @@ public class AiManager {
      * @throws BusinessException 未配置、熔断中、调用失败、等待超时或回答为空时抛出（C0200）
      */
     public String chatStream(List<AiMessageVO> history, String userMessage, Consumer<String> onDelta) {
+        return streamMessages(buildMessages(history, userMessage), onDelta);
+    }
+
+    /**
+     * 用调用方指定的系统提示词做一次流式调用（不带历史上下文）
+     *
+     * <p>与 {@link #chatWithSystemPrompt(String, String)} 对应的流式版本：创作助手、内容审核
+     * 这类「独立人设」场景必须用它，否则会把问答的咨询腔调带进写作。
+     *
+     * <p>坑：同样刻意不带历史。写作助手每次只处理「本次选中的片段 / 本次正文」，
+     * 把上一轮生成的段落带进上下文，会让模型不断复制上一轮的措辞。
+     *
+     * @param systemMessage 本次专用的系统提示词；为空或空白则本次不带 system 消息
+     * @param userMessage 用户消息（待处理的内容），不应为空
+     * @param onDelta 增量回调，可为 null；不要在里面做耗时操作
+     * @return 完整回答（取自模型的最终响应）
+     * @throws BusinessException 未配置、熔断中、调用失败、等待超时或回答为空时抛出（C0200）
+     */
+    public String chatStreamWithSystemPrompt(String systemMessage, String userMessage,
+                                             Consumer<String> onDelta) {
+        List<ChatMessage> messages = new ArrayList<>();
+        if (StrUtil.isNotBlank(systemMessage)) {
+            messages.add(SystemMessage.from(systemMessage));
+        }
+        messages.add(UserMessage.from(userMessage));
+        return streamMessages(messages, onDelta);
+    }
+
+    /**
+     * 真正发起一次流式调用（上面两个流式方法共用）
+     *
+     * <p>抽出来是为了让「带历史」与「带自定义人设」两条路径走完全相同的失败处理与熔断计数，
+     * 否则「问答流能熔断、写作流不熔断」这类不一致会在排查时浪费大量时间。
+     *
+     * <p>坑：熔断与超时语义与 {@link #chatStream} 完全一致，不要在这里另开一套。
+     *
+     * @param messages 已组装好的消息列表（最后一条必须是本次请求）
+     * @param onDelta 增量回调，可为 null
+     * @return 完整回答（取自模型的最终响应）
+     * @throws BusinessException 未配置、熔断中、调用失败、等待超时或回答为空时抛出（C0200）
+     */
+    private String streamMessages(List<ChatMessage> messages, Consumer<String> onDelta) {
         if (streamingChatModel == null) {
             log.warn("调用 AI 失败：studio.ai.base-url 或 api-key 未配置（本地不配置不影响其它接口）");
             throw new BusinessException(ErrorCode.AI_SERVICE_ERROR, AI_UNAVAILABLE_MESSAGE);
@@ -353,7 +395,7 @@ public class AiManager {
         rejectIfCircuitOpen();
 
         ChatRequest chatRequest = ChatRequest.builder()
-                .messages(buildMessages(history, userMessage))
+                .messages(messages)
                 .build();
 
         AtomicReference<ChatResponse> responseRef = new AtomicReference<>();
