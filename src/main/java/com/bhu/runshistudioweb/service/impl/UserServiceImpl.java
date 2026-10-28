@@ -740,4 +740,24 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
     private String blankToDefault(String value, String defaultValue) {
         return StrUtil.isBlank(value) ? defaultValue : value;
     }
+
+    /**
+     * 管理端：重置某个用户的 AI 提问配额
+     *
+     * 先确认用户存在再重置：不存在时静默返回 0 会让管理员以为「点成功了」，
+     * 而列表里那个人其实没变。真正的清空动作（DB 与 Redis 两处）交给
+     * {@link AiQueryCountManager#reset}，这里只负责准入与存在性校验。
+     *
+     * @param id 目标用户 ID
+     * @return 重置前的真实用量
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 用户不存在时抛 A0402
+     */
+    @Override
+    public int resetAiQueryCount(long id) {
+        ThrowUtils.throwIf(id <= 0, ErrorCode.PARAMS_ERROR, "用户 id 不合法");
+        SysUser user = this.getById(id);
+        // 查不到按 A0402 而不是静默成功：管理端需要知道「这个人已经被删了」
+        ThrowUtils.throwIf(user == null, ErrorCode.NOT_FOUND_ERROR, "用户不存在");
+        return aiQueryCountManager.reset(id);
+    }
 }

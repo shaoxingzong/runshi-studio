@@ -209,6 +209,25 @@ public class UserController {
     }
 
     /**
+     * 管理员重置某个用户的 AI 提问配额
+     *
+     * 用户额度用完时会来找管理员，这里是那条链路的终点：
+     * 把该账号的已用次数清零，他就能重新提问。
+     *
+     * 复用 DeleteRequest（只有一个 id 字段），不为一个 id 单独建 DTO。
+     *
+     * @param request id 必填且为正整数
+     * @return 重置前的已用次数（含未回刷的增量），供前端提示「已从 N 次清零」
+     */
+    @PostMapping("/reset-ai-quota")
+    @SaCheckRole(UserRoleConstant.ADMIN)
+    @Operation(summary = "【管理员】重置用户的 AI 提问次数", description = "把已用次数清零；返回重置前的次数")
+    public BaseResponse<Integer> resetAiQuota(@RequestBody @Valid DeleteRequest request) {
+        ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
+        return ResultUtils.success(userService.resetAiQueryCount(request.getId()));
+    }
+
+    /**
      * 管理员按 id 查询用户详情
      *
      * 不让 Controller 直接调单表查询——那样 Controller 就认识了实体，很容易把含密码哈希串的

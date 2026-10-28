@@ -51,6 +51,16 @@ public class UserVO implements Serializable {
      */
     private Integer userStatus;
 
+    /**
+     * AI 提问已用次数（数据库基准值）
+     *
+     * 管理端列表要显示它，管理员才知道谁该被重置。
+     * 注意这是基准值：真实用量还要加上 Redis 里尚未回刷的增量，
+     * 因此可能比用户实际用掉的略少（最多差一个回刷周期内的次数）。
+     * 用 Integer 而非 Long：全局把 Long 序列化成字符串，前端拿到 "12" 无法直接比较。
+     */
+    private Integer aiQueryCount;
+
     /** 创建时间（由 JsonConfig 统一序列化为 yyyy-MM-dd HH:mm:ss） */
     private LocalDateTime createdAt;
 

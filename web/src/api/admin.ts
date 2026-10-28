@@ -36,6 +36,8 @@ export const adminApi = {
     }) => http.post<{ id: string; initialPassword: string }>('/user/add', body),
     // 删除账号（后端为逻辑删除）
     userDelete: (id: string) => http.post<boolean>('/user/delete', { id }),
+    // 重置某个用户的 AI 提问次数，返回重置前的已用次数（用于提示「已从 N 次清零」）
+    userResetAiQuota: (id: string) => http.post<number>('/user/reset-ai-quota', { id }),
 
     // ===== 成员 =====
     // 注意是 GET + 查询参数（后端的对象绑定），不是 POST。

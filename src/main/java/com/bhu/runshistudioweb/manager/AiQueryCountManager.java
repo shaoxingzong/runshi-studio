@@ -1,6 +1,7 @@
 package com.bhu.runshistudioweb.manager;
 
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.bhu.runshistudioweb.constant.AiQueryCountConstant;
 import com.bhu.runshistudioweb.mapper.SysUserMapper;
 import com.bhu.runshistudioweb.model.entity.SysUser;
@@ -264,6 +265,80 @@ public class AiQueryCountManager {
             return Long.parseLong(suffix);
         } catch (NumberFormatException e) {
             return null;
+        }
+    }
+
+    /**
+     * 把某个用户的配额清零（管理端「重置次数」用）
+     *
+     * 真实用量是「DB 基准 + Redis 未回刷增量」，所以两处都要清：
+     * 只清 DB 的话，回刷前的那些提问仍会被 merge 算进用量，用户重置完还是满的。
+     *
+     * 清完立刻复核一次，是为了覆盖一个窄窗口：回刷任务可能正好在
+     * 「GETDEL 取走增量」与「UPDATE 写回 DB」之间，导致刚清掉的额度又被写回来。
+     * 这个窗口只有毫秒级、且只在用户已经用完额度时才会触发（此时他不会同时提问），
+     * 所以不必上分布式锁——复核一次就够，代价只是一次读。
+     *
+     * @param userId 用户 ID
+     * @return 重置前的真实用量（便于管理端提示「已从 N 次清零」）
+     */
+    public int reset(long userId) {
+        // 先记下重置前的用量：必须在清空之前读，否则返回值恒为 0
+        int usedBefore = merge(userId, readDbCount(userId));
+        clearOnce(userId);
+        // 复核：仍大于 0 说明撞上了回刷，再清一次（此时回刷已结束，一定成功）
+        if (merge(userId, readDbCount(userId)) > 0) {
+            log.warn("配额重置后复核仍有残留，再清一次（可能撞上了回刷）| userId={}", userId);
+            clearOnce(userId);
+        }
+        log.info("AI 配额已重置 | userId={} | 重置前用量={}", userId, usedBefore);
+        return usedBefore;
+    }
+
+    /**
+     * 清一次：DB 基准置 0 + 删除 Redis 增量键
+     *
+     * 顺序是「先 DB 后 Redis」：反过来的话，清完 Redis 若 DB 写失败，
+     * 用量会退回到基准值，看起来像「重置了一半」。
+     * 两处各自吞异常：任何一处失败都不该让整个重置接口报错，
+     * 管理员看列表刷新后的数字就知道成没成。
+     *
+     * 这里用 UpdateWrapper（字符串列名）而不是 LambdaUpdateWrapper：
+     * lambda 写法需要 MyBatis-Plus 的实体元数据缓存，在纯单元测试里没有容器初始化，
+     * 构造 wrapper 时就会抛「can not find lambda cache for this entity」——
+     * 而 reset 又吞异常，于是测试里表现为「静默什么都没做」。
+     * 列名是硬编码常量、不来自用户输入，没有注入面。
+     *
+     * @param userId 用户 ID
+     */
+    private void clearOnce(long userId) {
+        try {
+            sysUserMapper.update(null, new UpdateWrapper<SysUser>()
+                    .eq("id", userId)
+                    .set("ai_query_count", 0));
+        } catch (Exception e) {
+            log.error("重置配额时清 DB 失败 | userId={}", userId, e);
+        }
+        try {
+            stringRedisTemplate.delete(AiQueryCountConstant.keyOf(userId));
+        } catch (Exception e) {
+            log.error("重置配额时删 Redis 键失败 | userId={}", userId, e);
+        }
+    }
+
+    /**
+     * 读 DB 里的配额基准值（读不到按 0 处理）
+     *
+     * @param userId 用户 ID
+     * @return 基准值；用户不存在或查询失败时为 0
+     */
+    private int readDbCount(long userId) {
+        try {
+            SysUser user = sysUserMapper.selectById(userId);
+            return user == null || user.getAiQueryCount() == null ? 0 : user.getAiQueryCount();
+        } catch (Exception e) {
+            log.warn("读取配额基准值失败，按 0 处理 | userId={}", userId, e);
+            return 0;
         }
     }
 }

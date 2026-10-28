@@ -296,6 +296,34 @@ async function removeUser(row: AdminUser) {
     }
 }
 
+/**
+ * 重置某个用户的 AI 提问次数
+ *
+ * 用户额度用完会来找管理员，点这里把已用次数清零即可。
+ * 加二次确认是因为它紧挨着「重置密码」——两个按钮都是「重置」，误点代价虽小但很困惑。
+ */
+async function resetAiQuota(row: AdminUser) {
+    const used = row.aiQueryCount ?? 0;
+    try {
+        await ElMessageBox.confirm(
+            `确认重置「${row.userAccount}」的 AI 提问次数？当前已用 ${used} 次，重置后归零。`,
+            '重置 AI 次数',
+            { type: 'warning' },
+        );
+    } catch {
+        return;
+    }
+    try {
+        // 后端返回重置前的真实用量（含未回刷的增量），比列表里的基准值更准
+        const before = await adminApi.userResetAiQuota(row.id);
+        ElMessage.success(`已从 ${before} 次清零`);
+        await load();
+    } catch (e) {
+        console.warn('重置 AI 次数失败', e);
+        await load();
+    }
+}
+
 // =
 /**
  * 后端 /user/update 是「部分更新」：传 null 的字段不改，空串会写入。
@@ -398,7 +426,7 @@ onMounted(load);
             </el-table-column>
             <el-table-column prop="aiQueryCount" label="AI 次数" width="100" />
             <el-table-column prop="createdAt" label="注册时间" min-width="170" />
-            <el-table-column label="操作" width="270" fixed="right">
+            <el-table-column label="操作" width="340" fixed="right">
                 <template #default="{ row }">
                     <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
                     <el-button
@@ -410,6 +438,8 @@ onMounted(load);
                         转为成员
                     </el-button>
                     <el-button link type="primary" @click="openResetPassword(row)">重置密码</el-button>
+                    <!-- 用户 AI 额度用完会来找管理员，这里是那条链路的终点 -->
+                    <el-button link type="primary" @click="resetAiQuota(row)">重置 AI</el-button>
                     <el-button
                         link
                         :type="row.userStatus === 1 ? 'success' : 'danger'"

@@ -190,4 +190,19 @@ public interface UserService extends IService<SysUser> {
      * @return 脱敏后的管理端 VO；入参为 null 时返回 null，调用方必须判空
      */
     UserVO getUserVO(SysUser user);
+
+    /**
+     * 管理端：重置某个用户的 AI 提问配额
+     *
+     * 场景是「用户次数用完后来找管理员」，因此不校验目标用户是否已用完——
+     * 在没用完的账号上点重置也只是归零，无副作用。也不区分角色：
+     * 给成员重置虽然没意义（他们本就不限额），但报错只会让管理员困惑。
+     *
+     * 调用方必须已通过 {@code @SaCheckRole("admin")} 校验。
+     *
+     * @param id 目标用户 ID
+     * @return 重置前的真实用量（含未回刷的增量），供管理端提示「已从 N 次清零」
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 用户不存在时抛 A0402
+     */
+    int resetAiQueryCount(long id);
 }
