@@ -36,6 +36,8 @@ const navItems = [
 // 不自己拉一次的话，刷新完入口就消失了，要等下次登录才恢复。
 onMounted(() => {
     void user.loadMemberProfile();
+    // 角色只在登录时写过：刷新页面时补拉一次，管理员改过角色/封禁后入口能立刻变化
+    void user.refreshProfile();
     void refreshUnread();
     // 未读轮询：60s 一次。工作室量级下这是最简单可靠的方案——
     // 上 WebSocket 长连接（心跳/断线重连/多实例）的成本远超收益

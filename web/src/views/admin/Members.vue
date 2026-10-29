@@ -1,13 +1,28 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { adminApi } from '@/api/admin';
 import ErrorRetry from '@/components/ErrorRetry.vue';
 import ImageUploader from '@/components/ImageUploader.vue';
+import { REMOTE_OPTION_LIMIT, useRemoteOptions } from '@/composables/useRemoteOptions';
 import type { AdminMember, AdminUser, PageResult } from '@/api/types';
 
 /** 成员管理：分页表格 + 新增/编辑/删除 */
 const page = reactive({ current: 1, pageSize: 10 });
+
+/**
+ * 筛选条件：空串表示「不限」，与后端「不传即不过滤」的口径一致
+ *
+ * 后端 MemberQueryRequest 早就支持这些参数，界面没接之前它们一直闲置——
+ * 成员一多，只能靠翻页找人。
+ */
+const filters = reactive<{
+    name: string;
+    direction: string;
+    teamPosition: string;
+    memberStatus: '' | 0 | 1;
+}>({ name: '', direction: '', teamPosition: '', memberStatus: '' });
+
 const result = ref<PageResult<AdminMember> | null>(null);
 const loading = ref(false);
 /** 列表加载失败的原因（空 = 正常）。失败时给原因 + 重试，而不是留一张空白表格 */
@@ -38,28 +53,59 @@ const POSITION_TEXT: Record<string, string> = { member: '成员', leader: '队�
  * 这是成员能否发帖、能否打卡的唯一开关——成员身份认的是 studio_member.user_id，不是账号角色。
  * 没有这个入口，管理员就只能改数据库才能让自己变成成员。
  */
-const userOptions = ref<AdminUser[]>([]);
+/**
+ * 账号 ID → 账号名的累积缓存
+ *
+ * 表格里的「绑定账号」要靠它反查。下拉改成远程搜索后，选项只包含当前关键词命中的那一页，
+ * 若还从选项里 find，搜索一次其它行的账号名就全变成 ID 了——缓存只增不减，不受筛选影响。
+ */
+// 用 reactive 而不是普通 Map：表格里的账号名是渲染时读缓存的，
+// 普通 Map 的写入不会触发重渲染，首次加载完成后名字会一直显示成 ID
+const userAccountById = reactive(new Map<string, string>());
 
-async function loadUsers() {
-    try {
-        const page = await adminApi.userPage({ current: 1, pageSize: 100 });
-        userOptions.value = page.records ?? [];
-    } catch {
-        userOptions.value = [];
+/**
+ * 候选登录账号（远程搜索）
+ *
+ * 后端分页上限 50，原先 pageSize: 100 会被静默截断；改成「前 50 + 关键词搜索」并在被截断时提示。
+ */
+const {
+    options: userOptions,
+    total: userTotal,
+    truncated: userTruncated,
+    loading: userSearching,
+    load: loadUsers,
+    search: searchUsers,
+    dispose: disposeUserSearch,
+} = useRemoteOptions<AdminUser>(async (keyword) => {
+    const page = await adminApi.userPage({
+        current: 1,
+        pageSize: REMOTE_OPTION_LIMIT,
+        userAccount: keyword || undefined,
+    });
+    // 每次响应都并入缓存：搜索结果只覆盖当前项，缓存负责记住见过的账号名
+    for (const user of page.records ?? []) {
+        userAccountById.set(user.id, user.userAccount);
     }
-}
+    return page;
+});
 
 /** 由 userId 反查账号名，让表格里的绑定状态一眼可读 */
 function accountOf(userId: string): string {
-    const found = userOptions.value.find((item) => item.id === userId);
-    return found ? found.userAccount : userId;
+    return userAccountById.get(userId) ?? userId;
 }
 
 async function load() {
     loading.value = true;
     error.value = '';
     try {
-        result.value = await adminApi.memberPage({ ...page });
+        result.value = await adminApi.memberPage({
+            ...page,
+            // 空串不下发：传了空串等于给后端一个「查空关键词」的歧义
+            name: filters.name.trim() || undefined,
+            direction: filters.direction.trim() || undefined,
+            teamPosition: filters.teamPosition || undefined,
+            memberStatus: filters.memberStatus === '' ? undefined : filters.memberStatus,
+        });
     } catch (e) {
         error.value = (e as Error).message || '加载失败';
     } finally {
@@ -164,6 +210,20 @@ async function remove(row: AdminMember) {
     }
 }
 
+/** 换条件回第一页：否则可能停在已不存在的页码上，看到空列表还以为没数据 */
+function query() {
+    page.current = 1;
+    load();
+}
+
+function reset() {
+    filters.name = '';
+    filters.direction = '';
+    filters.teamPosition = '';
+    filters.memberStatus = '';
+    query();
+}
+
 function turn(delta: number) {
     const next = page.current + delta;
     const pages = result.value ? Number(result.value.pages) : 1;
@@ -178,6 +238,8 @@ onMounted(() => {
     load();
     void loadUsers();
 });
+
+onBeforeUnmount(disposeUserSearch);
 </script>
 
 <template>
@@ -187,6 +249,38 @@ onMounted(() => {
             <h2>成员管理</h2>
             <span class="spacer" />
             <el-button type="primary" @click="openCreate">新增成员</el-button>
+        </div>
+
+        <div class="filters">
+            <el-input
+                v-model="filters.name"
+                class="filter"
+                placeholder="姓名"
+                clearable
+                maxlength="64"
+                @keyup.enter="query"
+            />
+            <el-input
+                v-model="filters.direction"
+                class="filter"
+                placeholder="技术方向"
+                clearable
+                maxlength="64"
+                @keyup.enter="query"
+            />
+            <el-select v-model="filters.teamPosition" class="filter" placeholder="全部职务" clearable>
+                <el-option label="成员" value="member" />
+                <el-option label="队长" value="leader" />
+                <el-option label="组长" value="tech_lead" />
+            </el-select>
+            <el-select v-model="filters.memberStatus" class="filter" placeholder="全部状态" clearable>
+                <el-option label="在读 / 在队" :value="0" />
+                <el-option label="毕业 / 离队" :value="1" />
+            </el-select>
+            <div class="ops">
+                <el-button type="primary" @click="query">查询</el-button>
+                <el-button @click="reset">重置</el-button>
+            </div>
         </div>
 
         <el-table v-loading="loading" :data="result?.records ?? []" border>
@@ -255,6 +349,9 @@ onMounted(() => {
                         :placeholder="editing ? '未绑定（留空表示不修改）' : '建议选择：不绑定则档案不生效'"
                         clearable
                         filterable
+                        remote
+                        :remote-method="searchUsers"
+                        :loading="userSearching"
                         class="full"
                     >
                         <el-option
@@ -268,6 +365,9 @@ onMounted(() => {
                             :value="option.id"
                         />
                     </el-select>
+                    <div v-if="userTruncated" class="hint">
+                        共 {{ userTotal }} 个账号，当前只显示前 {{ userOptions.length }} 个，可输入账号关键词搜索
+                    </div>
                     <div class="hint">
                         绑定后，该账号登录即可使用工作台（考勤）与刷题。
                         <b v-if="!editing">不绑定的档案不会对任何账号生效。</b>
@@ -297,6 +397,28 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    padding: 14px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.filter {
+    width: 180px;
+}
+
+.ops {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+
 .bar {
     display: flex;
     align-items: center;

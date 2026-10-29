@@ -20,7 +20,9 @@ const loading = ref(false);
  *
  * 权威校验永远在后端（UserRegisterRequest 的注解 + Service）——前端校验是体验，不是安全边界。
  */
-const ACCOUNT_PATTERN = /^[a-zA-Z0-9_]+$/;
+// 只允许小写：后端统一按小写存储（库排序规则大小写不敏感，"Alice" 与 "alice" 是同一个账号），
+// 这里放行大写只会让用户以为「大小写不同就是不同账号」
+const ACCOUNT_PATTERN = /^[a-z0-9_]+$/;
 
 function validate(): string | null {
     if (!form.account || !form.password || !form.checkPassword) {
@@ -30,7 +32,7 @@ function validate(): string | null {
         return '账号长度需为 4-16 位';
     }
     if (!ACCOUNT_PATTERN.test(form.account)) {
-        return '账号只能包含字母、数字与下划线';
+        return '账号只能包含小写字母、数字与下划线';
     }
     if (form.password.length < 8 || form.password.length > 20) {
         return '密码长度需为 8-20 位';
@@ -42,6 +44,8 @@ function validate(): string | null {
 }
 
 async function submit() {
+    // 与后端 normalizeAccount 同口径：先 trim + 小写，再校验长度与字符集
+    form.account = form.account.trim().toLowerCase();
     const error = validate();
     if (error) {
         ElMessage.warning(error);
@@ -76,7 +80,7 @@ async function submit() {
                     <el-input
                         v-model="form.account"
                         autocomplete="username"
-                        placeholder="4-16 位字母、数字或下划线"
+                        placeholder="4-16 位小写字母、数字或下划线"
                     />
                 </el-form-item>
                 <el-form-item label="密码">

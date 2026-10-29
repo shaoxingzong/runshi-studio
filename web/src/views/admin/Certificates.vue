@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { adminApi } from '@/api/admin';
 import { relationApi } from '@/api/relation';
 import ErrorRetry from '@/components/ErrorRetry.vue';
 import ImageUploader from '@/components/ImageUploader.vue';
+import { REMOTE_OPTION_LIMIT, useRemoteOptions } from '@/composables/useRemoteOptions';
 import type { AdminCertificate, AdminMember, Member, PageResult } from '@/api/types';
 
 /** 等级 / 类型的中文映射：后端存英文枚举，表格必须转中文（与官网荣誉墙保持一致） */
@@ -18,6 +19,10 @@ const TYPE_TEXT: Record<string, string> = {
 
 /** 证书管理（等级与类型是闭集枚举，后端会校验非法值 → A0401） */
 const page = reactive({ current: 1, pageSize: 10 });
+
+/** 筛选条件：空串表示不限；后端 CertificateQueryRequest 的 title / awardLevel / awardType 早已支持 */
+const filters = reactive({ title: '', awardLevel: '', awardType: '' });
+
 const result = ref<PageResult<AdminCertificate> | null>(null);
 const loading = ref(false);
 /** 列表加载失败的原因（空 = 正常）。失败时给原因 + 重试，而不是留一张空白表格 */
@@ -38,25 +43,40 @@ const form = reactive<Record<string, unknown>>({
 
 /** 已绑定的获奖成员 */
 const certMembers = ref<AdminMember[]>([]);
-/** 候选成员 */
-const memberOptions = ref<Member[]>([]);
+/**
+ * 候选成员（远程搜索）
+ *
+ * 后端分页上限 50，原先 pageSize: 100 会被静默截断——第 51 位成员永远绑不上；
+ * 改成「前 50 + 按姓名搜索」，并在被截断时明确提示。
+ */
+const {
+    options: memberOptions,
+    total: memberTotal,
+    truncated: memberTruncated,
+    loading: memberSearching,
+    load: loadMemberOptions,
+    search: searchMemberOptions,
+    dispose: disposeMemberSearch,
+} = useRemoteOptions<Member>((keyword) =>
+    adminApi.memberPage({
+        current: 1,
+        pageSize: REMOTE_OPTION_LIMIT,
+        name: keyword || undefined,
+    }));
 const memberLoading = ref(false);
 const pickedMember = ref('');
 
 async function loadMembers(certificateId: string) {
     memberLoading.value = true;
     try {
-        const [bound, options] = await Promise.all([
-            relationApi.certificateMemberList(certificateId),
-            adminApi.memberPage({ current: 1, pageSize: 100 }),
-        ]);
-        certMembers.value = bound ?? [];
-        memberOptions.value = options.records ?? [];
+        // 已绑定成员与候选名单互不依赖：只把前者算进 loading，后者走远程搜索自己的 loading
+        certMembers.value = (await relationApi.certificateMemberList(certificateId)) ?? [];
     } catch {
         certMembers.value = [];
     } finally {
         memberLoading.value = false;
     }
+    void loadMemberOptions();
 }
 
 async function addMember() {
@@ -89,12 +109,30 @@ async function load() {
     loading.value = true;
     error.value = '';
     try {
-        result.value = await adminApi.certificatePage({ ...page });
+        result.value = await adminApi.certificatePage({
+            ...page,
+            title: filters.title.trim() || undefined,
+            awardLevel: filters.awardLevel || undefined,
+            awardType: filters.awardType || undefined,
+        });
     } catch (e) {
         error.value = (e as Error).message || '加载失败';
     } finally {
         loading.value = false;
     }
+}
+
+/** 换条件回第一页：否则可能停在已不存在的页码上，看到空列表还以为没数据 */
+function query() {
+    page.current = 1;
+    load();
+}
+
+function reset() {
+    filters.title = '';
+    filters.awardLevel = '';
+    filters.awardType = '';
+    query();
 }
 
 function openCreate() {
@@ -171,6 +209,8 @@ function turn(delta: number) {
 }
 
 onMounted(load);
+
+onBeforeUnmount(disposeMemberSearch);
 </script>
 
 <template>
@@ -180,6 +220,32 @@ onMounted(load);
             <h2>证书管理</h2>
             <span class="spacer" />
             <el-button type="primary" @click="openCreate">新增证书</el-button>
+        </div>
+
+        <div class="filters">
+            <el-input
+                v-model="filters.title"
+                class="filter"
+                placeholder="证书名称"
+                clearable
+                maxlength="64"
+                @keyup.enter="query"
+            />
+            <el-select v-model="filters.awardLevel" class="filter" placeholder="全部级别" clearable>
+                <el-option label="国家级" value="national" />
+                <el-option label="省级" value="provincial" />
+                <el-option label="市级 / 校级" value="municipal" />
+            </el-select>
+            <el-select v-model="filters.awardType" class="filter" placeholder="全部类型" clearable>
+                <el-option label="学科竞赛" value="competition" />
+                <el-option label="软件著作权" value="soft_copyright" />
+                <el-option label="专利" value="patent" />
+                <el-option label="论文" value="paper" />
+            </el-select>
+            <div class="ops">
+                <el-button type="primary" @click="query">查询</el-button>
+                <el-button @click="reset">重置</el-button>
+            </div>
         </div>
 
         <el-table v-loading="loading" :data="result?.records ?? []" border>
@@ -270,8 +336,11 @@ onMounted(load);
                         <div class="member-add">
                             <el-select
                                 v-model="pickedMember"
-                                placeholder="选择要绑定的成员"
+                                placeholder="选择要绑定的成员（可输入姓名搜索）"
                                 filterable
+                                remote
+                                :remote-method="searchMemberOptions"
+                                :loading="memberSearching"
                                 class="member-select"
                             >
                                 <el-option
@@ -284,6 +353,10 @@ onMounted(load);
                             <el-button type="primary" :disabled="!pickedMember" @click="addMember">
                                 绑定
                             </el-button>
+                        </div>
+                        <!-- 提示放在 flex 行外：塞在 select 与按钮之间会把按钮挤到右侧、文案被压成两行 -->
+                        <div v-if="memberTruncated" class="hint">
+                            共 {{ memberTotal }} 位成员，当前只显示前 {{ memberOptions.length }} 位，可输入姓名搜索
                         </div>
                     </div>
                 </el-form-item>
@@ -305,6 +378,28 @@ onMounted(load);
 </template>
 
 <style scoped>
+.filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    padding: 14px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.filter {
+    width: 180px;
+}
+
+.ops {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+
 .bar {
     display: flex;
     align-items: center;

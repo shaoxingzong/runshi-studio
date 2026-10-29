@@ -93,6 +93,13 @@ studio:
     # 表现为「本地能看到图、部署后图片全 404」。生产由 prod profile 覆盖为 Linux 路径
     root-dir: ${FILE_ROOT_DIR:D:/runshi-studio-upload}
 
+  # ===== 上传配额（每个账号每天的次数上限）=====
+  # 单文件大小由 spring.servlet.multipart 限制（10MB）；这里限制的是「一天能传几个」。
+  # 上传只要求登录，不设配额等于把磁盘当免费图床：一个注册账号就能把 10MB 的图传满。
+  upload:
+    enabled: ${UPLOAD_QUOTA_ENABLED:true}
+    daily-limit: ${UPLOAD_DAILY_LIMIT:20}
+
   # ===== AI 咨询（OpenAI 兼容协议，服务商可替换）=====
   ai:
     # 以下四项在生产被覆盖为「必填」；本地留空时应用照常启动，

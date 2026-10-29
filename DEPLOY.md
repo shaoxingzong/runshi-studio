@@ -151,6 +151,28 @@ WantedBy=multi-user.target
 
 > ⚠️ 不要在 Git 仓库里提交任何带口令的 `INSERT`——BCrypt 哈希可复用不等于口令可公开。
 
+### 4.1 口令轮换清单（公开仓库的历史包袱，上线必做）
+
+本仓库早期的演示数据脚本（`db/test-data-full.sql`、`db/quiz-test-data.sql`）曾把口令写成注释。明文已从当前文件删除，但 **Git 历史仍可翻到**——删文件不等于止血，**改密才是唯一有效的处置**。
+
+| 账号 | 来源 | 处置 |
+|---|---|---|
+| `shaoshing` | `db/test-data-full.sql`（角色 admin） | **立即改密或删除**；改密之前一律视为已被接管 |
+| `chenyu` / `linxia` / `zhaoyang` / `wangmeng` / `liuqing` / `sunhao` / `alumnus` / `tangke` / `zhouran` / `xuyi` / `banned01` | 同上（共用同一条演示哈希） | 改密或删除；共用同一哈希＝同一把钥匙 |
+| `test_admin` / `test_member` | `db/quiz-test-data.sql` | 测试账号，生产库不该存在；若已存在，直接删除或改密 |
+
+改密的两条路径：
+
+1. **推荐：后台改**。管理员登录 → 「用户管理」→ 找到账号 → 重置密码（BCrypt 由服务端生成，明文不出库）。
+2. **手上只有数据库权限时**：前台注册一个账号 → 执行
+   ```sql
+   UPDATE sys_user SET user_role = 'admin' WHERE user_account = '你的账号' AND deleted_at = 0;
+   ```
+   → 登录后台，再按路径 1 重置其余账号。
+
+> 仓库约束：任何 `db/*.sql`、文档、测试数据都不得出现口令明文，也不得写「默认密码是 xxx」。
+> 哈希本身可以入库，但哈希对应的明文一旦公开，就必须当作口令已泄露——改密，不要只删注释。
+
 ---
 
 ## 5. 考勤内外网配置（`ATTENDANCE_LAN_CIDRS`）
@@ -237,6 +259,8 @@ tar -xzf /data/backup/runshi-studio/uploads_YYYYmmdd_HHMMSS.tar.gz -C /data
 
 - [ ] **HTTPS 已启用**（证书 + 跳转 + HSTS），数据库连接若跨机走内网或 TLS——明文传输下登录口令与 token 可被中间人截获
 - [ ] **建库脚本未在生产库上整跑**（DROP+CREATE 会清空数据）；管理员已按第 4 节流程创建并改密
+- [ ] **4.1 口令轮换清单已逐条处置**：`shaoshing` 与 11 个共用演示哈希的账号、`test_admin` / `test_member` 均已改密或删除
+- [ ] **操作日志已生效**：后台「操作日志」页能看到刚才的审核 / 删除记录，且记录里有操作人账号与来源 IP（创建人列不再是 0）
 - [ ] **环境变量 6 个必填项全部注入**；启动日志确认出现 `启动自检通过：数据库 / Redis 连通正常，AI 配置形态合法`（见 3.1 节——缺变量时自检会让启动失败，而不是带着坏配置上线）
 - [ ] `ATTENDANCE_LAN_CIDRS` 已配真实网段，且**启动日志确认** `考勤内外网判定已启用`（不是 warn）
 - [ ] Nginx 与应用同机（或 `ATTENDANCE_TRUSTED_PROXIES` 已含 Nginx 地址）；签到一次验证「本次网络」显示内网

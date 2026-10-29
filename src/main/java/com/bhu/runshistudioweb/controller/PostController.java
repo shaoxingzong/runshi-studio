@@ -88,14 +88,19 @@ public class PostController {
      *
      * @param current 页码，默认 1
      * @param pageSize 每页条数，默认 10（上限 50）
+     * @param keyword 搜索关键词（可选，≤64）：同时匹配标题与摘要；不传表示不过滤
      * @return 分页结果
      */
     @GetMapping("/list/page")
-    @Operation(summary = "帖子列表（游客可访问）", description = "仅已通过；置顶优先 + 时间倒序")
+    @Operation(summary = "帖子列表（游客可访问）", description = "仅已通过；置顶优先 + 时间倒序；支持标题/摘要关键词")
     public BaseResponse<Page<PostFrontVO>> listApprovedByPage(
             @RequestParam(value = "current", defaultValue = "1") long current,
-            @RequestParam(value = "pageSize", defaultValue = "10") long pageSize) {
-        return ResultUtils.success(postService.listApprovedByPage(current, pageSize));
+            @RequestParam(value = "pageSize", defaultValue = "10") long pageSize,
+            @RequestParam(value = "keyword", required = false) String keyword) {
+        // 关键词长度在这里挡：GET 参数不走 DTO 校验，超长串只会白跑一次数据库
+        ThrowUtils.throwIf(keyword != null && keyword.trim().length() > 64,
+                ErrorCode.PARAMS_ERROR, "搜索关键词不能超过 64 个字符");
+        return ResultUtils.success(postService.listApprovedByPage(current, pageSize, keyword));
     }
 
     /**

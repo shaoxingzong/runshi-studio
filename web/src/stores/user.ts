@@ -84,6 +84,31 @@ export const useUserStore = defineStore('user', () => {
         void loadMemberProfile();
     }
 
+    /**
+     * 刷新当前账号的昵称与角色（管理员改角色后不必重新登录）
+     *
+     * 为什么需要：role 只在登录那一刻写过。管理员把某人从 member 改成 admin（或反过来）
+     * 之后，对方的界面要等重新登录才更新——后台入口该出现的没出现，该消失的还在那儿。
+     * 页面挂载时拉一次 /user/current（轻量、只读）即可。
+     *
+     * 失败静默：角色刷新是体验优化，不能因为一次网络抖动打断用户；
+     * 真正的 A0201 由请求层统一处理（会清掉登录态）。
+     */
+    async function refreshProfile() {
+        if (!token.value) {
+            return;
+        }
+        try {
+            const current = await userApi.current();
+            account.value = current.userAccount || account.value;
+            role.value = current.userRole || '';
+            localStorage.setItem(ACCOUNT_KEY, account.value);
+            localStorage.setItem(ROLE_KEY, role.value);
+        } catch {
+            // 静默：见方法注释
+        }
+    }
+
     function logout() {
         onAuthExpired();
     }
@@ -97,6 +122,7 @@ export const useUserStore = defineStore('user', () => {
         memberProfile,
         isMember,
         loadMemberProfile,
+        refreshProfile,
         setLogin,
         logout,
     };

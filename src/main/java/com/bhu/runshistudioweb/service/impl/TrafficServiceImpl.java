@@ -80,8 +80,9 @@ public class TrafficServiceImpl extends ServiceImpl<StudioPageVisitMapper, Studi
      * 用户身份只能从登录态取：请求体里根本没有 userId 字段，允许前端传就能伪造他人记录。
      * 埋点失败不能让用户看到报错弹窗，那比「少统计一条」严重得多。
      *
-     * 坑：createdBy 显式写成 0L（含义是「系统写入」）而不是让审计填充器填，
-     * 填充器拿不到登录态、本来也只会填 0L，显式写出来是为了让读代码的人不误以为漏填。
+     * 坑：createdBy 显式写成 0L（含义是「系统写入」）而不是让审计填充器填。
+     * 填充器现在会填入当前登录用户，而「是谁的会话产生了这条埋点」与「谁创建了这条记录」
+     * 不是一回事——埋点是系统行为，不该冒充成某个人的创建记录。
      *
      * @param request 埋点请求（pagePath 与 visitorId 必填，referrerHost 与 deviceType 选填）
      * @throws BusinessException 请求体为 null 抛 A0401，数据库写入失败抛 B0001；调用方应当忽略这些失败
@@ -101,8 +102,8 @@ public class TrafficServiceImpl extends ServiceImpl<StudioPageVisitMapper, Studi
         visit.setDeviceType(StrUtil.trimToNull(request.getDeviceType()));
         // 用户身份只从登录态取：未登录为 NULL，绝不信请求体
         visit.setUserId(StpUtil.isLogin() ? StpUtil.getLoginIdAsLong() : null);
-        // 显式写 0L 表示「系统写入」：审计填充器本来也只能填 0L（它拿不到登录态），
-        // 写出来是为了让读代码的人不必去翻填充器的实现
+        // 显式写 0L 表示「系统写入」：填充器会记成当前登录用户，
+        // 但埋点不是那个人「创建」的业务数据，写出来也省得读代码的人去翻填充器
         visit.setCreatedBy(0L);
 
         this.save(visit);

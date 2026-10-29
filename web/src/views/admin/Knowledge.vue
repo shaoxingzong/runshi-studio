@@ -14,6 +14,19 @@ import type { KnowledgeDoc, PageResult } from '@/api/types';
  * 坑：应用重启后向量全部丢失，此时 sync-all 会因为内容哈希未变而全部跳过，只有重建向量能恢复。
  */
 const page = reactive({ current: 1, pageSize: 10 });
+
+/**
+ * 筛选条件：空串表示不限
+ *
+ * 知识库文档一多，「哪篇同步失败了、哪些是手工录入的」只能靠翻页找；
+ * 后端 KnowledgeDocQueryRequest 的 title / sourceType / status 一直支持，只是界面没接。
+ */
+const filters = reactive<{ title: string; sourceType: string; status: '' | 0 | 1 | 2 }>({
+    title: '',
+    sourceType: '',
+    status: '',
+});
+
 const result = ref<PageResult<KnowledgeDoc> | null>(null);
 const loading = ref(false);
 /** 列表加载失败的原因（空 = 正常）。失败时给原因 + 重试，而不是留一张空白表格 */
@@ -31,7 +44,12 @@ async function load() {
     loading.value = true;
     error.value = '';
     try {
-        result.value = await adminApi.docPage({ ...page });
+        result.value = await adminApi.docPage({
+            ...page,
+            title: filters.title.trim() || undefined,
+            sourceType: filters.sourceType || undefined,
+            status: filters.status === '' ? undefined : filters.status,
+        });
     } catch (e) {
         error.value = (e as Error).message || '加载失败';
     } finally {
@@ -108,6 +126,19 @@ function statusText(status: number) {
     return '待处理';
 }
 
+/** 换条件回第一页：否则可能停在已不存在的页码上，看到空列表还以为没数据 */
+function query() {
+    page.current = 1;
+    load();
+}
+
+function reset() {
+    filters.title = '';
+    filters.sourceType = '';
+    filters.status = '';
+    query();
+}
+
 function turn(delta: number) {
     const next = page.current + delta;
     const pages = result.value ? Number(result.value.pages) : 1;
@@ -139,6 +170,32 @@ onMounted(load);
             :closable="false"
             title="发布或重启应用后，请点「重建向量」：向量库在内存中，重启即丢失；此时全量同步会全部跳过，救不回来。"
         />
+
+        <div class="filters">
+            <el-input
+                v-model="filters.title"
+                class="filter"
+                placeholder="文档标题"
+                clearable
+                maxlength="64"
+                @keyup.enter="query"
+            />
+            <el-select v-model="filters.sourceType" class="filter" placeholder="全部来源" clearable>
+                <el-option label="手工录入" value="manual" />
+                <el-option label="项目" value="project" />
+                <el-option label="成员" value="member" />
+                <el-option label="证书" value="certificate" />
+            </el-select>
+            <el-select v-model="filters.status" class="filter" placeholder="全部状态" clearable>
+                <el-option label="待处理" :value="0" />
+                <el-option label="已索引" :value="1" />
+                <el-option label="失败" :value="2" />
+            </el-select>
+            <div class="ops">
+                <el-button type="primary" @click="query">查询</el-button>
+                <el-button @click="reset">重置</el-button>
+            </div>
+        </div>
 
         <div class="sync-one">
             <el-select v-model="syncForm.sourceType" style="width: 130px">
@@ -221,6 +278,28 @@ onMounted(load);
 </template>
 
 <style scoped>
+.filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    padding: 14px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.filter {
+    width: 180px;
+}
+
+.ops {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+
 .bar {
     display: flex;
     align-items: center;

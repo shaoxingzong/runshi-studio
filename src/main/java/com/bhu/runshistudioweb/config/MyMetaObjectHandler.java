@@ -1,6 +1,8 @@
 package com.bhu.runshistudioweb.config;
 
+import cn.dev33.satoken.stp.StpUtil;
 import com.baomidou.mybatisplus.core.handlers.MetaObjectHandler;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.ibatis.reflection.MetaObject;
 import org.springframework.stereotype.Component;
 
@@ -15,10 +17,22 @@ import java.time.LocalDateTime;
  * 前提：这些列在 DDL 中是 NOT NULL 且没有数据库默认值。这是刻意的——本类一旦失效
  * （例如漏了 @Component），插入会直接报字段不能为空，而不是悄悄写入 null。
  *
+ * 「人」从 Sa-Token 登录态取：恒写 0 等于每条数据都署名「系统」，
+ * 内容出了事故既查不到人，也无法区分「人改的」与「定时任务改的」。
+ *
  * @author shaoshing
  */
+@Slf4j
 @Component
 public class MyMetaObjectHandler implements MetaObjectHandler {
+
+    /**
+     * 系统操作人 ID
+     *
+     * 未登录（定时任务、启动自检、单元测试）时写它。与操作日志表 operator_id = 0 同一口径：
+     * 「0 = 没有具体的人」，而不是「某个 ID 为 0 的用户」。
+     */
+    private static final long SYSTEM_USER_ID = 0L;
 
     /**
      * 插入时填充创建人 / 创建时间与更新人 / 更新时间
@@ -30,6 +44,7 @@ public class MyMetaObjectHandler implements MetaObjectHandler {
      * MyBatis-Plus 不报错，只是安静地什么都不做。
      * 坑二：strictInsertFill 只在字段当前为 null 时填充，因此业务方显式赋值不会被覆盖；
      * 反过来说，它保证的是「不覆盖」而不是「保证正确」。
+     * 例如 TrafficServiceImpl 显式写 0L 表示「埋点由系统写入」，那是业务语义，本类不应改写。
      *
      * @param metaObject 当前操作的实体元信息，内部包装的是真正的实体对象
      */
@@ -40,11 +55,10 @@ public class MyMetaObjectHandler implements MetaObjectHandler {
         this.strictInsertFill(metaObject, "createdAt", LocalDateTime.class, LocalDateTime.now());
         this.strictInsertFill(metaObject, "updatedAt", LocalDateTime.class, LocalDateTime.now());
 
-        // 创建人/更新人：当前还没有登录上下文，先用 0L 占位。
-        // 接入鉴权后应改为从 SecurityContext / UserContext 中取当前登录用户 ID，
-        // 否则审计字段失去意义（见 SysUser 的 createdBy / updatedBy）
-        this.strictInsertFill(metaObject, "createdBy", Long.class, 0L);
-        this.strictInsertFill(metaObject, "updatedBy", Long.class, 0L);
+        // 创建人 / 更新人：取当前登录用户 ID，未登录或拿不到上下文时记为系统（0）
+        Long operatorId = currentUserIdOrSystem();
+        this.strictInsertFill(metaObject, "createdBy", Long.class, operatorId);
+        this.strictInsertFill(metaObject, "updatedBy", Long.class, operatorId);
     }
 
     /**
@@ -62,6 +76,28 @@ public class MyMetaObjectHandler implements MetaObjectHandler {
     @Override
     public void updateFill(MetaObject metaObject) {
         this.strictUpdateFill(metaObject, "updatedAt", LocalDateTime.class, LocalDateTime.now());
-        this.strictUpdateFill(metaObject, "updatedBy", Long.class, 0L);
+        this.strictUpdateFill(metaObject, "updatedBy", Long.class, currentUserIdOrSystem());
+    }
+
+    /**
+     * 当前登录用户 ID；没有登录态时回退为系统（0）
+     *
+     * 必须 catch 住所有异常：定时任务、MQ 消费、启动自检这类线程没有 Sa-Token 请求上下文，
+     * {@code StpUtil.isLogin()} 会抛 SaTokenContextException。
+     * 「填不了审计字段」是运维问题，「主业务被打挂」是事故——两者不能混为一谈。
+     *
+     * @return 登录用户 ID；未登录或无上下文时返回 0
+     */
+    private Long currentUserIdOrSystem() {
+        try {
+            if (!StpUtil.isLogin()) {
+                return SYSTEM_USER_ID;
+            }
+            return StpUtil.getLoginIdAsLong();
+        } catch (Exception e) {
+            // 只记 debug：批量写入时每次都要回退，打成 warn 会刷屏
+            log.debug("无法获取当前登录用户，审计字段记为系统 | 原因={}", e.getMessage());
+            return SYSTEM_USER_ID;
+        }
     }
 }

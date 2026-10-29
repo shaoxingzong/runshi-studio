@@ -17,16 +17,38 @@ const loading = ref(false);
 /** 加载失败：非空时展示错误条 + 重试 */
 const error = ref('');
 
+/**
+ * 搜索关键词
+ *
+ * 后端只匹配标题与摘要：社区搜索定位的是「哪篇文章」，正文的深度检索交给 AI 助手。
+ * 空串不下发——传空串等于给后端一个「查空关键词」的歧义。
+ */
+const keyword = ref('');
+
 async function load() {
     loading.value = true;
     error.value = '';
     try {
-        result.value = await postApi.list({ ...page });
+        result.value = await postApi.list({
+            ...page,
+            keyword: keyword.value.trim() || undefined,
+        });
     } catch (e) {
         error.value = (e as Error).message || '加载失败';
     } finally {
         loading.value = false;
     }
+}
+
+/** 换关键词必须回第一页：否则可能停在一个已不存在的页码上，看到空列表还以为没结果 */
+function search() {
+    page.current = 1;
+    load();
+}
+
+function resetSearch() {
+    keyword.value = '';
+    search();
 }
 
 function turn(delta: number) {
@@ -56,6 +78,20 @@ onMounted(load);
             </el-button>
         </div>
 
+        <div class="search-bar">
+            <el-input
+                v-model="keyword"
+                class="search-input"
+                placeholder="搜索标题或摘要"
+                clearable
+                maxlength="64"
+                @keyup.enter="search"
+                @clear="search"
+            />
+            <el-button type="primary" @click="search">搜索</el-button>
+            <el-button v-if="keyword" @click="resetSearch">重置</el-button>
+        </div>
+
         <ErrorRetry v-if="error" :message="error" @retry="load" />
 
         <div v-loading="loading">
@@ -63,12 +99,24 @@ onMounted(load);
                  成员此时正适合被引导去发第一篇文章 -->
             <el-empty v-if="result && result.records.length === 0" description="">
                 <template #description>
-                    <p class="empty-title">还没有帖子</p>
-                    <p class="empty-sub">成为第一个分享的人，把你的技术实践写下来。</p>
+                    <!-- 搜索无结果与「还没有帖子」是两回事，提示不能复用 -->
+                    <p class="empty-title">{{ keyword ? '没有找到相关帖子' : '还没有帖子' }}</p>
+                    <p class="empty-sub">
+                        {{
+                            keyword
+                                ? '换个关键词试试，搜索只匹配标题与摘要。'
+                                : '成为第一个分享的人，把你的技术实践写下来。'
+                        }}
+                    </p>
                 </template>
-                <el-button v-if="user.isMember" type="primary" @click="router.push('/posts/new')">
+                <el-button
+                    v-if="user.isMember && !keyword"
+                    type="primary"
+                    @click="router.push('/posts/new')"
+                >
                     写文章
                 </el-button>
+                <el-button v-else-if="keyword" @click="resetSearch">清空搜索</el-button>
             </el-empty>
 
             <div v-else class="grid cards-3">
@@ -122,6 +170,17 @@ onMounted(load);
 </template>
 
 <style scoped>
+/* 搜索条：与卡片区域同宽，输入框限宽避免大屏上拉得过长 */
+.search-bar {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 18px;
+}
+
+.search-input {
+    max-width: 360px;
+}
+
 .page-head {
     display: flex;
     align-items: flex-end;

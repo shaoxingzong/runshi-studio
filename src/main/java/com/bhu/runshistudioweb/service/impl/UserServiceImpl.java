@@ -22,11 +22,13 @@ import com.bhu.runshistudioweb.model.dto.user.UserUpdateRequest;
 import com.bhu.runshistudioweb.model.entity.StudioMember;
 import com.bhu.runshistudioweb.model.entity.SysUser;
 import com.bhu.runshistudioweb.model.enums.NotificationTypeEnum;
+import com.bhu.runshistudioweb.model.enums.OperationTypeEnum;
 import com.bhu.runshistudioweb.model.enums.UserRoleEnum;
 import com.bhu.runshistudioweb.model.vo.user.LoginUserVO;
 import com.bhu.runshistudioweb.model.vo.user.UserAddResultVO;
 import com.bhu.runshistudioweb.model.vo.user.UserVO;
 import com.bhu.runshistudioweb.service.NotificationService;
+import com.bhu.runshistudioweb.service.OperationLogService;
 import com.bhu.runshistudioweb.service.UserService;
 import com.bhu.runshistudioweb.utils.PasswordUtils;
 import org.springframework.beans.BeanUtils;
@@ -34,8 +36,11 @@ import org.springframework.dao.DuplicateKeyException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Locale;
 import java.util.Objects;
+import java.util.UUID;
 
 /**
  * 用户服务实现：注册 / 登录 / 注销，管理端增删改查与分页
@@ -79,6 +84,17 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
     private static final long MAX_PAGE_SIZE = 50L;
 
     /**
+     * 「账号不存在」时用来消耗一次 BCrypt 的假哈希
+     *
+     * 为什么需要它：账号不存在若直接短路返回，两条路径耗时差一个 BCrypt（实测 2ms vs 82ms），
+     * 攻击者对每个候选账号取中位数就能稳定判断账号是否存在，等于送了一个账号枚举器。
+     *
+     * 为什么不用写死的哈希：字面量哈希在公开仓库里等于又留下一个「已知口令」；
+     * 类初始化时用随机串现场生成一次即可（BCrypt 自带随机盐，不依赖明文可读）。
+     */
+    private static final String DUMMY_PASSWORD_HASH = PasswordUtils.encrypt(UUID.randomUUID().toString());
+
+    /**
      * AI 提问配额计数
      *
      * 只用于读合并值：登录信息里的 aiQueryCount 必须是「DB 基准 + Redis 未落库增量」，
@@ -115,6 +131,14 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
     private final NotificationService notificationService;
 
     /**
+     * 操作日志（新增 / 改角色 / 封禁 / 重置口令 / 删除 / 重置配额都要留痕）
+     *
+     * 用户管理是「权限变更」的入口：谁能进后台、谁被封禁，事后必须查得到是谁做的、
+     * 什么时候做的。日志只记改动项与新旧值，**口令本身绝不入日志**。
+     */
+    private final OperationLogService operationLogService;
+
+    /**
      * 成员档案 Mapper：用于「授予成员角色前确认档案存在」
      *
      * 注入 Mapper 而非 {@code StudioMemberService}：后者已注入 {@code SysUserMapper}，
@@ -146,6 +170,11 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         // Service 也可能被其他入口（管理端、定时任务、测试）直接调用，不能只依赖 Web 层校验
         ThrowUtils.throwIf(StrUtil.isBlank(userAccount) || StrUtil.isBlank(userPassword),
                 ErrorCode.PARAMS_ERROR, "用户账号或密码为空");
+
+        // 账号统一小写：库的排序规则（utf8mb4_unicode_ci）大小写不敏感，"Alice" 与 "alice"
+        // 会撞唯一键，但存原样会让同一个人在不同页面显示成两种写法。
+        // 必须先规范化再做长度与唯一性校验，否则两种写法会被当成两个账号
+        userAccount = normalizeAccount(userAccount);
 
         // 防批量注册：IP 级限流放在所有校验与查库之前——被拒的请求不产生任何后续开销
         // （注册接口是账号存在性探测器，限流是防批量扫描的主要手段）
@@ -224,6 +253,10 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
                                  String remoteAddr, String xRealIp, String xForwardedFor) {
         ThrowUtils.throwIf(userAccount == null || userPassword == null, ErrorCode.PARAMS_ERROR, "用户账号或密码为空");
 
+        // 与注册/新增同一套规范化：库里存的是小写，登录输入也按小写查。
+        // 历史混合大小写的账号仍能登录——库排序规则本身大小写不敏感
+        userAccount = normalizeAccount(userAccount);
+
         // 防爆破第一层：IP 级限流放在查库与密码比对之前——每一次尝试（含失败的）都计数，
         // 被拒的请求不产生任何数据库开销
         assertLoginRateAllowed(remoteAddr, xRealIp, xForwardedFor);
@@ -236,11 +269,19 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         queryWrapper.eq(SysUser::getUserAccount, userAccount);
         SysUser user = this.getOne(queryWrapper);
 
-        // 防账号枚举：账号不存在与密码错误使用同一个提示文案。
+        // 防账号枚举（文案层面）：账号不存在与密码错误使用同一个提示文案。
         // 若分开提示（"账号不存在"/"密码错误"），攻击者可用两种报错扫出一批有效账号，再集中爆破。
-        // 短路写法还有一个作用：user 为 null 时根本不会调用 matches，
-        // 因此「账号不存在」这条路径比「账号存在」更快，但差异小到无法用来做时序探测
-        boolean passwordMatched = user != null && PasswordUtils.matches(userPassword, user.getUserPassword());
+        //
+        // 防账号枚举（时间层面）：账号不存在时也必须跑一次 BCrypt。
+        // 写成 user != null && matches(...) 会短路，实测两条路径约 2ms 与 82ms，差 40 倍——
+        // 攻击者对每个候选账号取几次中位数就能稳定判断账号是否存在，文案统一也就白做了
+        boolean passwordMatched;
+        if (user == null) {
+            PasswordUtils.matches(userPassword, DUMMY_PASSWORD_HASH);
+            passwordMatched = false;
+        } else {
+            passwordMatched = PasswordUtils.matches(userPassword, user.getUserPassword());
+        }
         if (!passwordMatched && user != null) {
             // 只在账号存在时累计失败：账号不存在时没有可锁对象，
             // 且对不存在的账号也锁定会让「已锁定」提示成为账号存在性探测器
@@ -364,11 +405,13 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
      * @throws BusinessException 账号为空或已存在（A0401）、角色非法（A0401）、入库失败（B0001）
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public UserAddResultVO addUser(UserAddRequest userAddRequest) {
         // ① 账号是后面每一步的前提，空值先挡掉
         ThrowUtils.throwIf(userAddRequest == null || StrUtil.isBlank(userAddRequest.getUserAccount()),
                 ErrorCode.PARAMS_ERROR, "用户账号不能为空");
-        String userAccount = userAddRequest.getUserAccount().trim();
+        // 与注册同一套规范化：账号一律小写入库，避免后台新增出 "Alice"、前台注册出 "alice"
+        String userAccount = normalizeAccount(userAddRequest.getUserAccount());
         // ② 提前查一次：唯一索引才是最终防线，但先查能给出明确的「已存在」提示
         assertAccountNotExists(userAccount);
 
@@ -408,6 +451,14 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         // 这条提醒的是运维——有账号被创建，初始口令待转交，别只当成普通 info
         log.warn("管理员新增用户，已生成随机初始密码 | userId={} | 待管理员通过安全渠道转交本人并督促改密",
                 sysUser.getId());
+
+        // 留痕：只记角色 / 状态与「口令由谁给出」，绝不写口令本身——
+        // 操作日志要长期保存，一旦出现明文口令，等于把一次性凭据永久化
+        operationLogService.record(OperationTypeEnum.USER_ADD, sysUser.getId(), userAccount,
+                "角色：" + role.getValue()
+                        + "；状态：" + statusText(sysUser.getUserStatus())
+                        + "；初始口令：" + (StrUtil.isNotBlank(userAddRequest.getUserPassword())
+                        ? "管理员指定" : "系统随机生成（仅响应返回一次）"));
         return result;
     }
 
@@ -427,6 +478,7 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
      *         封禁或降级当前登录账号（均为 A0401）
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean updateUser(UserUpdateRequest userUpdateRequest) {
         ThrowUtils.throwIf(userUpdateRequest == null || userUpdateRequest.getId() == null,
                 ErrorCode.PARAMS_ERROR, "用户 id 不能为空");
@@ -507,6 +559,14 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
                     "你已获得工作室成员身份",
                     "管理员已授予你工作室成员身份：工作台（考勤）与刷题功能已为你开放");
         }
+
+        // 留痕：权限变更必须能追溯到人。detail 只写「改了哪些字段、旧值→新值」，
+        // 重置口令只记「发生过」，绝不把口令（哪怕哈希）写进日志
+        if (updated) {
+            operationLogService.record(OperationTypeEnum.USER_UPDATE, id,
+                    StrUtil.blankToDefault(existing.getUserName(), existing.getUserAccount()),
+                    describeUserChanges(existing, userUpdateRequest));
+        }
         return updated;
     }
 
@@ -539,6 +599,7 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
      * @throws BusinessException 试图删除自己（A0401）、用户不存在（A0402）
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean deleteUser(long id) {
         // ① 防误删守卫：删掉自己会立刻失去管理端权限（权限判定实时查库），且无法自行恢复
         ThrowUtils.throwIf(id == StpUtil.getLoginIdAsLong(),
@@ -557,6 +618,10 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         //   但直接拿 loginId 干活的端点看不到那一层，踢会话才是根治）
         if (removed) {
             StpUtil.logout(id);
+            // 留痕：删号是最不可逆的管理动作，账号名要一起记进快照（行本身已被逻辑删除）
+            operationLogService.record(OperationTypeEnum.USER_DELETE, id,
+                    StrUtil.blankToDefault(existing.getUserName(), existing.getUserAccount()),
+                    "逻辑删除账号「" + existing.getUserAccount() + "」，并踢掉该账号全部会话");
         }
         return removed;
     }
@@ -742,6 +807,78 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
     }
 
     /**
+     * 账号规范化（注册 / 管理员新增 / 登录三处共用唯一实现）
+     *
+     * 为什么必须统一：库排序规则 utf8mb4_unicode_ci 大小写不敏感，「Alice」与「alice」
+     * 在唯一索引上算同一个账号，但存原样会让列表、日志、通知里出现两种写法；
+     * 三处各写一遍 trim/lowerCase 迟早会漏一处（例如只改注册、登录仍按原样查）。
+     *
+     * 用 Locale.ROOT 而不是默认 Locale：土耳其语环境下 "I".toLowerCase() 会变成 ı，
+     * 同一个账号在不同服务器上会得到不同结果。
+     *
+     * @param account 原始账号，允许为 null
+     * @return 去掉首尾空白并转小写；入参为 null 时返回 null
+     */
+    private String normalizeAccount(String account) {
+        return account == null ? null : account.trim().toLowerCase(Locale.ROOT);
+    }
+
+    /**
+     * 把一次用户更新翻译成可读的变更说明（写进操作日志的 detail）
+     *
+     * 只对比请求字段与库中旧值：请求里为 null 表示「不改」，不算变更。
+     * **口令只记「重置口令」四个字**——日志里出现口令（或它的哈希）等于把凭据永久化。
+     *
+     * @param existing 更新前的实体
+     * @param request 更新请求
+     * @return 变更说明；没有任何字段变化时返回固定文案
+     */
+    private String describeUserChanges(SysUser existing, UserUpdateRequest request) {
+        StringBuilder detail = new StringBuilder();
+
+        if (request.getUserName() != null && !Objects.equals(request.getUserName(), existing.getUserName())) {
+            appendChange(detail, "昵称「" + existing.getUserName() + "」→「" + request.getUserName() + "」");
+        }
+        if (request.getUserAvatar() != null) {
+            appendChange(detail, "更新头像");
+        }
+        if (request.getUserRole() != null && !Objects.equals(request.getUserRole(), existing.getUserRole())) {
+            appendChange(detail, "角色「" + existing.getUserRole() + "」→「" + request.getUserRole() + "」");
+        }
+        if (request.getUserStatus() != null && !Objects.equals(request.getUserStatus(), existing.getUserStatus())) {
+            appendChange(detail, "状态 " + statusText(existing.getUserStatus())
+                    + " → " + statusText(request.getUserStatus()));
+        }
+        if (StrUtil.isNotBlank(request.getUserPassword())) {
+            appendChange(detail, "重置口令");
+        }
+        return detail.length() == 0 ? "提交了更新请求，字段无变化" : detail.toString();
+    }
+
+    /**
+     * 追加一条变更说明（分号分隔）
+     *
+     * @param detail 说明缓冲区
+     * @param change 单条变更
+     */
+    private void appendChange(StringBuilder detail, String change) {
+        if (detail.length() > 0) {
+            detail.append("；");
+        }
+        detail.append(change);
+    }
+
+    /**
+     * 用户状态的中文文案（日志与提示共用）
+     *
+     * @param status 0-正常，1-封禁；null 按正常处理（历史数据可能为空）
+     * @return 中文文案
+     */
+    private String statusText(Integer status) {
+        return status != null && status == USER_STATUS_BANNED ? "封禁" : "正常";
+    }
+
+    /**
      * 管理端：重置某个用户的 AI 提问配额
      *
      * 先确认用户存在再重置：不存在时静默返回 0 会让管理员以为「点成功了」，
@@ -758,6 +895,12 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         SysUser user = this.getById(id);
         // 查不到按 A0402 而不是静默成功：管理端需要知道「这个人已经被删了」
         ThrowUtils.throwIf(user == null, ErrorCode.NOT_FOUND_ERROR, "用户不存在");
-        return aiQueryCountManager.reset(id);
+        int before = aiQueryCountManager.reset(id);
+
+        // 留痕：配额是管理手段，谁给谁开了口子必须可查（detail 记原始用量，便于解释数字变化）
+        operationLogService.record(OperationTypeEnum.USER_AI_QUOTA_RESET, id,
+                blankToDefault(user.getUserName(), user.getUserAccount()),
+                "AI 提问次数已从 " + before + " 次清零");
+        return before;
     }
 }

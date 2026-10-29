@@ -2,7 +2,7 @@
 -- 润石工作室官网 · 全量建库脚本（从零初始化，唯一权威 DDL 源头）
 -- ============================================================================================================
 --
--- 适用场景：在**全新的空库**上一次性建好全部 20 张表。
+-- 适用场景：在**全新的空库**上一次性建好全部 21 张表。
 -- 执行方式（任选其一）：
 --   ① mysql 客户端：mysql -uroot -p123456 < db/user.sql
 --   ② 已建好库：  mysql -uroot -p123456 studio_db < db/user.sql
@@ -41,6 +41,8 @@
 --  17  studio_quiz_question      刷题题目（题目/选项/答案/章节归属合一）
 --  18  studio_quiz_answer        刷题作答记录（错题本的真相源）
 --  19  studio_quiz_wrong         刷题错题本（唯一有状态的表）
+--  20  studio_notification       站内通知
+--  21  studio_operation_log      管理端操作日志（审计留痕）
 -- ============================================================================================================
 
 CREATE DATABASE IF NOT EXISTS `studio_db` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -57,6 +59,7 @@ SET NAMES utf8mb4;
 --    历史教训：studio_page_visit 作为第 16 张表后加进来时只加了 CREATE 没加 DROP，
 --    导致重复执行本脚本时它报「already exists」并中断整个脚本——
 --    「可重复执行」的承诺对漏掉的那张表是假的。
+DROP TABLE IF EXISTS `studio_operation_log`;
 DROP TABLE IF EXISTS `studio_notification`;
 DROP TABLE IF EXISTS `studio_quiz_wrong`;
 DROP TABLE IF EXISTS `studio_quiz_answer`;
@@ -603,7 +606,7 @@ CREATE TABLE `studio_quiz_wrong` (
 CREATE TABLE `studio_notification` (
     `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
     `receiver_id` bigint NOT NULL COMMENT '接收者用户 ID（关联 sys_user.id）',
-    `type` varchar(32) NOT NULL COMMENT '通知类型：POST_APPROVED/POST_REJECTED/COMMENT_REPLIED/MEMBER_GRANTED，须与 NotificationTypeEnum 一致',
+    `type` varchar(32) NOT NULL COMMENT '通知类型：POST_APPROVED/POST_REJECTED/COMMENT_REPLIED/MEMBER_GRANTED/REPORT_RESOLVED/REPORT_DISMISSED，须与 NotificationTypeEnum 一致',
     `biz_type` varchar(32) DEFAULT NULL COMMENT '来源业务类型：POST/COMMENT/USER',
     `biz_id` bigint DEFAULT NULL COMMENT '来源业务 ID（点击跳转用）',
     `title` varchar(128) NOT NULL COMMENT '通知标题（一句话摘要，快照不随业务变化）',
@@ -622,6 +625,48 @@ CREATE TABLE `studio_notification` (
     -- created_at 进索引是为了让 ORDER BY 不走 filesort
     KEY `idx_receiver_read` (`receiver_id`, `is_read`, `deleted_at`, `created_at`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '站内通知表';
+
+-- ============================================================================================================
+-- 21. 管理端操作日志表
+-- ============================================================================================================
+-- 用途：管理员每一次「会改变内容或权限」的动作都留一行，出了事故能回答
+--   「谁、在什么时候、对哪条内容、做了什么」。
+--
+-- 设计要点：
+--   1) operator_account / operator_name / target_title 都是**快照**：账号被删、帖子被删之后，
+--      日志仍然是可读的证据；只存 ID 的话，事后得先把数据复原才看得懂；
+--   2) detail 只写「业务原因与变更项」（驳回理由、角色旧值→新值），
+--      **绝不写入口令、初始口令、token、正文**；入库前由 Service 截断到 1000 字符；
+--   3) 与业务写在同一事务里：业务回滚则日志一起消失，不会留下「成功了」的假痕迹；
+--      记录失败只打一条 warn，日志表故障不能拖垮审核；
+--   4) 本表只增不改（除逻辑删除列外没有更新路径），索引全部围绕
+--      「按时间倒序翻页 + 按操作人/动作/对象反查」这两类访问设计。
+CREATE TABLE `studio_operation_log` (
+    `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
+    `operator_id` bigint NOT NULL DEFAULT '0' COMMENT '操作人 ID（sys_user.id；0=系统/未登录，正常管理操作不应为 0）',
+    `operator_account` varchar(64) NOT NULL DEFAULT '' COMMENT '操作人账号快照（账号删除后仍可读）',
+    `operator_name` varchar(64) DEFAULT NULL COMMENT '操作人昵称快照',
+    `action` varchar(48) NOT NULL COMMENT '动作码，须与 OperationTypeEnum 的 code 一致（如 POST_REJECT）',
+    `target_type` varchar(32) NOT NULL COMMENT '对象类型：POST/COMMENT/USER/QUIZ，须与 OperationTypeEnum 一致',
+    `target_id` bigint DEFAULT NULL COMMENT '对象 ID；章节/教材等无独立 ID 的动作为 NULL',
+    `target_title` varchar(256) DEFAULT NULL COMMENT '对象标题快照（帖子标题 / 题目题干摘要 / 用户名等）',
+    `detail` varchar(1000) DEFAULT NULL COMMENT '处置细节（驳回理由、变更项）；禁止写入口令与正文',
+    `ip` varchar(45) DEFAULT NULL COMMENT '来源 IP（IPv6 最长 45 字符）；取不到为 NULL',
+    `created_at` datetime NOT NULL COMMENT '发生时间',
+    `updated_at` datetime NOT NULL COMMENT '更新时间（本表无更新路径，实际恒等于 created_at）',
+    `created_by` bigint NOT NULL DEFAULT '0' COMMENT '创建人 ID',
+    `updated_by` bigint NOT NULL DEFAULT '0' COMMENT '修改人 ID',
+    `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT '逻辑删除毫秒时间戳',
+    PRIMARY KEY (`id`),
+    -- 默认视图：按时间倒序翻页。id 一起进索引是为了同一秒内的多行也有稳定顺序
+    KEY `idx_created` (`created_at`, `id`),
+    -- 「这个管理员最近都干了什么」
+    KEY `idx_operator_created` (`operator_id`, `created_at`),
+    -- 「这类动作最近发生过哪些」
+    KEY `idx_action_created` (`action`, `created_at`),
+    -- 「这条内容被谁处置过」（事故反查的主路径）
+    KEY `idx_target` (`target_type`, `target_id`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '管理端操作日志表（审计留痕）';
 
 -- ============================================================================================================
 -- 附：初始管理员（刻意不内置，防弱口令上线）

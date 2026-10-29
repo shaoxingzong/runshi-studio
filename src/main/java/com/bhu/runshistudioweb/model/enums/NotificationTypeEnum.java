@@ -22,7 +22,18 @@ public enum NotificationTypeEnum {
     COMMENT_REPLIED("COMMENT_REPLIED", "评论被回复"),
 
     /** 获得工作室成员身份：由管理员在用户管理里授予 */
-    MEMBER_GRANTED("MEMBER_GRANTED", "获得成员身份");
+    MEMBER_GRANTED("MEMBER_GRANTED", "获得成员身份"),
+
+    /**
+     * 举报已受理：内容被撤下或删除
+     *
+     * 必须给举报人反馈：举报最怕「提交后毫无音讯」，一次没有回应的举报会让用户
+     * 再也不使用这个通道，问题内容也就失去了被发现的机会。
+     */
+    REPORT_RESOLVED("REPORT_RESOLVED", "举报已受理"),
+
+    /** 举报未成立：内容保留，举报关闭 */
+    REPORT_DISMISSED("REPORT_DISMISSED", "举报未成立");
 
     /** 入库的值（与 DDL 中 type 列取值一致） */
     private final String value;

@@ -1,5 +1,7 @@
 package com.bhu.runshistudioweb.service.impl;
 
+import cn.dev33.satoken.stp.StpUtil;
+import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -27,6 +29,7 @@ import com.bhu.runshistudioweb.model.dto.quiz.QuizTextbookRenameRequest;
 import com.bhu.runshistudioweb.model.entity.StudioQuizAnswer;
 import com.bhu.runshistudioweb.model.entity.StudioQuizQuestion;
 import com.bhu.runshistudioweb.model.entity.StudioQuizWrong;
+import com.bhu.runshistudioweb.model.enums.OperationTypeEnum;
 import com.bhu.runshistudioweb.model.enums.QuizAnswerResultEnum;
 import com.bhu.runshistudioweb.model.enums.QuizQuestionTypeEnum;
 import com.bhu.runshistudioweb.model.vo.quiz.QuizChapterAdminVO;
@@ -36,6 +39,7 @@ import com.bhu.runshistudioweb.model.vo.quiz.QuizOptionVO;
 import com.bhu.runshistudioweb.model.vo.quiz.QuizQuestionAdminVO;
 import com.bhu.runshistudioweb.model.vo.quiz.QuizQuestionVO;
 import com.bhu.runshistudioweb.model.vo.quiz.QuizTextbookVO;
+import com.bhu.runshistudioweb.service.OperationLogService;
 import com.bhu.runshistudioweb.service.QuizQuestionService;
 import com.bhu.runshistudioweb.utils.QuizLabelUtils;
 import lombok.RequiredArgsConstructor;
@@ -43,6 +47,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -90,6 +95,14 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
     private final StudioQuizAnswerMapper studioQuizAnswerMapper;
 
     private final StudioQuizWrongMapper studioQuizWrongMapper;
+
+    /**
+     * 操作日志（题目与章节的增删改都要留痕）
+     *
+     * 题库是学习数据的判定依据：改答案或选项会让用户历史错题的「当时为什么错」失效，
+     * 必须能查到是谁改的。日志只记「改了哪些字段」，不把整道题的选项抄进去。
+     */
+    private final OperationLogService operationLogService;
 
     // ==================== C 端：教材 / 章节树 ====================
 
@@ -308,6 +321,11 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
         boolean saved = this.save(question);
         ThrowUtils.throwIf(!saved, ErrorCode.OPERATION_ERROR, "新增题目失败，数据库异常");
         // save 成功后 MyBatis-Plus 会把雪花 ID 回填到实体
+
+        // 留痕：题库变更会影响所有人的刷题结果，必须能查到「谁加了这道题、答案是哪个」
+        operationLogService.record(OperationTypeEnum.QUIZ_QUESTION_ADD, question.getId(), stemSummary(normalized.stem()),
+                "教材：" + question.getTextbookName() + "；章节：" + question.getChapterName()
+                        + "；题型：" + question.getType() + "；正确答案：" + question.getCorrectLabels());
         return question.getId();
     }
 
@@ -401,6 +419,10 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
         if (verdictChanged) {
             resetWrongStreak(existing.getId());
         }
+
+        // 留痕：只写「改了哪些字段」。选项与解析全文不进日志——它既非排查必需，也扩大隐私面
+        operationLogService.record(OperationTypeEnum.QUIZ_QUESTION_UPDATE, request.getId(),
+                stemSummary(normalized.stem()), describeQuestionChanges(request, verdictChanged));
         return true;
     }
 
@@ -428,7 +450,14 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
         removeWrongEntries(List.of(id));
 
         // ③ 作答记录保留：统计只读 result，不需要题目内容
-        return this.removeById(id) ? 1 : 0;
+        boolean removed = this.removeById(id);
+        if (removed) {
+            // 题干必须在删除前取：log 里再查一次既多一次 IO，题目也已经查不到了
+            operationLogService.record(OperationTypeEnum.QUIZ_QUESTION_DELETE, id, stemSummary(existing.getStem()),
+                    "教材：" + existing.getTextbookName() + "；章节：" + existing.getChapterName()
+                            + "；同事务清理错题条目，作答记录保留");
+        }
+        return removed ? 1 : 0;
     }
 
     /**
@@ -449,6 +478,7 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
         // ② 去重后再删：前端勾选时可能出现重复 id（分页切换后选中状态串了）
         Set<Long> distinctIds = new LinkedHashSet<>(ids);
         int deleted = 0;
+        List<Long> deletedIds = new ArrayList<>();
         for (Long id : distinctIds) {
             // ③ 列表来自前端，不能假定每个元素都合法：null 与非正数直接跳过
             if (id == null || id <= 0) {
@@ -462,7 +492,14 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
             removeWrongEntries(List.of(id));
             if (this.removeById(id)) {
                 deleted++;
+                deletedIds.add(id);
             }
+        }
+
+        // 留痕：整批一行。逐题一行会让「批量删两百道」把日志表刷满，而排查时看的是同一批
+        if (deleted > 0) {
+            operationLogService.record(OperationTypeEnum.QUIZ_QUESTION_BATCH_DELETE, null, null,
+                    "批量删除 " + deleted + " 道题；ID：" + CollUtil.join(deletedIds, ","));
         }
         return deleted;
     }
@@ -494,7 +531,14 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
         StudioQuizQuestion update = new StudioQuizQuestion();
         update.setId(id);
         update.setStatus(status);
-        return this.updateById(update);
+        boolean updated = this.updateById(update);
+
+        // 留痕：一次停用就是把一道题从所有人的刷题范围里拿掉，属于「内容下线」
+        if (updated) {
+            operationLogService.record(OperationTypeEnum.QUIZ_QUESTION_STATUS, id, stemSummary(existing.getStem()),
+                    status == STATUS_ENABLED ? "启用" : "停用");
+        }
+        return updated;
     }
 
     /**
@@ -586,6 +630,12 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
         }
         log.info("题目批量导入完成 | 教材={} | 章节={} | 数量={}",
                 request.getTextbookName(), request.getChapterName(), result.getImported());
+
+        // 留痕：dryRun 在校验失败或预览时已提前 return，走到这里一定是真的落库了；
+        // 导入没有单一对象 ID，target 记「教材 / 章节」，细节记数量与起始题序
+        operationLogService.record(OperationTypeEnum.QUIZ_QUESTION_IMPORT, null,
+                request.getTextbookName().trim() + " / " + request.getChapterName().trim(),
+                "导入 " + result.getImported() + " 道题；题序从 " + startSeq + " 起");
         return result;
     }
 
@@ -682,11 +732,24 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
         LambdaUpdateWrapper<StudioQuizQuestion> update = new LambdaUpdateWrapper<>();
         update.eq(StudioQuizQuestion::getTextbookName, textbookName)
                 .eq(StudioQuizQuestion::getChapterName, oldName)
-                .set(StudioQuizQuestion::getChapterName, newName);
+                .set(StudioQuizQuestion::getChapterName, newName)
+                // 批量更新不经过实体，审计填充器不会触发：整章的「最后修改人」就是本次操作人。
+                // 覆盖全章是刻意的——章名变了，每一行的内容归属确实一起变了
+                .set(StudioQuizQuestion::getUpdatedBy, StpUtil.getLoginIdAsLong())
+                .set(StudioQuizQuestion::getUpdatedAt, LocalDateTime.now());
         if (request.getChapterSeq() != null) {
             update.set(StudioQuizQuestion::getChapterSeq, request.getChapterSeq());
         }
-        return this.baseMapper.update(null, update);
+        int affected = this.baseMapper.update(null, update);
+
+        // 留痕：章节没有独立 ID，用「教材 / 旧名 → 新名」定位；受影响题数是最有用的规模信息
+        if (affected > 0) {
+            operationLogService.record(OperationTypeEnum.QUIZ_CHAPTER_RENAME, null,
+                    textbookName + " / " + oldName + " → " + newName,
+                    "影响题目 " + affected + " 道"
+                            + (request.getChapterSeq() == null ? "" : "；章节顺序值改为 " + request.getChapterSeq()));
+        }
+        return affected;
     }
 
     /**
@@ -722,13 +785,25 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
         LambdaUpdateWrapper<StudioQuizQuestion> update = new LambdaUpdateWrapper<>();
         update.eq(StudioQuizQuestion::getTextbookName, fromTextbook)
                 .eq(StudioQuizQuestion::getChapterName, chapterName)
-                .set(StudioQuizQuestion::getTextbookName, toTextbook);
+                .set(StudioQuizQuestion::getTextbookName, toTextbook)
+                // 同 renameChapter：Wrapper 批量更新必须显式写审计列
+                .set(StudioQuizQuestion::getUpdatedBy, StpUtil.getLoginIdAsLong())
+                .set(StudioQuizQuestion::getUpdatedAt, LocalDateTime.now());
         // 章节顺序是「教材内」的概念：换了教材就得用新教材的顺序值，
         // 否则排序会错乱（沿用原值也是一种选择，由调用方显式传入）
         if (request.getToTextbookSeq() != null) {
             update.set(StudioQuizQuestion::getTextbookSeq, request.getToTextbookSeq());
         }
-        return this.baseMapper.update(null, update);
+        int affected = this.baseMapper.update(null, update);
+
+        // 留痕：整章换教材会改变题库结构（原教材可能因此空掉）
+        if (affected > 0) {
+            operationLogService.record(OperationTypeEnum.QUIZ_CHAPTER_MOVE, null,
+                    chapterName + "：" + fromTextbook + " → " + toTextbook,
+                    "影响题目 " + affected + " 道"
+                            + (request.getToTextbookSeq() == null ? "" : "；教材顺序值改为 " + request.getToTextbookSeq()));
+        }
+        return affected;
     }
 
     /**
@@ -770,6 +845,11 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
             }
         }
         log.info("整章删除 | 教材={} | 章节={} | 删除 {} 题", textbookName, chapterName, deleted);
+
+        // 留痕：删整章不可逆（作答记录保留但题目已不在），是题库里破坏性最大的操作
+        operationLogService.record(OperationTypeEnum.QUIZ_CHAPTER_DELETE, null,
+                textbookName + " / " + chapterName,
+                "删除整章，共 " + deleted + " 道题；同事务清理错题条目，作答记录保留");
         return deleted;
     }
 
@@ -802,14 +882,89 @@ public class QuizQuestionServiceImpl extends ServiceImpl<StudioQuizQuestionMappe
         // ③ 一条 UPDATE 改整本教材；textbookSeq 传了才改，避免打乱已排好的顺序
         LambdaUpdateWrapper<StudioQuizQuestion> update = new LambdaUpdateWrapper<>();
         update.eq(StudioQuizQuestion::getTextbookName, oldName)
-                .set(StudioQuizQuestion::getTextbookName, newName);
+                .set(StudioQuizQuestion::getTextbookName, newName)
+                // 同 renameChapter：整本教材的题目都归到本次操作人名下
+                .set(StudioQuizQuestion::getUpdatedBy, StpUtil.getLoginIdAsLong())
+                .set(StudioQuizQuestion::getUpdatedAt, LocalDateTime.now());
         if (request.getTextbookSeq() != null) {
             update.set(StudioQuizQuestion::getTextbookSeq, request.getTextbookSeq());
         }
-        return this.baseMapper.update(null, update);
+        int affected = this.baseMapper.update(null, update);
+
+        // 留痕：全库级批量改名，影响面可能覆盖整本教材（含其所有章节）
+        if (affected > 0) {
+            operationLogService.record(OperationTypeEnum.QUIZ_TEXTBOOK_RENAME, null,
+                    oldName + " → " + newName,
+                    "影响题目 " + affected + " 道"
+                            + (request.getTextbookSeq() == null ? "" : "；教材顺序值改为 " + request.getTextbookSeq()));
+        }
+        return affected;
     }
 
     // ==================== 私有：校验与转换 ====================
+
+    /**
+     * 题干预览（写进操作日志的 target_title）
+     *
+     * 题干可能很长且带换行：整段搬进日志会撑开表格，只留 ID 又等于让人事后翻墓碑。
+     * 80 字是「够认出是哪道题」的折中。
+     *
+     * @param stem 题干，可为 null
+     * @return 单行摘要，不会返回 null
+     */
+    private String stemSummary(String stem) {
+        if (StrUtil.isBlank(stem)) {
+            return "（空题干）";
+        }
+        String flat = stem.replaceAll("\\s+", " ").trim();
+        return flat.length() <= 80 ? flat : flat.substring(0, 80) + "…";
+    }
+
+    /**
+     * 把一次题目修改翻译成「改了哪些字段」（写进操作日志的 detail）
+     *
+     * 只报字段名，不报内容：排查时问的是「谁动了答案」，不需要把整道题复制进日志。
+     * 判定相关变更（题型 / 选项 / 答案）会额外标注，因为它会重置所有用户的错题连对进度——
+     * 这是管理员最需要被事后追问的一类改动。
+     *
+     * @param request 修改请求（null 字段表示不修改）
+     * @param verdictChanged 是否属于判定相关变更
+     * @return 变更说明
+     */
+    private String describeQuestionChanges(QuizQuestionUpdateRequest request, boolean verdictChanged) {
+        StringBuilder fields = new StringBuilder();
+        appendField(fields, request.getStem() != null, "题干");
+        appendField(fields, request.getType() != null, "题型");
+        appendField(fields, request.getOptions() != null, "选项");
+        appendField(fields, request.getCorrectLabels() != null, "正确答案");
+        appendField(fields, request.getAnalysis() != null, "解析");
+        appendField(fields, request.getDifficulty() != null, "难度");
+        appendField(fields, request.getSource() != null, "题源");
+        appendField(fields, request.getTextbookName() != null || request.getTextbookSeq() != null, "教材");
+        appendField(fields, request.getChapterName() != null || request.getChapterSeq() != null, "章节");
+        appendField(fields, request.getQuestionSeq() != null, "题序");
+        appendField(fields, request.getStatus() != null, "状态");
+
+        String detail = fields.length() == 0 ? "提交了修改请求，字段无变化" : "修改字段：" + fields;
+        return verdictChanged ? detail + "；判定相关变更，已重置错题连对进度" : detail;
+    }
+
+    /**
+     * 追加一个字段名（顿号分隔）
+     *
+     * @param fields 字段名缓冲区
+     * @param changed 该字段是否被提交
+     * @param label 字段中文名
+     */
+    private void appendField(StringBuilder fields, boolean changed, String label) {
+        if (!changed) {
+            return;
+        }
+        if (fields.length() > 0) {
+            fields.append("、");
+        }
+        fields.append(label);
+    }
 
     /**
      * 跨字段校验 + 规范化（新增 / 修改 / 导入三条入口的唯一校验点）

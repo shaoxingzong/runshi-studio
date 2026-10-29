@@ -238,6 +238,8 @@ function openCreate() {
  * 密码留空时不下发 userPassword 字段：后端会生成随机初始密码，下发空串会撞上 DTO 的 @Size(min=8)。
  */
 async function submitCreate() {
+    // 与注册、后端 normalizeAccount 同口径：账号一律 trim + 小写入库
+    createForm.userAccount = createForm.userAccount.trim().toLowerCase();
     if (createForm.userAccount.length < 4 || createForm.userAccount.length > 16) {
         ElMessage.warning('账号长度需为 4-16 位');
         return;
@@ -473,7 +475,7 @@ onMounted(load);
             </p>
             <el-form label-position="top">
                 <el-form-item label="账号" required>
-                    <el-input v-model="createForm.userAccount" placeholder="4-16 位，需唯一" />
+                    <el-input v-model="createForm.userAccount" placeholder="4-16 位小写字母/数字/下划线，需唯一" />
                 </el-form-item>
                 <el-form-item label="初始密码">
                     <el-input

@@ -13,6 +13,7 @@ import com.bhu.runshistudioweb.mapper.StudioMemberMapper;
 import com.bhu.runshistudioweb.mapper.StudioPostCommentMapper;
 import com.bhu.runshistudioweb.mapper.StudioPostLikeMapper;
 import com.bhu.runshistudioweb.mapper.StudioPostMapper;
+import com.bhu.runshistudioweb.mapper.StudioPostReportMapper;
 import com.bhu.runshistudioweb.mapper.SysUserMapper;
 import com.bhu.runshistudioweb.model.dto.post.AuditRequest;
 import com.bhu.runshistudioweb.model.dto.post.AuditResult;
@@ -23,17 +24,22 @@ import com.bhu.runshistudioweb.model.entity.StudioMember;
 import com.bhu.runshistudioweb.model.entity.StudioPost;
 import com.bhu.runshistudioweb.model.entity.StudioPostComment;
 import com.bhu.runshistudioweb.model.entity.StudioPostLike;
+import com.bhu.runshistudioweb.model.entity.StudioPostReport;
 import com.bhu.runshistudioweb.model.entity.SysUser;
 import com.bhu.runshistudioweb.model.enums.AiAuditStatusEnum;
 import com.bhu.runshistudioweb.model.enums.AuditStatusEnum;
 import com.bhu.runshistudioweb.model.enums.MemberStatusEnum;
 import com.bhu.runshistudioweb.model.enums.NotificationTypeEnum;
+import com.bhu.runshistudioweb.model.enums.OperationTypeEnum;
+import com.bhu.runshistudioweb.model.enums.ReportStatusEnum;
+import com.bhu.runshistudioweb.model.enums.ReportTargetTypeEnum;
 import com.bhu.runshistudioweb.model.vo.post.PostFrontDetailVO;
 import com.bhu.runshistudioweb.model.vo.post.PostFrontVO;
 import com.bhu.runshistudioweb.model.vo.post.PostSelfDetailVO;
 import com.bhu.runshistudioweb.model.vo.post.PostVO;
 import com.bhu.runshistudioweb.model.vo.post.PostAdminDetailVO;
 import com.bhu.runshistudioweb.service.NotificationService;
+import com.bhu.runshistudioweb.service.OperationLogService;
 import com.bhu.runshistudioweb.service.PostService;
 import com.bhu.runshistudioweb.service.StudioMemberService;
 import com.bhu.runshistudioweb.utils.MarkdownSanitizer;
@@ -136,6 +142,23 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
      * 幂等与失败不拖垮等策略集中在 {@code NotificationService}。
      */
     private final NotificationService notificationService;
+
+    /**
+     * 操作日志（审核 / 删除 / 置顶 / 代改都要留痕）
+     *
+     * 写在这里而不是 Controller：只有 Service 知道「实际处理了哪几篇、驳回理由是什么」，
+     * 切面拿到的只有一串 ID，事后依然回答不了「谁对哪条内容做了什么」。
+     */
+    private final OperationLogService operationLogService;
+
+    /**
+     * 举报表 Mapper
+     *
+     * 删帖会连带删评论，被删内容上的待处理举报必须同事务关闭——否则它们永远留在
+     * 待处理队列里，点开却只剩「内容已删除」，管理员既处置不了也关不掉。
+     * 注入 Mapper 而不是 ReportService：ReportService 依赖本服务（删除动作），反向注入会成环。
+     */
+    private final StudioPostReportMapper studioPostReportMapper;
 
     /**
      * 用户（sys_user）
@@ -333,12 +356,21 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
      *
      * @param current 页码，小于 1 时按 1 处理
      * @param pageSize 每页条数，小于 1 按默认值、超过上限收敛到上限
+     * @param keyword 搜索关键词（可选）：同时匹配标题与摘要，为空表示不过滤
      * @return 分页结果；没有已通过的帖子时返回空记录分页，不会返回 null
      */
     @Override
-    public Page<PostFrontVO> listApprovedByPage(long current, long pageSize) {
+    public Page<PostFrontVO> listApprovedByPage(long current, long pageSize, String keyword) {
+        String trimmedKeyword = StrUtil.trimToNull(keyword);
         LambdaQueryWrapper<StudioPost> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(StudioPost::getStatus, AuditStatusEnum.APPROVED.getValue())
+                // 关键词必须进 WHERE：查出来再在内存里过滤会让分页总数算错
+                // （「共 10 条却只显示 3 条」），也会让翻页结果不稳定
+                .and(trimmedKeyword != null, w -> w
+                        .like(StudioPost::getTitle, trimmedKeyword)
+                        // 摘要不是全文：社区搜索定位的是「哪篇文章」，正文的深度检索交给 AI 助手
+                        .or()
+                        .like(StudioPost::getSummary, trimmedKeyword))
                 .orderByDesc(StudioPost::getPinned)
                 .orderByDesc(StudioPost::getCreatedAt);
 
@@ -404,6 +436,10 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
 
         PostFrontDetailVO detailVO = new PostFrontDetailVO();
         BeanUtils.copyProperties(post, detailVO);
+        // 浏览量要按「自增后」返回：post 是自增之前查出来的快照，直接拷贝会让详情页显示的数字
+        // 比库里少 1（用户刷新一次才追平）。这里直接 +1 而不是再查一次：
+        // 重新查询也多一次往返，且并发下读到的仍可能是别人自增后的值，口径没有更准
+        detailVO.setViewCount((post.getViewCount() == null ? 0 : post.getViewCount()) + 1);
         // 只查一个作者也走批量方法：口径与列表页一致，避免两处各写一套取名逻辑
         AuthorProfile author = authorProfiles(List.of(post.getAuthorId())).get(post.getAuthorId());
         if (author != null) {
@@ -503,7 +539,11 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
                         : AuditStatusEnum.REJECTED.getValue())
                 // 审核人写真人 ID：这是「人放的」与「机器放的」唯一的区分依据
                 .set(StudioPost::getAuditBy, auditorId)
-                .set(StudioPost::getAuditAt, LocalDateTime.now());
+                .set(StudioPost::getAuditAt, LocalDateTime.now())
+                // Wrapper 更新不传实体，MyMetaObjectHandler.updateFill 不会触发，
+                // 审计列必须在这里显式写；否则审核完 updated_by 还停在上一个操作人
+                .set(StudioPost::getUpdatedBy, auditorId)
+                .set(StudioPost::getUpdatedAt, LocalDateTime.now());
         if (!approved) {
             wrapper.set(StudioPost::getRejectReason, StrUtil.trim(request.getRejectReason()));
         }
@@ -536,6 +576,20 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
                         "你的帖子被驳回",
                         "《" + post.getTitle() + "》未通过审核，理由：" + StrUtil.trim(request.getRejectReason()));
             }
+        }
+
+        // 留痕：一篇一行。事故排查的入口通常是「这篇帖子被谁驳回了」，
+        // 合并成一行就只能全文搜索 detail；rows 为 0 时不记——没有生效的处置不该留下痕迹
+        if (rows > 0 && !targets.isEmpty()) {
+            String detail = approved
+                    ? "审核通过"
+                    : "驳回理由：" + StrUtil.trim(request.getRejectReason());
+            operationLogService.recordBatch(
+                    approved ? OperationTypeEnum.POST_APPROVE : OperationTypeEnum.POST_REJECT,
+                    targets.stream()
+                            .map(post -> new OperationLogService.LogTarget(post.getId(), post.getTitle()))
+                            .toList(),
+                    detail);
         }
         return rows;
     }
@@ -651,7 +705,7 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
      *
      * 坑：待审帖子不能删。先审后发之下作者只知道「我提交了」，直接删掉他什么都收不到，
      * 该走驳回把理由送到作者眼前。本表没有 deleted_by 列，审计痕迹要自己写 updated_by
-     * （元数据填充器只能填 0L，它拿不到登录态）。
+     * （Wrapper 更新不传实体，元数据填充器不会触发）。
      *
      * @param id 帖子 ID，必须大于 0，否则抛 A0401
      * @return 删除的内容行数（帖子 1 + 其下评论数；点赞关系是物理删除，不计入）
@@ -676,28 +730,71 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         long postId = post.getId();
 
         // ① 审计痕迹：本表没有 deleted_by 列，删除前把 updated_by 显式写成操作人。
-        //    元数据填充器只填 0L（拿不到登录态，见 MyMetaObjectHandler），审计必须自己写
+        //    不能指望 MyMetaObjectHandler：Wrapper 更新没传实体，更新填充器根本不会触发
         this.update(new LambdaUpdateWrapper<StudioPost>()
                 .eq(StudioPost::getId, postId)
                 .set(StudioPost::getUpdatedBy, operatorId));
 
-        // ② 级联删评论（含楼中楼回复）：只删帖子会留下「父帖没了却还占审核队列」的孤儿
+        // ② 先取评论 ID：删完之后再查就查不到了，而这些 ID 正是关闭评论举报的依据
+        List<Long> commentIds = studioPostCommentMapper.selectList(new LambdaQueryWrapper<StudioPostComment>()
+                        .select(StudioPostComment::getId)
+                        .eq(StudioPostComment::getPostId, postId))
+                .stream()
+                .map(StudioPostComment::getId)
+                .toList();
+
+        // ③ 级联删评论（含楼中楼回复）：只删帖子会留下「父帖没了却还占审核队列」的孤儿
         //    this.remove 只返回 boolean，要实际条数故走 baseMapper.delete（MP 会改写成逻辑删除）
         int commentRows = studioPostCommentMapper.delete(new LambdaQueryWrapper<StudioPostComment>()
                 .eq(StudioPostComment::getPostId, postId));
 
-        // ③ 级联删点赞关系：studio_post_like 是关系表、物理删除（见 DDL 注释），
+        // ④ 级联删点赞关系：studio_post_like 是关系表、物理删除（见 DDL 注释），
         //    留着会变成挂在不存在帖子上的悬空行
         studioPostLikeMapper.delete(new LambdaQueryWrapper<StudioPostLike>()
                 .eq(StudioPostLike::getPostId, postId));
 
-        // ④ 删帖子本体
+        // ⑤ 删帖子本体
         baseMapper.delete(new LambdaQueryWrapper<StudioPost>().eq(StudioPost::getId, postId));
+
+        // ⑥ 同事务关闭被删内容上的待处理举报：帖子与它名下全部评论都要关，
+        //    否则这些举报永远留在队列里，点开只剩「内容已删除」
+        closePendingReports(ReportTargetTypeEnum.POST, List.of(postId), operatorId);
+        closePendingReports(ReportTargetTypeEnum.COMMENT, commentIds, operatorId);
 
         // 删除是管理员对别人内容的操作，必须留痕（操作人已写入 updated_by，这里再记一条日志）
         log.info("管理员删除帖子 | postId={} | operatorId={} | 连带删除评论 {} 条", postId, operatorId, commentRows);
+        // 日志与删除同事务：业务回滚则这条记录一起消失，不会留下「删了但没删」的假痕迹
+        operationLogService.record(OperationTypeEnum.POST_DELETE, postId, post.getTitle(),
+                "级联删除评论 " + commentRows + " 条，点赞关系同事务删除");
         // 返回内容行数（帖子 1 + 评论数）；点赞关系是物理删除，不计入
         return commentRows + 1;
+    }
+
+    /**
+     * 关闭一批目标上的待处理举报（内容已被删除）
+     *
+     * 只更新仍处于「待处理」的记录：已经处置过（受理/不成立）的举报保留原结论，
+     * 不能被这次删除改写。审计列必须显式写——Wrapper 更新不触发填充器。
+     *
+     * @param targetType 目标类型
+     * @param targetIds 目标 ID 列表；空列表直接返回
+     * @param operatorId 操作人（删除内容的管理员）
+     */
+    private void closePendingReports(ReportTargetTypeEnum targetType, List<Long> targetIds, long operatorId) {
+        if (targetIds == null || targetIds.isEmpty()) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        studioPostReportMapper.update(null, new LambdaUpdateWrapper<StudioPostReport>()
+                .eq(StudioPostReport::getTargetType, targetType.getValue())
+                .in(StudioPostReport::getTargetId, targetIds)
+                .eq(StudioPostReport::getStatus, ReportStatusEnum.PENDING.getValue())
+                .set(StudioPostReport::getStatus, ReportStatusEnum.RESOLVED.getValue())
+                .set(StudioPostReport::getHandleBy, operatorId)
+                .set(StudioPostReport::getHandleAt, now)
+                .set(StudioPostReport::getHandleResult, "内容已被删除")
+                .set(StudioPostReport::getUpdatedBy, operatorId)
+                .set(StudioPostReport::getUpdatedAt, now));
     }
 
     /**
@@ -731,12 +828,18 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
                         || post.getStatus() != AuditStatusEnum.APPROVED.getValue()),
                 ErrorCode.PARAMS_ERROR, "只有已通过的帖子才能置顶（公开列表只展示已通过的内容）");
 
+        // Wrapper 更新不触发审计填充器：置顶是对他人内容的处置，操作人必须显式写入
         ThrowUtils.throwIf(!this.update(new LambdaUpdateWrapper<StudioPost>()
                         .eq(StudioPost::getId, id)
-                        .set(StudioPost::getPinned, pinned)),
+                        .set(StudioPost::getPinned, pinned)
+                        .set(StudioPost::getUpdatedBy, operatorId)
+                        .set(StudioPost::getUpdatedAt, LocalDateTime.now())),
                 ErrorCode.OPERATION_ERROR, pinned == 1 ? "置顶失败" : "取消置顶失败");
 
         log.info("帖子置顶状态已变更 | postId={} | pinned={} | operatorId={}", id, pinned, operatorId);
+        // 置顶影响首页可见性，属于「对别人内容的处置」，必须能查到是谁调的
+        operationLogService.record(OperationTypeEnum.POST_PIN, id, post.getTitle(),
+                pinned == 1 ? "置顶" : "取消置顶");
     }
 
     /**
@@ -761,8 +864,17 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         StudioPost post = this.getById(request.getId());
         ThrowUtils.throwIf(post == null, ErrorCode.NOT_FOUND_ERROR, "帖子不存在");
 
-        applyPostEdit(post, request);
+        // 旧标题要在 applyPostEdit 之前取：编辑后正文与标题都会被覆盖，事后无从对比
+        String oldTitle = post.getTitle();
+        applyPostEdit(post, request, operatorId);
         log.info("管理员编辑帖子 | postId={} | operatorId={}", post.getId(), operatorId);
+
+        // 代改会重置为待审，等于「原内容已被替换」——不留痕的话，审核结论对不上内容时无人可问
+        String titleChange = Objects.equals(oldTitle, request.getTitle())
+                ? "标题未变"
+                : "标题「" + oldTitle + "」→「" + request.getTitle() + "」";
+        operationLogService.record(OperationTypeEnum.POST_UPDATE, post.getId(), request.getTitle(),
+                titleChange + "；保存后重置为待审重新送审");
     }
 
     /**
@@ -796,7 +908,7 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
                         || post.getStatus() != AuditStatusEnum.REJECTED.getValue(),
                 ErrorCode.NOT_FOUND_ERROR, "只能修改已驳回的帖子");
 
-        applyPostEdit(post, request);
+        applyPostEdit(post, request, userId);
         log.info("作者修改被驳回帖子 | postId={} | authorId={}", post.getId(), userId);
     }
 
@@ -812,10 +924,11 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
      *
      * @param post 已取出的帖子实体，调用方保证非空且有权限
      * @param request 改稿请求（标题、正文必填；摘要与封面选填）
+     * @param operatorId 本次改稿人 ID（管理员代改是管理员，作者自助改是作者本人）
      * @throws com.bhu.runshistudioweb.exception.BusinessException 正文过长或含外链图片（A0401）、
      * 保存失败（B0002）
      */
-    private void applyPostEdit(StudioPost post, PostUpdateRequest request) {
+    private void applyPostEdit(StudioPost post, PostUpdateRequest request, long operatorId) {
         // 校验与 addPost 完全同源：正文长度 + XSS 兜底清洗 + 图片必须是站内路径
         String content = StrUtil.trim(request.getContent());
         ThrowUtils.throwIf(content.length() > CONTENT_MAX_LENGTH, ErrorCode.PARAMS_ERROR,
@@ -841,13 +954,20 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
                 .set(StudioPost::getTitle, StrUtil.trim(request.getTitle()))
                 .set(StudioPost::getSummary, summary)
                 .set(StudioPost::getCoverImage, coverImage)
-                .set(StudioPost::getContent, content);
+                .set(StudioPost::getContent, content)
+                // 内容变了：审计列必须显式写（Wrapper 更新不传实体，填充器不会触发）
+                .set(StudioPost::getUpdatedBy, operatorId)
+                .set(StudioPost::getUpdatedAt, LocalDateTime.now())
+                // AI 三列**无条件**清空：待审帖同样要重送 AI 判，旧结论描述的是旧正文，
+                // 留着会让审核页挂着「AI 判安全」而实际内容已经改过。
+                // 必须显式 set(..., null)：null 字段会被「不传就不改」的更新语义跳过，旧结论原样留存
+                .set(StudioPost::getAiAuditStatus, AiAuditStatusEnum.NOT_JUDGED.getValue())
+                .set(StudioPost::getAiReason, null)
+                .set(StudioPost::getAiAt, null);
         if (backToPending) {
             wrapper.set(StudioPost::getStatus, AuditStatusEnum.PENDING.getValue())
-                    // 上一轮内容的审核痕迹全部作废（理由见方法注释）
-                    .set(StudioPost::getAiAuditStatus, AiAuditStatusEnum.NOT_JUDGED.getValue())
-                    .set(StudioPost::getAiReason, null)
-                    .set(StudioPost::getAiAt, null)
+                    // 人工审核痕迹只在「打回待审」时作废：待审帖本来就没有审核人，
+                    // 去 set 它们只会把并发的审核结果覆盖成 null
                     .set(StudioPost::getAuditBy, null)
                     .set(StudioPost::getAuditAt, null)
                     .set(StudioPost::getRejectReason, null);

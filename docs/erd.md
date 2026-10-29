@@ -607,3 +607,55 @@ erDiagram
 
 5. **未读计数不缓存**：`idx_receiver_read` 覆盖 `COUNT(*)`，60s 一轮的铃铛轮询
    在这个量级下让数据库毫无感知（与「不加二级缓存」是同一条判断线）。
+
+---
+
+### 2.7 审计域（管理端操作日志）
+
+```mermaid
+erDiagram
+    sys_user ||--o{ studio_operation_log : "操作人（逻辑关联，无外键）"
+
+    studio_operation_log {
+        bigint id PK
+        bigint operator_id "操作人 sys_user.id；0=系统"
+        varchar operator_account "账号快照"
+        varchar operator_name "昵称快照"
+        varchar action "动作码，见 OperationTypeEnum"
+        varchar target_type "POST / COMMENT / USER / QUIZ"
+        bigint target_id "对象 ID；章节/教材可空"
+        varchar target_title "对象标题快照"
+        varchar detail "处置细节（不含口令与正文）"
+        varchar ip "来源 IP（IPv6 最长 45）"
+        datetime created_at
+        datetime updated_at
+        bigint created_by
+        bigint updated_by
+        bigint deleted_at
+    }
+```
+
+1. **账号、昵称、标题都是快照**：审计要回答的是「当时发生了什么」。
+   账号被删、帖子被删之后，关联查询只会得到空值；快照让这条记录始终可读。
+   只存 ID 的方案在数据完好时更好看，但审计恰恰是在数据出问题之后才被翻出来。
+
+2. **动作码 + 对象类型分离**：`action` 说明「做了什么」（`POST_REJECT`），
+   `target_type` 说明「对哪类对象」。合成一列会让「筛出所有用户相关操作」退化成
+   前端维护一份动作码 → 类型的映射，而后端新增动作时代码不会报错，只会静默认不出来。
+
+3. **埋点在 Service 而不是切面**：切面只能拿到方法签名，拿不到「实际影响了哪几行、
+   驳回理由是什么、角色从什么改成了什么」。这些恰恰是事故排查时唯一有用的信息。
+   代价是要在每处写操作后显式调用一次 `OperationLogService#record`，换来的是语义准确。
+
+4. **日志与业务写在同一事务里**：`record` 不加 `@Transactional`，自动加入调用方事务。
+   业务回滚则日志一起消失——不会留下一条「操作成功」的假痕迹。
+   反过来，日志写入失败只打一条 `warn` 并吞掉异常：日志表满不能让审核失败。
+
+5. **一篇内容一行**：批量审核 20 篇就是 20 行（一次 `saveBatch` 落库）。
+   事故排查的入口通常是「这篇帖子被谁驳回了」，按 `target_id` 反查才有结果；
+   合并成一行的话，`idx_target` 失效，只能退化成对 `detail` 全文搜索。
+   章节 / 教材 / 批量导入这类没有单一对象的动作，`target_id` 为 null，靠标题快照定位。
+
+6. **索引围绕两类访问**：默认视图是 `created_at DESC, id DESC`（`idx_created`，id 解决同秒排序），
+   反查是「操作人 / 动作 / 对象」三个维度各一条复合索引。
+   日志只增不减，没有更新路径，因此不需要为写放大做任何妥协。

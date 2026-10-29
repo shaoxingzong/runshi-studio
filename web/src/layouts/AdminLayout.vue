@@ -19,8 +19,12 @@ const menus = [
     { path: '/admin/posts', label: '帖子审核' },
     { path: '/admin/post-manage', label: '帖子管理' },
     { path: '/admin/post-comments', label: '评论审核' },
+    // 举报处理：只处理读者对「已公开内容」的反馈，与上面的待审队列互补
+    { path: '/admin/reports', label: '举报处理' },
     { path: '/admin/quiz', label: '题库管理' },
     { path: '/admin/traffic', label: '流量分析' },
+    // 操作日志放在最后：它是「出事之后」才看的台账，不该挤在日常管理入口前面
+    { path: '/admin/logs', label: '操作日志' },
 ];
 
 /**
@@ -38,6 +42,8 @@ function syncNarrow() {
 onMounted(() => {
     syncNarrow();
     window.addEventListener('resize', syncNarrow);
+    // 进入后台时刷新角色：被降权的账号即使还有旧 token，也应立刻失去后台入口
+    void user.refreshProfile();
 });
 
 onBeforeUnmount(() => {

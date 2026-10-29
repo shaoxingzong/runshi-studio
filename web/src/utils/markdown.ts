@@ -1,3 +1,4 @@
+import DOMPurify from 'dompurify';
 import { Marked, type RendererObject } from 'marked';
 
 // Markdown 渲染增强（帖子详情 / 项目详情共用）
@@ -53,6 +54,58 @@ export const MARKDOWN_ALLOWED_ATTR = [
     // ↓ 标题锚点 / 按钮属性 / 图片懒加载
     'id', 'type', 'aria-label', 'loading', 'decoding',
 ];
+
+/** 清洗选项：唯一的策略差异是「图片能不能是外链」 */
+export interface SanitizeOptions {
+    /**
+     * 只允许站内 /uploads/ 图片（帖子正文与审核预览用）
+     *
+     * 外链图可当追踪像素用：管理员打开审核页一次，对方的服务器就拿到一次「谁在什么时候看了」。
+     * 项目正文由管理员录入，可信度更高，保留外链。
+     */
+    restrictImages?: boolean;
+}
+
+/** 剥掉非站内图片的 src（命名函数，removeHook 才能精确摘掉自己这一个） */
+function dropExternalImages(node: Element): void {
+    if (node.tagName !== 'IMG') {
+        return;
+    }
+    const src = node.getAttribute('src') || '';
+    // 只放行站内上传目录；相对路径以外的（含 data:、http:）一律剥掉 src
+    if (!src.startsWith('/uploads/')) {
+        node.removeAttribute('src');
+    }
+}
+
+/**
+ * 清洗 renderMarkdown 的产物（帖子详情 / 项目详情 / 审核预览共用的唯一实现）
+ *
+ * 为什么必须收敛到一处：DOMPurify 的钩子是**全局**的，各页面自己 addHook/removeHook
+ * 一旦漏了 finally 或漏摘钩子，就会污染下一次渲染；三份复制还会在升级清洗库时漏改。
+ * 升级本身就是安全动作——旧版本存在可绕过白名单的 CRITICAL 漏洞，XSS 的最后一道防线失效。
+ *
+ * @param html renderMarkdown 的输出（不可信：来源可能是发帖用户）
+ * @param options restrictImages=true 时只保留站内图片
+ * @returns 已按白名单清洗的 HTML，可直接交给 v-html
+ */
+export function sanitizeMarkdownHtml(html: string, options: SanitizeOptions = {}): string {
+    const hooked = options.restrictImages === true;
+    if (hooked) {
+        DOMPurify.addHook('afterSanitizeAttributes', dropExternalImages);
+    }
+    try {
+        return DOMPurify.sanitize(html, {
+            ALLOWED_TAGS: MARKDOWN_ALLOWED_TAGS,
+            ALLOWED_ATTR: MARKDOWN_ALLOWED_ATTR,
+        }) as string;
+    } finally {
+        // 钩子挂在全局单例上：异常路径也必须摘掉，否则后续渲染会继续沿用本次策略
+        if (hooked) {
+            DOMPurify.removeHook('afterSanitizeAttributes', dropExternalImages);
+        }
+    }
+}
 
 function escapeHtml(text: string): string {
     return text

@@ -212,11 +212,14 @@ public class AttendanceServiceImpl extends ServiceImpl<StudioAttendanceMapper, S
         // ② 今日签到：按 user_id 聚出「当天最早一次」与「是否有内网记录」。
         //    一次查询覆盖全部成员，绝不写成「遍历成员逐个 count」——那是 N+1
         Map<Long, LocalDateTime> firstCheckInByUser = new HashMap<>();
+        Map<Long, LocalDateTime> lastCheckInByUser = new HashMap<>();
         Map<Long, Boolean> anyLanByUser = new HashMap<>();
         QueryWrapper<StudioAttendance> todayQuery = new QueryWrapper<>();
         // 用字符串列名而不是 Lambda：这一句包含 MIN/MAX 聚合，Lambda 版表达不了。
-        // 列名全是硬编码常量、日期走参数绑定，不存在拼接用户输入的注入面
-        todayQuery.select("user_id", "MIN(check_in_at) AS first_check_in", "MAX(in_lan) AS any_lan")
+        // 列名全是硬编码常量、日期走参数绑定，不存在拼接用户输入的注入面。
+        // MIN 与 MAX 都要：展示用「最早一次」，防抖判定用「最晚一次」
+        todayQuery.select("user_id", "MIN(check_in_at) AS first_check_in",
+                        "MAX(check_in_at) AS last_check_in", "MAX(in_lan) AS any_lan")
                 .eq("attendance_date", today)
                 .groupBy("user_id");
         for (Map<String, Object> row : this.listMaps(todayQuery)) {
@@ -230,8 +233,16 @@ public class AttendanceServiceImpl extends ServiceImpl<StudioAttendanceMapper, S
             if (firstAt != null) {
                 firstCheckInByUser.put(uid, firstAt);
             }
+            LocalDateTime lastAt = toLocalDateTime(row.get("last_check_in"));
+            if (lastAt != null) {
+                lastCheckInByUser.put(uid, lastAt);
+            }
             anyLanByUser.put(uid, toBoolean(row.get("any_lan")));
         }
+
+        // 防抖间隔：null 或 <= 0 表示不限制（与 assertNotTooSoon 同一口径）
+        Integer minIntervalSeconds = attendanceProperties.getMinIntervalSeconds();
+        boolean cooldownEnabled = minIntervalSeconds != null && minIntervalSeconds > 0;
 
         // ③ 本月次数：一次 group by 拿全体成员，避免逐个 count（N+1）
         Map<Long, Integer> monthCountByUser = countThisMonthGroupByUser(today);
@@ -253,6 +264,12 @@ public class AttendanceServiceImpl extends ServiceImpl<StudioAttendanceMapper, S
             // checkedIn 由「有没有最早签到时刻」推出来，而不是再查一次数据库：
             // 一个字段能推导出来时就不要再取一次，否则两处数据可能对不上
             vo.setCheckedIn(firstAt != null);
+            // 冷却截止时刻：必须用当天**最晚**一次签到来算（防抖只看最近一次），
+            // 用 firstAt 会让按钮提前恢复可点，点下去又被后端拒绝
+            LocalDateTime lastAt = lastCheckInByUser.get(memberUserId);
+            if (cooldownEnabled && lastAt != null) {
+                vo.setNextCheckInAt(lastAt.plusSeconds(minIntervalSeconds));
+            }
             // 没有记录时补 0：GROUP BY 不会返回「0 条」的行
             vo.setMonthCount(monthCountByUser.getOrDefault(memberUserId, 0));
             // 当天多次签到里只要有一次在内网，就按内网展示：

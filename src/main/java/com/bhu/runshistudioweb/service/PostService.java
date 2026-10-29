@@ -76,9 +76,10 @@ public interface PostService extends IService<StudioPost> {
      *
      * @param current 页码，小于 1 时按 1 处理（不报错）
      * @param pageSize 每页条数，小于 1 按默认值、超过上限收敛到上限
+     * @param keyword 搜索关键词（可选）：同时匹配标题与摘要；为空表示不过滤
      * @return 分页结果；没有已通过的帖子时返回空记录的分页对象，不会返回 null
      */
-    Page<PostFrontVO> listApprovedByPage(long current, long pageSize);
+    Page<PostFrontVO> listApprovedByPage(long current, long pageSize, String keyword);
 
     /**
      * 公开详情：仅已通过（游客可调用），并原子自增浏览量

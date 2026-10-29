@@ -1,8 +1,10 @@
 package com.bhu.runshistudioweb.controller;
 
+import cn.dev33.satoken.stp.StpUtil;
 import com.bhu.runshistudioweb.common.BaseResponse;
 import com.bhu.runshistudioweb.common.ResultUtils;
 import com.bhu.runshistudioweb.manager.FileManager;
+import com.bhu.runshistudioweb.manager.UploadQuotaManager;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,6 +32,14 @@ public class FileController {
     private final FileManager fileManager;
 
     /**
+     * 每日上传配额
+     *
+     * 只要求登录就能上传，不设上限时任何注册账号都能把磁盘当免费图床。
+     * 配额检查必须在 FileManager 之前：超限时连文件流都不该读。
+     */
+    private final UploadQuotaManager uploadQuotaManager;
+
+    /**
      * 文件上传
      *
      * 校验与落盘全在 FileManager，三层缺一不可：魔数判真实类型、UUID 重命名、路径规范化。
@@ -42,7 +52,10 @@ public class FileController {
     @PostMapping("/upload")
     public BaseResponse<String> upload(@RequestParam("file") MultipartFile file) {
         // ① Spring 按字段名 file 从 multipart 请求里取出文件；名字与前端 append 时不一致就会得到 null
-        // ② 三层安全防线（魔数、UUID 重命名、路径边界）都在 FileManager 里，Controller 不重复实现
+        // ② 配额先扣：超限时连文件流都不解析，也不该在磁盘上留下半成品
+        //    全局拦截器已保证登录，这里取 loginId 不会抛未登录
+        uploadQuotaManager.assertAllowed(StpUtil.getLoginIdAsLong());
+        // ③ 三层安全防线（魔数、UUID 重命名、路径边界）都在 FileManager 里，Controller 不重复实现
         String accessPath = fileManager.upload(file);
         // ③ 只回相对路径：域名由前端拼接，避免把本地地址写进生产数据
         return ResultUtils.success(accessPath);

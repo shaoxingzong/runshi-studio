@@ -6,6 +6,7 @@ import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.exception.ThrowUtils;
 
 import java.security.SecureRandom;
+import java.util.HashMap;
 
 /**
  * 密码加密与校验工具（基于 Hutool BCrypt）
@@ -88,6 +89,7 @@ public class PasswordUtils {
         // 注意：BCrypt 只取明文前 72 个字节，更长的部分会被静默忽略，
         // 所以上层若放开密码长度上限，需要一并卡在 72 字节以内
         return BCrypt.hashpw(rawPassword);
+        HashMap
     }
     /**
      * 校验用户输入的明文密码与库里的哈希串是否匹配

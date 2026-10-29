@@ -183,6 +183,13 @@ const routes: RouteRecordRaw[] = [
                 component: () => import('@/views/admin/PostCommentAudit.vue'),
                 meta: { title: '评论审核' },
             },
+            // 举报处理：读者对已公开内容的反馈入口，与审核队列是两条独立的治理链路
+            {
+                path: 'reports',
+                name: 'admin-reports',
+                component: () => import('@/views/admin/Reports.vue'),
+                meta: { title: '举报处理' },
+            },
             {
                 path: 'traffic',
                 name: 'admin-traffic',
@@ -194,6 +201,13 @@ const routes: RouteRecordRaw[] = [
                 name: 'admin-quiz',
                 component: () => import('@/views/admin/QuizQuestions.vue'),
                 meta: { title: '题库管理' },
+            },
+            // 操作日志：管理员每一次处置的留痕台账，内容出事故时的追溯入口
+            {
+                path: 'logs',
+                name: 'admin-logs',
+                component: () => import('@/views/admin/OperationLogs.vue'),
+                meta: { title: '操作日志' },
             },
         ],
     },

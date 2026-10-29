@@ -75,20 +75,29 @@ export const adminApi = {
     certificateDelete: (id: string) => http.post<boolean>('/certificate/delete', { id }),
 
     // ===== 知识库 =====
+    //
+    // ⚠️ 除分页外，本组接口都会真实调用 Embedding，耗时经常超过默认 30 秒。
+    // 用 http.long（300 秒）：30 秒掐断会变成「前端报失败、后端还在跑」的假失败，
+    // 用户重试一次就重复入库一次。
     docPage: (body: Record<string, unknown>) => http.post<PageResult<KnowledgeDoc>>('/knowledge/doc/list/page', body),
+    // 同步单条：sourceId 必须原样按**字符串**提交
+    //
+    // 雪花 ID 是 19 位，超出 Number.MAX_SAFE_INTEGER（9007199254740991）；
+    // 写成 Number(sourceId) 会静默丢精度，后端按错误 ID 查库 → 永远「项目/成员/证书不存在」，
+    // 而且会把已有文档误标成失败态。后端 DTO 是 Long，Jackson 支持 JSON 字符串转 Long。
     docSync: (sourceType: string, sourceId: string) =>
-        http.post<IngestResult>('/knowledge/doc/sync', { sourceType, sourceId: Number(sourceId) }),
+        http.long<IngestResult>('/knowledge/doc/sync', { sourceType, sourceId }),
     // 全量同步：幂等，内容未变的会跳过（零 Embedding 调用）
-    docSyncAll: () => http.post<BatchResult>('/knowledge/doc/sync-all', {}),
+    docSyncAll: () => http.long<BatchResult>('/knowledge/doc/sync-all', {}),
     // 强制重建向量：应用重启后向量丢失时用它恢复（sync-all 此时会全部跳过，救不回来）
-    docReindexAll: () => http.post<BatchResult>('/knowledge/doc/reindex-all', {}),
-    docRebuild: (id: string) => http.post<IngestResult>('/knowledge/doc/rebuild', { id }),
+    docReindexAll: () => http.long<BatchResult>('/knowledge/doc/reindex-all', {}),
+    docRebuild: (id: string) => http.long<IngestResult>('/knowledge/doc/rebuild', { id }),
     docDelete: (id: string) => http.post<boolean>('/knowledge/doc/delete', { id }),
     // 手工录入文档
     //
     // 每次调用都新建一篇（不幂等），title ≤128、content ≤20000（后端 @Size 校验）。
     // 后端会真实调用 Embedding，长文耗时可能超过请求层的 30 秒超时——
-    // 界面上要提示「录入中请勿关闭」，别让人以为卡死了。
+    // 因此同样走 http.long；界面上要提示「录入中请勿关闭」，别让人以为卡死了。
     docManual: (title: string, content: string) =>
-        http.post<IngestResult>('/knowledge/doc/manual', { title, content }),
+        http.long<IngestResult>('/knowledge/doc/manual', { title, content }),
 };

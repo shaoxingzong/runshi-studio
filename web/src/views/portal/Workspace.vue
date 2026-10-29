@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { attendanceApi } from '@/api/attendance';
@@ -33,6 +33,27 @@ const me = computed(() => board.value.find((item) => item.userId === userId.valu
 /** 今天是否已打卡（看板里我自己那行的标记） */
 const checkedToday = computed(() => !!me.value?.checkedIn);
 
+/**
+ * 冷却剩余秒数
+ *
+ * 由后端给出的 nextCheckInAt 驱动（后端按「最后一次签到 + 配置间隔」计算），
+ * 前端只做倒计时展示——间隔是配置项，写死 60 秒会在配置变化后与后端不一致，
+ * 表现就是「按钮亮着，点下去必报错」。
+ */
+const cooldownSeconds = ref(0);
+/** 每秒重算一次剩余时间；页面离开时必须清掉，否则反复进出会叠加多个定时器 */
+let cooldownTimer: number | null = null;
+
+function refreshCooldown() {
+    const next = me.value?.nextCheckInAt;
+    if (!next) {
+        cooldownSeconds.value = 0;
+        return;
+    }
+    const remaining = Math.ceil((new Date(next).getTime() - Date.now()) / 1000);
+    cooldownSeconds.value = remaining > 0 ? remaining : 0;
+}
+
 async function load() {
     loading.value = true;
     error.value = '';
@@ -46,6 +67,8 @@ async function load() {
         userId.value = current.id;
         board.value = boardData ?? [];
         history.value = historyData ?? [];
+        // 看板刷新后立刻重算冷却：签到成功后按钮应马上变成「N 秒后可再次签到」
+        refreshCooldown();
     } catch (e) {
         // 三个并发请求任一失败都会落到这里：给出原因与重试，
         // 而不是 loading 一关、整个工作台空白
@@ -87,6 +110,16 @@ onMounted(async () => {
         return;
     }
     await load();
+    // 倒计时每秒刷新一次：只有冷却中才有意义，但不做条件判断更简单，开销可以忽略
+    cooldownTimer = window.setInterval(refreshCooldown, 1000);
+});
+
+onBeforeUnmount(() => {
+    // 不清理会在每次进出页面时叠加一个定时器，切换几次后倒计时会跳秒
+    if (cooldownTimer != null) {
+        window.clearInterval(cooldownTimer);
+        cooldownTimer = null;
+    }
 });
 </script>
 
@@ -114,8 +147,24 @@ onMounted(async () => {
                             : '在工作室内网环境下签到会记为「内网」'
                     }}
                 </div>
-                <el-button class="checkin-btn" size="large" :loading="checkingIn" @click="checkIn">
-                    {{ checkedToday ? '再次签到' : '一键签到' }}
+                <!--
+                  冷却期禁用：后端有 60 秒防抖（studio.attendance.min-interval-seconds），
+                  按钮一直可点等于「点了必然报错」。倒计时由 nextCheckInAt 驱动，前端不写死间隔
+                -->
+                <el-button
+                    class="checkin-btn"
+                    size="large"
+                    :loading="checkingIn"
+                    :disabled="cooldownSeconds > 0"
+                    @click="checkIn"
+                >
+                    {{
+                        checkedToday
+                            ? cooldownSeconds > 0
+                                ? `冷却中 ${cooldownSeconds}s`
+                                : '再次签到'
+                            : '一键签到'
+                    }}
                 </el-button>
             </div>
 

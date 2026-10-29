@@ -8,7 +8,7 @@
 --   或在已登录的 mysql 客户端里：source db/quiz-test-data.sql
 --
 -- 一键产出什么：
---   ① 两个可直接登录的账号（口令统一为 Studio@2026）
+--   ① 两个账号（**口令不在仓库里**，导入后必须重置后才能登录）
 --        test_admin   管理员，可进「后台 → 题库管理」
 --        test_member  在队成员，可进「刷题」（普通注册用户进不去，认 studio_member 表）
 --   ② 26 条作答记录（18 对 / 8 错，正确率约 69%），让「学习概览」四个格子都有数字
@@ -28,9 +28,11 @@ SET NAMES utf8mb4;
 -- 为什么 ID 要写死：可重复执行的前提是「每次产生同样的主键」，
 -- 这样 DELETE 才能精确地把上次的数据清掉，而不会误伤真实数据。
 --
--- 口令哈希是 Studio@2026 的 BCrypt 串（cost=10，60 位）。
--- 它由项目自身的 PasswordUtils（Hutool BCrypt）生成并自校验过，
--- 因此这两个账号一定能通过 /user/login 的校验。
+-- 下面的哈希由项目自身的 PasswordUtils（Hutool BCrypt）生成并自校验过，
+-- 但它的明文曾提交进本仓库，等价于**已经泄露**：
+--   · 明文已从当前文件删除，且无法从哈希反推；
+--   · 历史提交仍可翻到，所以唯一有效的处置是导入后立即重置这两个账号的口令
+--     （用管理员账号在「用户管理 → 重置密码」里改；流程见 DEPLOY.md「口令轮换清单」）。
 -- ⚠️ 这是测试账号，**不要**把本文件带上生产库执行。
 SET @pwd_hash  = '$2a$10$X8QdCzZoJAdTWEjf.zuv4uakf.VdLALT50ak6gdIhoRwnH5C/A2ZG';
 SET @admin_id  = 1930000000000000001;
@@ -256,7 +258,5 @@ SELECT
 FROM `studio_quiz_wrong`
 WHERE `user_id` = @member_id AND `deleted_at` = 0;
 
--- 提示
-SELECT '完成：用 test_member / Studio@2026 登录后进「刷题」' AS `下一步`
-UNION ALL
-SELECT '管理员：test_admin / Studio@2026，可进后台「题库管理」';
+-- 提示（刻意不打印口令：脚本里没有，任何人也不该从仓库里知道）
+SELECT '完成：先重置 test_member / test_admin 的口令，再分别登录「刷题」与「后台 → 题库管理」' AS `下一步`;

@@ -2,17 +2,16 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import DOMPurify from 'dompurify';
 import { postApi } from '@/api/post';
+import { reportApi } from '@/api/report';
 import { usePageMeta } from '@/composables/usePageMeta';
 import ErrorRetry from '@/components/ErrorRetry.vue';
 import SmartImage from '@/components/SmartImage.vue';
 import {
     bindCodeCopy,
-    MARKDOWN_ALLOWED_ATTR,
-    MARKDOWN_ALLOWED_TAGS,
     observeTocHighlight,
     renderMarkdown,
+    sanitizeMarkdownHtml,
     scrollToHeading,
     TOC_MIN_ITEMS,
 } from '@/utils/markdown';
@@ -40,6 +39,57 @@ const submitting = ref(false);
 /** 点赞请求中（按钮 loading，防连点） */
 const liking = ref(false);
 
+// ==================== 举报 ====================
+
+const reportVisible = ref(false);
+/** 正在举报的对象：帖子或某条评论 */
+const reportTarget = ref<{ type: 'post' | 'comment'; id: string } | null>(null);
+const reportReason = ref('');
+const reporting = ref(false);
+
+/**
+ * 打开举报弹窗
+ *
+ * 未登录直接引导去登录：匿名举报既无法追溯，也挡不住同一个人反复刷。
+ * redirect 带上当前路径，登录后能回到这篇帖子。
+ */
+function openReport(type: 'post' | 'comment', targetId: string) {
+    if (!user.isLogin) {
+        ElMessage.warning('登录后才能举报');
+        void router.push({ name: 'login', query: { redirect: route.fullPath } });
+        return;
+    }
+    reportTarget.value = { type, id: targetId };
+    reportReason.value = '';
+    reportVisible.value = true;
+}
+
+async function submitReport() {
+    const reason = reportReason.value.trim();
+    if (!reason) {
+        ElMessage.warning('请填写举报理由');
+        return;
+    }
+    if (!reportTarget.value) {
+        return;
+    }
+    reporting.value = true;
+    try {
+        // targetId 必须是字符串：19 位雪花 ID 走 number 会丢精度，后端按错误 ID 查不到内容
+        await reportApi.submit({
+            targetType: reportTarget.value.type,
+            targetId: reportTarget.value.id,
+            reason,
+        });
+        ElMessage.success('举报已提交，管理员会尽快核实');
+        reportVisible.value = false;
+    } catch {
+        // 重复举报等提示已由请求层统一弹出，这里不重复打扰
+    } finally {
+        reporting.value = false;
+    }
+}
+
 /** 评论区容器：点 meta 行里的「评论 N」要能直接滚过去 */
 const commentsRef = ref<HTMLElement | null>(null);
 
@@ -64,27 +114,8 @@ const bodyRef = ref<HTMLElement | null>(null);
  */
 const rendered = computed(() => {
     const result = renderMarkdown(detail.value?.content ?? '');
-
-    // hook 是全局的，用完立刻摘掉：这里是同步代码块，不会影响其它页面的清洗
-    DOMPurify.addHook('afterSanitizeAttributes', (node) => {
-        if (node.tagName === 'IMG') {
-            const src = node.getAttribute('src') || '';
-            // 只放行站内上传目录；相对路径以外的（含 data:、http:）一律剥掉 src
-            if (!src.startsWith('/uploads/')) {
-                node.removeAttribute('src');
-            }
-        }
-    });
-
-    try {
-        // 白名单与工具同源（MARKDOWN_ALLOWED_*）：页面只保留自己的策略差异（img 站内限制）
-        result.html = DOMPurify.sanitize(result.html, {
-            ALLOWED_TAGS: MARKDOWN_ALLOWED_TAGS,
-            ALLOWED_ATTR: MARKDOWN_ALLOWED_ATTR,
-        }) as string;
-    } finally {
-        DOMPurify.removeHook('afterSanitizeAttributes');
-    }
+    // 清洗实现收在工具里：钩子的挂/摘必须成对，写在页面里就有漏摘污染全局的风险
+    result.html = sanitizeMarkdownHtml(result.html, { restrictImages: true });
     return result;
 });
 
@@ -287,6 +318,10 @@ usePageMeta({
                     >
                         {{ detail.liked ? '已赞' : '点赞' }} {{ detail.likeCount ?? 0 }}
                     </el-button>
+                    <!-- 举报入口放在 meta 行末尾：它是负向操作，不该比点赞更显眼 -->
+                    <el-button link class="report-link" @click="openReport('post', detail.id)">
+                        举报
+                    </el-button>
                 </div>
 
                 <!-- 目录：长文（标题 ≥3）才出现。href 保留原生锚点语义
@@ -346,6 +381,9 @@ usePageMeta({
                             <span v-if="comment.floor" class="floor">{{ comment.floor }} 楼</span>
                             <span class="date">{{ comment.createdAt?.slice(0, 16) }}</span>
                             <el-button link size="small" @click="replyTo = comment.id">回复</el-button>
+                            <el-button link size="small" @click="openReport('comment', comment.id)">
+                                举报
+                            </el-button>
                             <el-button
                                 v-if="user.isAdmin"
                                 link
@@ -371,6 +409,9 @@ usePageMeta({
                                 <span class="author">{{ reply.authorName || '用户' }}</span>
                                 <span class="reply-text">{{ reply.content }}</span>
                                 <span class="date">{{ reply.createdAt?.slice(0, 16) }}</span>
+                                <el-button link size="small" @click="openReport('comment', reply.id)">
+                                    举报
+                                </el-button>
                                 <el-button
                                     v-if="user.isAdmin"
                                     link
@@ -407,6 +448,28 @@ usePageMeta({
                 </div>
             </section>
         </template>
+
+        <!-- 举报弹窗：帖子与评论共用，靠 reportTarget.type 区分 -->
+        <el-dialog v-model="reportVisible" title="举报内容" width="460px">
+            <p class="muted report-tip">
+                举报会提交给管理员人工核实，请说明具体问题（如广告、人身攻击、侵权等）。
+                同一内容重复举报不会重复受理。
+            </p>
+            <el-input
+                v-model="reportReason"
+                type="textarea"
+                :rows="4"
+                maxlength="256"
+                show-word-limit
+                placeholder="请填写举报理由（最多 256 字）"
+            />
+            <template #footer>
+                <el-button @click="reportVisible = false">取消</el-button>
+                <el-button type="danger" :loading="reporting" @click="submitReport">
+                    提交举报
+                </el-button>
+            </template>
+        </el-dialog>
     </div>
 </template>
 
@@ -439,6 +502,22 @@ h1 {
     margin-left: 8px;
     padding: 8px 18px;
     font-weight: 600;
+}
+
+/* 举报是负向操作：用次级文字色，不与点赞抢注意力，hover 才提示危险语义 */
+.report-link {
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.report-link:hover {
+    color: #dc2626;
+}
+
+.report-tip {
+    margin: 0 0 12px;
+    font-size: 13px;
+    line-height: 1.7;
 }
 
 /* meta 行的统计文字：与点赞按钮的左邻右舍保持同一视觉重量 */

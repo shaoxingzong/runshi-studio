@@ -13,24 +13,31 @@ import com.bhu.runshistudioweb.manager.ContentAuditManager;
 import com.bhu.runshistudioweb.mapper.StudioMemberMapper;
 import com.bhu.runshistudioweb.mapper.StudioPostCommentMapper;
 import com.bhu.runshistudioweb.mapper.StudioPostMapper;
+import com.bhu.runshistudioweb.mapper.StudioPostReportMapper;
 import com.bhu.runshistudioweb.model.dto.post.AuditRequest;
 import com.bhu.runshistudioweb.model.dto.post.AuditResult;
 import com.bhu.runshistudioweb.model.dto.post.PostCommentAddRequest;
 import com.bhu.runshistudioweb.model.entity.StudioMember;
 import com.bhu.runshistudioweb.model.entity.StudioPost;
 import com.bhu.runshistudioweb.model.entity.StudioPostComment;
+import com.bhu.runshistudioweb.model.entity.StudioPostReport;
 import com.bhu.runshistudioweb.model.enums.AiAuditStatusEnum;
 import com.bhu.runshistudioweb.model.enums.AuditStatusEnum;
 import com.bhu.runshistudioweb.model.enums.MemberStatusEnum;
 import com.bhu.runshistudioweb.model.enums.NotificationTypeEnum;
+import com.bhu.runshistudioweb.model.enums.OperationTypeEnum;
+import com.bhu.runshistudioweb.model.enums.ReportStatusEnum;
+import com.bhu.runshistudioweb.model.enums.ReportTargetTypeEnum;
 import com.bhu.runshistudioweb.model.vo.post.PostCommentAuditVO;
 import com.bhu.runshistudioweb.model.vo.post.PostCommentVO;
 import com.bhu.runshistudioweb.service.NotificationService;
+import com.bhu.runshistudioweb.service.OperationLogService;
 import com.bhu.runshistudioweb.service.PostCommentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -106,6 +113,22 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
      * 失败不拖垮主业务等策略集中在 {@code NotificationService}。
      */
     private final NotificationService notificationService;
+
+    /**
+     * 操作日志（审核与删除都要留痕）
+     *
+     * 评论没有标题列，target_title 存正文摘要——排查时「这句评论被谁删了」
+     * 必须能一眼认出是哪句，只给一个雪花 ID 等于让人去翻墓碑。
+     */
+    private final OperationLogService operationLogService;
+
+    /**
+     * 举报表 Mapper
+     *
+     * 删评论会连带删回复，被删内容上的待处理举报必须同事务关闭，
+     * 否则它们永远卡在待处理队列里。注入 Mapper 而非 ReportService：后者依赖本服务，会成环。
+     */
+    private final StudioPostReportMapper studioPostReportMapper;
 
     /**
      * 发表评论，或回复某条顶层评论（先审后发）
@@ -406,6 +429,7 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
      * 动作非法或驳回缺理由（A0401）
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public int audit(AuditRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR, "审核参数不能为空");
         ThrowUtils.throwIf(!StpUtil.isLogin(), ErrorCode.NOT_LOGIN_ERROR, "未登录");
@@ -443,7 +467,11 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
                         : AuditStatusEnum.REJECTED.getValue())
                 // 审核人写真人 ID：这是「人放的」与「机器放的」唯一的区分依据
                 .set(StudioPostComment::getAuditBy, auditorId)
-                .set(StudioPostComment::getAuditAt, LocalDateTime.now());
+                .set(StudioPostComment::getAuditAt, LocalDateTime.now())
+                // Wrapper 更新不触发审计填充器，updated_by / updated_at 要显式写，
+                // 否则评论审核完之后「最后修改人」还停在提交者
+                .set(StudioPostComment::getUpdatedBy, auditorId)
+                .set(StudioPostComment::getUpdatedAt, LocalDateTime.now());
         if (!approved) {
             wrapper.set(StudioPostComment::getRejectReason, StrUtil.trim(request.getRejectReason()));
         }
@@ -468,6 +496,20 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
                 notifyReplyIfParent(target);
             }
         }
+
+        // 留痕：一条评论一行（按内容反查「这句是谁放出来的」）；rows 为 0 时不记
+        if (rows > 0) {
+            String detail = approved
+                    ? "评论审核通过"
+                    : "驳回理由：" + StrUtil.trim(request.getRejectReason());
+            operationLogService.recordBatch(
+                    approved ? OperationTypeEnum.COMMENT_APPROVE : OperationTypeEnum.COMMENT_REJECT,
+                    targets.stream()
+                            .map(target -> new OperationLogService.LogTarget(
+                                    target.getId(), commentSummary(target.getContent())))
+                            .toList(),
+                    detail);
+        }
         return rows;
     }
 
@@ -487,6 +529,7 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
      * 评论 id 不合法或状态不是已通过（A0401）、评论不存在（A0402）
      */
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public int deleteComment(long id) {
         // ① 删评论是管理动作，必须先有登录态：不知道操作人就无法留痕
         ThrowUtils.throwIf(!StpUtil.isLogin(), ErrorCode.NOT_LOGIN_ERROR, "未登录");
@@ -506,12 +549,24 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
 
         // ④ 审计：管理员删的是别人的内容，光有 deleted_at 只知道时间、不知道人，
         //    出争议时必须能查到操作人。本表没有单独的「删除人自动填充」，
-        //    元数据填充器只会把 updated_by 填成 0L（它拿不到登录态），所以这里自己写
+        //    Wrapper 更新也不会触发更新填充器，所以这里自己写
         this.update(new LambdaUpdateWrapper<StudioPostComment>()
                 .eq(StudioPostComment::getId, id)
                 .set(StudioPostComment::getDeletedBy, operatorId));
 
-        // ⑤ 级联：顶层评论连同它的回复一并逻辑删除。
+        // ⑤ 先取本次要删的 ID（顶层 + 回复）：删完就查不到了，而它们正是关闭举报的依据
+        List<Long> removingIds = this.list(new LambdaQueryWrapper<StudioPostComment>()
+                        .select(StudioPostComment::getId)
+                        .eq(StudioPostComment::getPostId, postId)
+                        .and(nested -> nested
+                                .eq(StudioPostComment::getId, id)
+                                .or()
+                                .eq(StudioPostComment::getParentId, id)))
+                .stream()
+                .map(StudioPostComment::getId)
+                .toList();
+
+        // ⑥ 级联：顶层评论连同它的回复一并逻辑删除。
         //    只删顶层会留下 parentId 指向已删评论的孤儿回复——前端会渲染出没有上下文的内容。
         //    this.remove 只返回 boolean，这里要的是实际删除条数（含回复），故走 baseMapper
         int rows = baseMapper.delete(new LambdaQueryWrapper<StudioPostComment>()
@@ -521,14 +576,64 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
                         .or()
                         .eq(StudioPostComment::getParentId, id)));
 
+        // ⑦ 同事务关闭被删评论上的待处理举报（含被连带删除的回复）
+        closePendingReports(removingIds, operatorId);
+
         // 评论数回退；GREATEST 兜底防止脏数据下减成负数（列表页会出现「-1 条评论」）
         studioPostMapper.update(null, new LambdaUpdateWrapper<StudioPost>()
                 .eq(StudioPost::getId, postId)
                 .setSql("comment_count = GREATEST(comment_count - " + rows + ", 0)"));
+
+        // 删除评论同样要留痕：删的是已公开内容，作者与读者都会发现「它不见了」
+        operationLogService.record(OperationTypeEnum.COMMENT_DELETE, id, commentSummary(target.getContent()),
+                "连带删除回复 " + Math.max(rows - 1, 0) + " 条（共 " + rows + " 条）；所属帖子 ID：" + postId);
         return rows;
     }
 
     // ==================== 私有工具 ====================
+
+    /**
+     * 关闭被删评论上的待处理举报
+     *
+     * 只动仍处于「待处理」的记录：已受理/已驳回的举报保留原结论，不能被这次删除改写。
+     * 审计列显式写——Wrapper 更新不触发填充器。
+     *
+     * @param targetIds 被删评论 ID（含被连带删除的回复）
+     * @param operatorId 操作人
+     */
+    private void closePendingReports(List<Long> targetIds, long operatorId) {
+        if (targetIds == null || targetIds.isEmpty()) {
+            return;
+        }
+        LocalDateTime now = LocalDateTime.now();
+        studioPostReportMapper.update(null, new LambdaUpdateWrapper<StudioPostReport>()
+                .eq(StudioPostReport::getTargetType, ReportTargetTypeEnum.COMMENT.getValue())
+                .in(StudioPostReport::getTargetId, targetIds)
+                .eq(StudioPostReport::getStatus, ReportStatusEnum.PENDING.getValue())
+                .set(StudioPostReport::getStatus, ReportStatusEnum.RESOLVED.getValue())
+                .set(StudioPostReport::getHandleBy, operatorId)
+                .set(StudioPostReport::getHandleAt, now)
+                .set(StudioPostReport::getHandleResult, "内容已被删除")
+                .set(StudioPostReport::getUpdatedBy, operatorId)
+                .set(StudioPostReport::getUpdatedAt, now));
+    }
+
+    /**
+     * 评论正文摘要（只用于日志的 target_title）
+     *
+     * 评论没有标题列，留一个雪花 ID 等于让人事后去翻墓碑；但也不能把全文搬进日志：
+     * 换行会撑开表格，整段内容还会扩大日志的隐私面。60 字是「能认出是哪句」的折中。
+     *
+     * @param content 评论正文
+     * @return 单行摘要，不会返回 null
+     */
+    private String commentSummary(String content) {
+        if (StrUtil.isBlank(content)) {
+            return "（空评论）";
+        }
+        String flat = content.replaceAll("\\s+", " ").trim();
+        return flat.length() <= 60 ? flat : flat.substring(0, 60) + "…";
+    }
 
     /**
      * 取下一个楼层号：当前帖子最大楼层 + 1（只给顶层评论用）

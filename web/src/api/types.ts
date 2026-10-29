@@ -418,6 +418,11 @@ export interface AttendanceBoardItem {
     checkInAt?: string | null;
     // 今日是否已打卡
     checkedIn?: boolean | null;
+    // 下次可签到时刻（东八区）；null 表示当前不受防抖限制
+    //
+    // 由后端按「当天最后一次签到 + 配置间隔」算好，前端不要自己拿 checkInAt 加 60 秒：
+    // 间隔是配置项，写死会在运维调整后与后端判断不一致
+    nextCheckInAt?: string | null;
     // 本月打卡次数（自然月内的签到条数）
     monthCount?: number | null;
     // 今日是否内网签到
@@ -619,4 +624,63 @@ export interface QuizImportResult {
     imported: number;
     dryRun: boolean;
     errors: QuizImportError[];
+}
+
+/**
+ * 管理端操作日志（后端 OperationLogVO）
+ *
+ * 账号 / 昵称 / 对象标题都是写入时的**快照**：账号被删、帖子被删之后，
+ * 这条记录仍然是可读证据，因此前端不要拿它去关联查询真实用户。
+ */
+export interface OperationLog {
+    id: string;
+    operatorId: string;
+    // 操作人账号快照（可能为空串：账号已被物理删除）
+    operatorAccount: string;
+    operatorName?: string | null;
+    // 动作码（与后端 OperationTypeEnum 一致，仅用于分支判断，展示一律用 actionLabel）
+    action: string;
+    actionLabel: string;
+    targetType: string;
+    targetTypeLabel: string;
+    // 章节 / 教材 / 批量导入等动作没有单一对象 ID
+    targetId?: string | null;
+    targetTitle?: string | null;
+    detail?: string | null;
+    ip?: string | null;
+    createdAt: string;
+}
+
+/** 操作动作字典项（后端 OperationActionOptionVO，下拉与标签共用） */
+export interface OperationActionOption {
+    code: string;
+    label: string;
+    targetType: string;
+    targetTypeLabel: string;
+}
+
+/**
+ * 管理端举报记录（后端 ReportVO）
+ *
+ * targetTitle 是读取时从业务表取的展示标题（帖子标题 / 评论摘要），内容被删后为 null，
+ * 前端要兜底成「内容已删除」，不能因为标题为空就整行不显示。
+ */
+export interface ReportTicket {
+    id: string;
+    // post / comment
+    targetType: string;
+    targetTypeLabel: string;
+    targetId: string;
+    targetTitle?: string | null;
+    reporterId: string;
+    reporterName?: string | null;
+    reason: string;
+    // 0-待处理 / 1-已处置 / 2-举报不成立
+    status: number;
+    statusLabel: string;
+    handleBy?: string | null;
+    handlerName?: string | null;
+    handleAt?: string | null;
+    handleResult?: string | null;
+    createdAt: string;
 }

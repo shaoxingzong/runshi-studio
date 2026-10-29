@@ -1,14 +1,19 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { adminApi } from '@/api/admin';
 import { relationApi } from '@/api/relation';
 import ErrorRetry from '@/components/ErrorRetry.vue';
 import ImageUploader from '@/components/ImageUploader.vue';
+import { REMOTE_OPTION_LIMIT, useRemoteOptions } from '@/composables/useRemoteOptions';
 import type { AdminMember, AdminProject, Member, PageResult } from '@/api/types';
 
 /** 项目管理：正文（Markdown）与技术栈是知识库的数据源，改完记得同步 */
 const page = reactive({ current: 1, pageSize: 10 });
+
+/** 筛选条件：空串表示不限；后端 ProjectQueryRequest 的 title / status 早就支持，只是界面没接 */
+const filters = reactive<{ title: string; status: '' | 0 | 1 | 2 }>({ title: '', status: '' });
+
 const result = ref<PageResult<AdminProject> | null>(null);
 const loading = ref(false);
 /** 列表加载失败的原因（空 = 正常）。失败时给原因 + 重试，而不是留一张空白表格 */
@@ -35,8 +40,27 @@ const STATUS_TEXT: Record<string, string> = { 0: '研发中', 1: '已上线', 2:
 
 /** 已绑定的参与成员（含队长） */
 const projectMembers = ref<AdminMember[]>([]);
-/** 候选成员：来自后台成员分页；成员量级很小，一次取 100 条足够 */
-const memberOptions = ref<Member[]>([]);
+/**
+ * 候选成员（远程搜索）
+ *
+ * 后端分页上限是 50，原先写 pageSize: 100 只会被静默截断——第 51 位成员永远选不到，
+ * 界面还没有任何提示。这里改成「先取前 50，再按姓名搜」，并在被截断时明确告知。
+ */
+const {
+    options: memberOptions,
+    total: memberTotal,
+    truncated: memberTruncated,
+    loading: memberSearching,
+    load: loadMemberOptions,
+    search: searchMemberOptions,
+    dispose: disposeMemberSearch,
+} = useRemoteOptions<Member>((keyword) =>
+    adminApi.memberPage({
+        current: 1,
+        pageSize: REMOTE_OPTION_LIMIT,
+        // 空串不下发：传空串等于给后端一个「查空姓名」的歧义
+        name: keyword || undefined,
+    }));
 const memberLoading = ref(false);
 const pickedMember = ref('');
 
@@ -48,16 +72,6 @@ const pickedMember = ref('');
  */
 function isLeader(memberId: string): boolean {
     return String(form.leaderId ?? '') === memberId;
-}
-
-/** 只加载候选成员：新增项目时还没有项目 ID，但队长下拉同样需要候选列表 */
-async function loadMemberOptions() {
-    try {
-        const options = await adminApi.memberPage({ current: 1, pageSize: 100 });
-        memberOptions.value = options.records ?? [];
-    } catch {
-        memberOptions.value = [];
-    }
 }
 
 async function loadMembers(projectId: string) {
@@ -107,7 +121,11 @@ async function load() {
     loading.value = true;
     error.value = '';
     try {
-        result.value = await adminApi.projectPage({ ...page });
+        result.value = await adminApi.projectPage({
+            ...page,
+            title: filters.title.trim() || undefined,
+            status: filters.status === '' ? undefined : filters.status,
+        });
     } catch (e) {
         error.value = (e as Error).message || '加载失败';
     } finally {
@@ -208,6 +226,18 @@ async function remove(row: AdminProject) {
     }
 }
 
+/** 换条件回第一页：否则可能停在已不存在的页码上，看到空列表还以为没数据 */
+function query() {
+    page.current = 1;
+    load();
+}
+
+function reset() {
+    filters.title = '';
+    filters.status = '';
+    query();
+}
+
 function turn(delta: number) {
     const next = page.current + delta;
     const pages = result.value ? Number(result.value.pages) : 1;
@@ -219,6 +249,8 @@ function turn(delta: number) {
 }
 
 onMounted(load);
+
+onBeforeUnmount(disposeMemberSearch);
 </script>
 
 <template>
@@ -228,6 +260,26 @@ onMounted(load);
             <h2>项目管理</h2>
             <span class="spacer" />
             <el-button type="primary" @click="openCreate">新增项目</el-button>
+        </div>
+
+        <div class="filters">
+            <el-input
+                v-model="filters.title"
+                class="filter"
+                placeholder="项目名称"
+                clearable
+                maxlength="64"
+                @keyup.enter="query"
+            />
+            <el-select v-model="filters.status" class="filter" placeholder="全部状态" clearable>
+                <el-option label="研发中" :value="0" />
+                <el-option label="已上线" :value="1" />
+                <el-option label="已结题" :value="2" />
+            </el-select>
+            <div class="ops">
+                <el-button type="primary" @click="query">查询</el-button>
+                <el-button @click="reset">重置</el-button>
+            </div>
         </div>
 
         <el-table v-loading="loading" :data="result?.records ?? []" border>
@@ -295,7 +347,16 @@ onMounted(load);
                 <el-form-item label="项目名称" required><el-input v-model="form.title as string" /></el-form-item>
                 <el-form-item label="摘要" required><el-input v-model="form.description as string" /></el-form-item>
                 <el-form-item label="队长" required>
-                    <el-select v-model="form.leaderId as string" placeholder="选择队长（成员）" filterable class="full">
+                    <!-- 远程搜索：后端单页上限 50，成员多时靠关键词定位，不能只靠第一页 -->
+                    <el-select
+                        v-model="form.leaderId as string"
+                        placeholder="选择队长（成员）"
+                        filterable
+                        remote
+                        :remote-method="searchMemberOptions"
+                        :loading="memberSearching"
+                        class="full"
+                    >
                         <el-option
                             v-for="option in memberOptions"
                             :key="option.id"
@@ -303,6 +364,9 @@ onMounted(load);
                             :value="option.id"
                         />
                     </el-select>
+                    <div v-if="memberTruncated" class="hint">
+                        共 {{ memberTotal }} 位成员，当前只显示前 {{ memberOptions.length }} 位，可输入姓名搜索
+                    </div>
                     <div class="hint">队长会同时写入参与成员列表，且不可从成员中移除。</div>
                 </el-form-item>
                 <el-form-item label="正文（Markdown，知识库数据源）">
@@ -349,8 +413,11 @@ onMounted(load);
                         <div class="member-add">
                             <el-select
                                 v-model="pickedMember"
-                                placeholder="选择要添加的成员"
+                                placeholder="选择要添加的成员（可输入姓名搜索）"
                                 filterable
+                                remote
+                                :remote-method="searchMemberOptions"
+                                :loading="memberSearching"
                                 class="member-select"
                             >
                                 <el-option
@@ -384,6 +451,28 @@ onMounted(load);
 </template>
 
 <style scoped>
+.filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    padding: 14px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.filter {
+    width: 200px;
+}
+
+.ops {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+}
+
 .bar {
     display: flex;
     align-items: center;

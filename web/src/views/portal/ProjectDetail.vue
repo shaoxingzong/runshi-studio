@@ -1,17 +1,15 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import DOMPurify from 'dompurify';
 import { portalApi } from '@/api/portal';
 import { usePageMeta } from '@/composables/usePageMeta';
 import ErrorRetry from '@/components/ErrorRetry.vue';
 import SmartImage from '@/components/SmartImage.vue';
 import {
     bindCodeCopy,
-    MARKDOWN_ALLOWED_ATTR,
-    MARKDOWN_ALLOWED_TAGS,
     observeTocHighlight,
     renderMarkdown,
+    sanitizeMarkdownHtml,
     scrollToHeading,
     TOC_MIN_ITEMS,
 } from '@/utils/markdown';
@@ -52,12 +50,9 @@ const bodyRef = ref<HTMLElement | null>(null);
  */
 const rendered = computed(() => {
     const result = renderMarkdown(detail.value?.content ?? '');
-    // 白名单与工具同源（MARKDOWN_ALLOWED_*）：项目页无额外的 img 限制（管理员录入，
-    // 可信度高于成员帖子），帖子页的那一套更严，两边差异只在钩子不在名单
-    result.html = DOMPurify.sanitize(result.html, {
-        ALLOWED_TAGS: MARKDOWN_ALLOWED_TAGS,
-        ALLOWED_ATTR: MARKDOWN_ALLOWED_ATTR,
-    }) as string;
+    // 项目正文由管理员录入，可信度高于成员帖子：不限制图片外链。
+    // 清洗仍不可省——账号被盗、越权写入都会让正文变成不可信来源
+    result.html = sanitizeMarkdownHtml(result.html);
     return result;
 });
 

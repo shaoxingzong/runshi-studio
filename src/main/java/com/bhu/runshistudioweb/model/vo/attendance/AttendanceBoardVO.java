@@ -39,6 +39,18 @@ public class AttendanceBoardVO implements Serializable {
     private Boolean checkedIn;
 
     /**
+     * 下次可签到时刻（东八区）
+     *
+     * 由「当天最后一次签到时刻 + 配置的最小间隔」算出，为 null 表示当前不受限（未签到或不启用防抖）。
+     * 为什么由后端算而不是前端拿 checkInAt + 固定 60 秒：间隔是配置项，前端写死会在运维改了
+     * studio.attendance.min-interval-seconds 之后与后端判断不一致，表现为「按钮能点但必然报错」。
+     *
+     * 注意与 checkInAt 的口径差异：checkInAt 是当天**最早**一次（用于展示「几点到的」），
+     * 本字段要基于**最晚**一次（防抖只看最近一次），两者不能混用。
+     */
+    private LocalDateTime nextCheckInAt;
+
+    /**
      * 本月打卡次数（自然月内的签到记录条数）
      *
      * 注意语义：同一天多次签到会分别计数。这与考勤惯例略有出入，但签到记录就是「到场凭证」，

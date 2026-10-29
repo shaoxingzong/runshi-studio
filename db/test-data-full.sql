@@ -17,16 +17,21 @@
 -- ============================================================================================================
 -- 一、本脚本创建了哪些账号（README 级速查）
 -- ============================================================================================================
---   管理员：shaoshing / shaoshing666      （角色 admin，同时绑定成员档案「邵兴」，可发帖/签到）
---   成员：  chenyu / 12345678             （陈宇，tech_lead）
---           linxia / 12345678             （林夏，tech_lead）
---           zhaoyang / 12345678           （赵阳，member）
---           wangmeng / 12345678           （王蒙，member）
---           liuqing / 12345678            （刘青，member）
---           sunhao / 12345678             （孙浩，member）
---           alumnus / 12345678            （李然，已毕业成员，member_status=1）
---   普通用户：tangke / zhouran / xuyi / 12345678（无成员档案，只能浏览、评论、点赞、刷题）
---   封禁用户：banned01 / 12345678         （user_status=1，用于验证登录封禁提示）
+--   管理员：shaoshing   （角色 admin，同时绑定成员档案「邵兴」，可发帖/签到）
+--   成员：  chenyu      （陈宇，tech_lead）
+--           linxia      （林夏，tech_lead）
+--           zhaoyang    （赵阳，member）
+--           wangmeng    （王蒙，member）
+--           liuqing     （刘青，member）
+--           sunhao      （孙浩，member）
+--           alumnus     （李然，已毕业成员，member_status=1）
+--   普通用户：tangke / zhouran / xuyi（无成员档案，只能浏览、评论、点赞、刷题）
+--   封禁用户：banned01    （user_status=1，用于验证登录封禁提示）
+--
+-- ⚠️ 本文件不提供任何口令明文，也没有「默认密码」。
+--   这些账号共用一条早期演示哈希（见第六节），其明文曾提交进本仓库，等价于**已经泄露**：
+--   导入后必须立刻重置口令、或删除不用的账号，否则禁止用于任何可公网访问的环境。
+--   处置流程见 DEPLOY.md「口令轮换清单」——改密是唯一有效动作，删掉本行文字并不能让历史提交消失。
 --
 -- 密码哈希由项目同款 Hutool BCrypt 生成（$2a$10$...，60 位），可直接被 PasswordUtils.matches 校验。
 --
@@ -132,10 +137,13 @@ SET @img_post_3 = 'https://trae-api-cn.mchost.guru/api/ide/v1/text_to_image?prom
 -- ============================================================================================================
 -- 六、系统用户（sys_user）
 -- ============================================================================================================
--- 密码说明：
---   shaoshing666 的 BCrypt 哈希 → $2a$10$g2HpUL8CuX.jPJe4PgFyfOTVsxm4BgmI/EmZz/G3oiAgvOV4nBBxy
---   12345678     的 BCrypt 哈希 → $2a$10$fKLCGSgrGpQDyhfCSWUPjuFhVYPDh2uMJmZmvJj6MShIHZEWm6O7O
--- BCrypt 每次加盐结果不同，但同一条哈希可以校验同一个明文，因此普通账号共用一个哈希即可。
+-- 口令说明（刻意不写明文）：
+--   1) 下面的哈希来自早期演示数据，对应明文曾提交进本仓库，应当视为已经泄露；
+--      明文不再出现在当前文件里，但**历史提交仍可翻到**，所以唯一有效的处置是导入后立即改密
+--      （后台「用户管理 → 重置密码」，或按 DEPLOY.md「口令轮换清单」操作）。
+--   2) BCrypt 每次加盐结果不同，但同一条哈希可以校验同一个明文，因此普通账号共用一个哈希即可；
+--      这也意味着只重置管理员是不够的——共用同一条哈希的账号等于同一把钥匙。
+--   3) 生产库不要执行本文件：它会把演示账号写进真实库。
 INSERT INTO `sys_user`
 (`id`, `user_account`, `user_password`, `user_name`, `user_avatar`, `user_role`, `user_status`, `phone`, `email`, `ai_query_count`, `created_at`, `updated_at`, `created_by`, `updated_by`, `deleted_at`)
 VALUES
