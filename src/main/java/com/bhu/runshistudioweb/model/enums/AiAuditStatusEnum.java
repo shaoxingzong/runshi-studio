@@ -3,11 +3,6 @@ package com.bhu.runshistudioweb.model.enums;
 /**
  * AI 内容审核结论（studio_post.ai_audit_status / studio_post_comment.ai_audit_status）
  *
- * 与 AuditStatusEnum 是两列，不能互相替代：那一列是内容此刻的结果，
- * 这一列是「结果由机器判的、判得有多确定」——否则审计时说不清「这条是机器放的、没人看过」。
- *
- * 坑：「未判（0）」与「判定失败（4）」必须分开，合成一个就分不清「还在排队」与「AI 挂了」。
- *
  * @author shaoshing
  */
 public enum AiAuditStatusEnum {
@@ -51,25 +46,22 @@ public enum AiAuditStatusEnum {
     /**
      * 把数字翻译成审核结论，查不到返回 null，由调用方决定报错还是降级
      *
-     * 写路径须判空报错（否则非法值静默入库），读路径可降级成「未知」；
-     * 遍历而非 switch：新增结论不必改这里；null 必须先挡，否则拆箱比较会 NPE。
-     *
      * @param value 待翻译的取值，允许为 null
      * @return 命中的枚举；null 或不在 0~4 时返回 null
      */
     public static AiAuditStatusEnum of(Integer value) {
-        // ① 先挡 null：不判空就拆箱比较会 NPE，而 null 在这里是完全正常的输入
+        // 先挡 null：不判空就拆箱比较会 NPE，而 null 在这里是完全正常的输入
         if (value == null) {
             return null;
         }
-        // ② 遍历全部常量：新增结论时这里不用改，常量列表自己会变长
+        // 遍历全部常量：新增结论时这里不用改，常量列表自己会变长
         for (AiAuditStatusEnum status : values()) {
             // 左边 int、右边 Integer，比较的是数值而不是对象引用
             if (status.value == value) {
                 return status;
             }
         }
-        // ③ 查不到返回 null：报错还是降级，由调用方按场景决定
+        // 查不到返回 null：报错还是降级，由调用方按场景决定
         return null;
     }
 
@@ -83,11 +75,11 @@ public enum AiAuditStatusEnum {
     public static String valuesText() {
         StringBuilder text = new StringBuilder();
         for (AiAuditStatusEnum status : values()) {
-            // ① 只有已经拼过内容才补分隔符：末尾不会多出一个「 / 」
+            // 只有已经拼过内容才补分隔符：末尾不会多出一个「 / 」
             if (text.length() > 0) {
                 text.append(" / ");
             }
-            // ② 值 + 中文描述一起拼：数字单独看没有语义
+            // 值 + 中文描述一起拼：数字单独看没有语义
             text.append(status.value).append("（").append(status.desc).append("）");
         }
         return text.toString();

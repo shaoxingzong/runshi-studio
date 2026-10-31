@@ -16,9 +16,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 选题器验收测试（纯单测：不启 Spring、不连数据库）
  *
- * 三种模式的边界全部在这里覆盖：刷完、题量不足、随机不重复、随机可复现。
- * 这些是「用户能不能顺利刷完一轮」的直接决定因素，比 CRUD 更值得写测试。
- *
  * @author shaoshing
  */
 class QuizQuestionSamplerTest {
@@ -31,7 +28,7 @@ class QuizQuestionSamplerTest {
         return list;
     }
 
-    // ==================== takeOrdered ====================
+    // takeOrdered
 
     @Test
     @DisplayName("顺序取前 N 个：保持候选原顺序，不重排")
@@ -45,8 +42,6 @@ class QuizQuestionSamplerTest {
     @Test
     @DisplayName("题量不足：按实际数量返回，不补题、不报错")
     void takeOrderedFewerThanSize() {
-        // 「本章只剩 3 题」是正常状态。补题会把别的章节的题混进来（用户以为串章了），
-        // 报错则会让用户以为系统坏了
         assertEquals(ids(7, 8), QuizQuestionSampler.takeOrdered(ids(7, 8), 20));
     }
 
@@ -59,7 +54,7 @@ class QuizQuestionSamplerTest {
         assertTrue(QuizQuestionSampler.takeOrdered(ids(1, 2), -5).isEmpty());
     }
 
-    // ==================== takeRandom ====================
+    // takeRandom
 
     @Test
     @DisplayName("随机取题：数量正确且一轮内不重复")
@@ -104,7 +99,7 @@ class QuizQuestionSamplerTest {
         assertEquals(snapshot, candidates, "调用方的候选列表被就地洗牌了");
     }
 
-    // ==================== excludeAnswered ====================
+    // excludeAnswered
 
     @Test
     @DisplayName("排除已作答：保留原顺序")
@@ -133,7 +128,7 @@ class QuizQuestionSamplerTest {
         assertTrue(QuizQuestionSampler.excludeAnswered(List.of(), ids(1)).isEmpty());
     }
 
-    // ==================== resolveSize ====================
+    // resolveSize
 
     @Test
     @DisplayName("题量收敛：不传用默认值，超限收敛到上限，非法值用默认值")
@@ -149,8 +144,6 @@ class QuizQuestionSamplerTest {
     @Test
     @DisplayName("题量收敛：默认值本身超过上限时也要被收敛")
     void resolveSizeDefaultAboveMax() {
-        // 防御性用例：如果运维把 default-size 配成 200、max-size 配成 50，
-        // 不收敛就会绕过上限
         assertEquals(50, QuizQuestionSampler.resolveSize(null, 200, 50));
     }
 

@@ -3,9 +3,6 @@ package com.bhu.runshistudioweb.model.enums;
 /**
  * 刷题模式（不落库，对应前端的三张模式卡）
  *
- * 批次只在 studio_quiz_answer.batch_id 上留痕，模式由前端持有，
- * 本枚举只服务「开批时决定选题策略」，没有对应的 DDL 列。
- *
  * 三种模式的候选池必须不重叠，否则用户会在两个入口刷到同一批题。
  *
  * @author shaoshing
@@ -45,25 +42,22 @@ public enum QuizModeEnum {
     /**
      * 把前端传来的模式值翻译成枚举，查不到返回 null
      *
-     * 传非法值绝不能默默按顺序刷题处理：用户以为选了错题重刷，实际拿到一整章新题。
-     * 比对必须认显式 value，不能用 ordinal（调整常量顺序会悄悄改变数字含义）。
-     *
      * @param value 前端传来的模式值，允许为 null
      * @return 命中的枚举；null 或不是 0 / 1 / 2 时返回 null
      */
     public static QuizModeEnum of(Integer value) {
-        // ① 先挡 null：不判空就拆箱比较会 NPE，而 null 在这里是正常输入
+        // 先挡 null：不判空就拆箱比较会 NPE，而 null 在这里是正常输入
         if (value == null) {
             return null;
         }
-        // ② 遍历全部常量：按声明的 value 比对，不用 ordinal
+        // 遍历全部常量：按声明的 value 比对，不用 ordinal
         for (QuizModeEnum mode : values()) {
             // 左边 int、右边 Integer，比较的是数值而非对象引用
             if (mode.value == value) {
                 return mode;
             }
         }
-        // ③ 查不到返回 null：开批接口据此报「模式取值非法」
+        // 查不到返回 null：开批接口据此报「模式取值非法」
         return null;
     }
 
@@ -77,11 +71,11 @@ public enum QuizModeEnum {
     public static String valuesText() {
         StringBuilder text = new StringBuilder();
         for (QuizModeEnum mode : values()) {
-            // ① 只有已经拼过内容才补分隔符：末尾不会多出一个「 / 」
+            // 只有已经拼过内容才补分隔符：末尾不会多出一个「 / 」
             if (text.length() > 0) {
                 text.append(" / ");
             }
-            // ② 值 + 中文描述一起拼：数字本身没有语义
+            // 值 + 中文描述一起拼：数字本身没有语义
             text.append(mode.value).append("（").append(mode.desc).append("）");
         }
         return text.toString();

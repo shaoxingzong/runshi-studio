@@ -49,15 +49,6 @@ import java.util.Set;
 /**
  * 内容举报服务实现
  *
- * 三条贯穿全类的约束：
- * ① **只举报可见内容**：待审/已驳回对外不可见，允许举报等于泄露其存在性；
- * ② **处置与内容变更同事务**：撤下/删除失败时举报状态不能先变成「已处置」；
- * ③ **处置必须能追溯到人**：写 handle_by / handle_at / handle_result，并进操作日志。
- *
- * 处置动作三分为 resolve（撤下）/ delete（删除）/ dismiss（不成立）：
- * 「撤下」保留作者的申诉与复盘线索（状态变已驳回、理由可见），「删除」不可恢复——
- * 合成一个动作会让管理员无从选择，也会让审计记录读不出实际发生了什么。
- *
  * @author shaoshing
  */
 @Slf4j
@@ -97,17 +88,9 @@ public class ReportServiceImpl extends ServiceImpl<StudioPostReportMapper, Studi
 
     private final OperationLogService operationLogService;
 
-    // ==================== 用户端：提交 ====================
+    // 用户端：提交
 
-    /**
-     * 提交举报
-     *
-     * 重复举报靠 uk_target_reporter 拦：先查一次会与并发请求互相看不见，
-     * 唯一键才是最终防线；撞键转成「你已举报过」而不是 B0001。
-     *
-     * @param request 举报请求
-     * @return 新举报 ID
-     */
+    /** 提交举报 */
     @Override
     public long submit(ReportAddRequest request) {
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
@@ -140,14 +123,7 @@ public class ReportServiceImpl extends ServiceImpl<StudioPostReportMapper, Studi
         return report.getId();
     }
 
-    /**
-     * 校验目标存在且已通过
-     *
-     * 帖子与评论分别查各自的表：targetType 决定去哪张表，猜错类型会查到同 ID 的无关内容。
-     *
-     * @param targetType 目标类型
-     * @param targetId 目标 ID
-     */
+    /** 校验目标存在且已通过 */
     private void assertReportable(ReportTargetTypeEnum targetType, long targetId) {
         boolean visible = switch (targetType) {
             case POST -> {
@@ -163,17 +139,9 @@ public class ReportServiceImpl extends ServiceImpl<StudioPostReportMapper, Studi
         ThrowUtils.throwIf(!visible, ErrorCode.NOT_FOUND_ERROR, "内容不存在或已下线");
     }
 
-    // ==================== 管理端：查询与处置 ====================
+    // 管理端：查询与处置
 
-    /**
-     * 举报分页（默认待处理，时间倒序）
-     *
-     * 目标标题不落库、读取时批量补：改名或删除后，列表要展示「现在」的样子，
-     * 而不是举报那一刻的快照——管理员需要判断的是当前内容。
-     *
-     * @param request 状态 / 目标类型 / 分页
-     * @return 分页结果
-     */
+    /** 举报分页（默认待处理，时间倒序） */
     @Override
     public Page<ReportVO> listByPage(ReportQueryRequest request) {
         ReportQueryRequest query = request == null ? new ReportQueryRequest() : request;
@@ -203,15 +171,7 @@ public class ReportServiceImpl extends ServiceImpl<StudioPostReportMapper, Studi
         return voPage;
     }
 
-    /**
-     * 处置一条举报
-     *
-     * 状态更新放在「内容变更」之前，但整个方法在同一事务里：
-     * 内容操作失败会连举报状态一起回滚，不会出现「举报已关闭、内容还在」。
-     * 更新条件带 status = 待处理，避免两个管理员同时点处置时互相覆盖。
-     *
-     * @param request 举报 id / 动作 / 说明
-     */
+    /** 处置一条举报 */
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void handle(ReportHandleRequest request) {
@@ -228,8 +188,6 @@ public class ReportServiceImpl extends ServiceImpl<StudioPostReportMapper, Studi
         ThrowUtils.throwIf(targetType == null, ErrorCode.PARAMS_ERROR, "举报目标类型异常，无法处置");
 
         String action = StrUtil.trim(request.getAction());
-        // @NotBlank 只覆盖 Web 入口；Service 也可能被测试或其它入口直接调用，
-        // null 会让下面的 switch 抛 NPE（变成 B0001），这里先转成可读的参数错误
         ThrowUtils.throwIf(StrUtil.isBlank(action), ErrorCode.PARAMS_ERROR, "处置动作不能为空");
         TargetInfo target = loadTargetInfo(targetType, report.getTargetId());
         String handleResult = StrUtil.trimToNull(request.getHandleResult());
@@ -247,12 +205,7 @@ public class ReportServiceImpl extends ServiceImpl<StudioPostReportMapper, Studi
                 resolved = true;
                 logAction = OperationTypeEnum.REPORT_DELETE;
                 handleResult = StrUtil.blankToDefault(handleResult, "举报成立，内容已删除");
-                // 先落举报状态再删内容：删除链路会顺带关闭该内容的待处理举报，
-                // 若反过来，本条举报已经被它批量关掉，这里的条件更新会失效
                 updateReportStatus(report.getId(), ReportStatusEnum.RESOLVED, operatorId, handleResult);
-                // 只对「仍公开」的内容调用删除：同一内容可能被多个人举报，
-                // 第一个管理员已把它撤下/作者已删时，再调删除接口会抛「只能删除已通过的评论」，
-                // 整笔事务回滚，管理员看到的是一个与举报无关的报错
                 if (Objects.equals(target.status(), AuditStatusEnum.APPROVED.getValue())) {
                     deleteTarget(targetType, report.getTargetId());
                 } else {
@@ -282,17 +235,7 @@ public class ReportServiceImpl extends ServiceImpl<StudioPostReportMapper, Studi
         log.info("管理员处置举报 | reportId={} | action={} | operatorId={}", report.getId(), action, operatorId);
     }
 
-    /**
-     * 撤下内容：帖子/评论转为「已驳回」并写入理由
-     *
-     * 只更新「已通过」的行：已被作者删除或已被其他管理员撤下的内容不重复处理。
-     * Wrapper 更新不触发审计填充器，updated_by / updated_at 必须显式写。
-     *
-     * @param targetType 目标类型
-     * @param target 目标信息（含所属帖子 ID，评论撤下要回退评论数）
-     * @param operatorId 操作人
-     * @param reason 驳回理由（作者在「我的发帖」里能看到）
-     */
+    /** 撤下内容：帖子/评论转为「已驳回」并写入理由 */
     private void takeDown(ReportTargetTypeEnum targetType, TargetInfo target, long operatorId, String reason) {
         LocalDateTime now = LocalDateTime.now();
         if (targetType == ReportTargetTypeEnum.POST) {
@@ -317,7 +260,6 @@ public class ReportServiceImpl extends ServiceImpl<StudioPostReportMapper, Studi
                 .set(StudioPostComment::getAuditAt, now)
                 .set(StudioPostComment::getUpdatedBy, operatorId)
                 .set(StudioPostComment::getUpdatedAt, now));
-        // 评论从公开列表消失，帖子评论数必须同步回退，否则「显示 3 条点开只有 2 条」
         if (rows > 0 && target.postId() != null) {
             studioPostMapper.update(null, new LambdaUpdateWrapper<StudioPost>()
                     .eq(StudioPost::getId, target.postId())
@@ -325,15 +267,7 @@ public class ReportServiceImpl extends ServiceImpl<StudioPostReportMapper, Studi
         }
     }
 
-    /**
-     * 删除内容：复用现有级联删除
-     *
-     * 不自己写删除语句：删帖要连带评论与点赞、删评论要连带回复并回退评论数，
-     * 这些规则只应有一份实现（PostService / PostCommentService）。
-     *
-     * @param targetType 目标类型
-     * @param targetId 目标 ID
-     */
+    /** 删除内容：复用现有级联删除 */
     private void deleteTarget(ReportTargetTypeEnum targetType, long targetId) {
         if (targetType == ReportTargetTypeEnum.POST) {
             postService.deletePost(targetId);
@@ -342,14 +276,7 @@ public class ReportServiceImpl extends ServiceImpl<StudioPostReportMapper, Studi
         }
     }
 
-    /**
-     * 条件更新举报状态（只有待处理才更新）
-     *
-     * @param reportId 举报 ID
-     * @param status 新状态
-     * @param operatorId 处理人
-     * @param handleResult 处置说明
-     */
+    /** 条件更新举报状态（只有待处理才更新） */
     private void updateReportStatus(long reportId, ReportStatusEnum status, long operatorId, String handleResult) {
         this.update(new LambdaUpdateWrapper<StudioPostReport>()
                 .eq(StudioPostReport::getId, reportId)
@@ -362,17 +289,7 @@ public class ReportServiceImpl extends ServiceImpl<StudioPostReportMapper, Studi
                 .set(StudioPostReport::getUpdatedAt, LocalDateTime.now()));
     }
 
-    /**
-     * 通知举报人
-     *
-     * bizId 用**帖子** ID 而不是举报 ID：前端点击通知应当跳到内容页，
-     * 而不是一个管理员才有权限打开的后台页面。评论举报取其所属帖子。
-     *
-     * @param report 举报记录
-     * @param target 目标信息
-     * @param resolved 举报是否成立
-     * @param handleResult 处置说明
-     */
+    /** 通知举报人 */
     private void notifyReporter(StudioPostReport report, TargetInfo target, boolean resolved, String handleResult) {
         Long bizId = target.postId() != null ? target.postId() : report.getTargetId();
         String title = resolved ? "你的举报已受理" : "你的举报未成立";
@@ -385,14 +302,9 @@ public class ReportServiceImpl extends ServiceImpl<StudioPostReportMapper, Studi
                 "POST", bizId, title, content + "（处理说明：" + handleResult + "）");
     }
 
-    // ==================== 展示数据装配 ====================
+    // 展示数据装配
 
-    /**
-     * 实体分页转 VO（批量补目标标题与举报人昵称，避免 N+1）
-     *
-     * @param reports 当前页举报
-     * @return VO 列表
-     */
+    /** 实体分页转 VO（批量补目标标题与举报人昵称，避免 N+1） */
     private List<ReportVO> toVOs(List<StudioPostReport> reports) {
         if (reports == null || reports.isEmpty()) {
             return List.of();
@@ -461,13 +373,7 @@ public class ReportServiceImpl extends ServiceImpl<StudioPostReportMapper, Studi
         return records;
     }
 
-    /**
-     * 读取目标信息（标题 + 所属帖子 ID）
-     *
-     * @param targetType 目标类型
-     * @param targetId 目标 ID
-     * @return 目标信息；内容已删除时 exists=false、title 为 null
-     */
+    /** 读取目标信息（标题 + 所属帖子 ID） */
     private TargetInfo loadTargetInfo(ReportTargetTypeEnum targetType, long targetId) {
         if (targetType == ReportTargetTypeEnum.POST) {
             StudioPost post = studioPostMapper.selectById(targetId);
@@ -480,12 +386,7 @@ public class ReportServiceImpl extends ServiceImpl<StudioPostReportMapper, Studi
                 comment == null ? null : comment.getStatus());
     }
 
-    /**
-     * 评论正文摘要（列表展示用）
-     *
-     * @param content 评论正文
-     * @return 单行摘要，不会为 null
-     */
+    /** 评论正文摘要（列表展示用） */
     private String summarize(String content) {
         if (StrUtil.isBlank(content)) {
             return "（空评论）";
@@ -496,14 +397,7 @@ public class ReportServiceImpl extends ServiceImpl<StudioPostReportMapper, Studi
                 : flat.substring(0, COMMENT_SUMMARY_LENGTH) + "…";
     }
 
-    /**
-     * 举报目标信息
-     *
-     * @param id 目标 ID
-     * @param title 展示标题（帖子标题 / 评论摘要），已删除时为 null
-     * @param postId 所属帖子 ID（帖子目标即自身；评论目标取其所属帖子）
-     * @param status 目标当前审核状态；已删除时为 null（用于判断是否还需要撤下/删除）
-     */
+    /** 举报目标信息 */
     private record TargetInfo(long id, String title, Long postId, Integer status) {
     }
 }

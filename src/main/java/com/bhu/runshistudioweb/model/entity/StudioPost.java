@@ -14,14 +14,6 @@ import java.time.LocalDateTime;
 /**
  * 帖子实体（对应 studio_post）
  *
- * 内容是「标题 + Markdown 正文」，图片内嵌在 content 中，因此没有图片关联表——
- * 关联表 + sort_order 表达不了「图在第几段之后」；列表缩略图另用 coverImage。
- *
- * summary 与 commentCount 是冗余列：现算摘要要逐条剥标记语法，现算评论数就是 N+1；
- * 写入逻辑必须集中在 Service 一处，否则会与正文不一致。
- *
- * 坑：status 默认「待审」而非「已通过」，本模块先审后发，默认放行等于漏审即发布。
- *
  * @author shaoshing
  */
 @Data

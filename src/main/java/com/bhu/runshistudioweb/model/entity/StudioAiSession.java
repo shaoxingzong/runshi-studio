@@ -14,12 +14,6 @@ import java.time.LocalDateTime;
 /**
  * AI 咨询会话实体（对应 studio_ai_session）
  *
- * 一个会话 = 一次打开聊天窗口，下挂若干 StudioAiMessage。
- * userId 可空：NULL 表示游客匿名会话，凭不可枚举的雪花 ID 续聊（知道 ID 即持有凭据）；
- * 非空则只有本人能续聊，越权统一返回 A0402，不暴露「会话是否存在」。
- *
- * updated_at 在每次追加消息时由 Service 刷新，供「最近活跃」排序，免去 join 消息表。
- *
  * @author shaoshing
  */
 @Data
@@ -55,10 +49,7 @@ public class StudioAiSession implements Serializable {
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 
-    /**
-     * 逻辑删除毫秒时间戳（0-未删除，非0-已删除）
-     * 会话不物理删除：它下挂消息，删了会留下孤儿
-     */
+    /** 逻辑删除毫秒时间戳（0-未删除，非0-已删除）会话不物理删除：它下挂消息，删了会留下孤儿 */
     @TableLogic
     private Long deletedAt;
 }

@@ -4,17 +4,13 @@ import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { aiApi, chatStream } from '@/api/ai';
 import { isRequestError } from '@/api/request';
+import SmartImage from '@/components/SmartImage.vue';
 import { useUserStore } from '@/stores/user';
 import type { AiSession, KnowledgeSource } from '@/api/types';
 
 const router = useRouter();
 
-/**
- * AI 助手（SSE 流式）
- *
- * 事件序列（后端契约）：meta → sources → delta* → done / error
- * meta 首次提问带回 sessionId（续聊靠它）；sources 是本次引用的知识库来源（恒发，无命中为空数组）。
- */
+/** AI 助手（SSE 流式） */
 interface Bubble {
     role: 'user' | 'assistant';
     content: string;
@@ -23,16 +19,8 @@ interface Bubble {
 
 const SESSION_KEY = 'ai_session_id';
 
-/**
- * 提问长度上限，必须与后端 AiChatRequest 的 @Size(max = 500) 一致
- *
- * 前端加 maxlength 是为了让用户在输入时就看见边界；发送前还要再判一次——
- * 粘贴、输入法组合、脚本赋值都可能绕过输入框的 maxlength。
- */
+/** 提问长度上限，必须与后端 AiChatRequest 的 @Size(max = 500) 一致 */
 const MESSAGE_MAX_LENGTH = 500;
-
-// 空状态里的示例问题：点击只回填输入框，不直接发送——
-// 用户通常需要先改几个字（比如换成自己关心的项目名），直接发送反而容易造成误触。
 const PROMPTS = ['工作室官网用了哪些技术栈？', '如何加入润石工作室？', '刷题系统的错题本怎么用？'];
 
 const messages = ref<Bubble[]>([]);
@@ -40,12 +28,7 @@ const input = ref('');
 const sessionId = ref(localStorage.getItem(SESSION_KEY) || '');
 const streaming = ref(false);
 
-/**
- * AI 服务是否不可用（输入区上方的持续提示条）
- *
- * 不用全局红色弹窗：token 冻结这类持续性故障下用户会连续提问，每问一次弹一次只是骚扰。
- * 提示条一直挂着，下次成功自动消失。
- */
+/** AI 服务是否不可用（输入区上方的持续提示条） */
 const aiDown = ref(false);
 
 /** 历史会话（接口要求登录，游客侧这一栏不出现） */
@@ -54,16 +37,7 @@ const user = useUserStore();
 const windowRef = ref<HTMLElement | null>(null);
 let controller: AbortController | null = null;
 
-/**
- * 会话 → 消息（含参考来源）的内存缓存
- *
- * 为什么需要：历史接口只返回 role/content，sources 不在响应里（后端未持久化），
- * 于是「切走再切回」就只剩纯文本。按已确认的方案做**前端会话内缓存**：
- * 刷新页面仍会丢，但同一页面内来回切换不再丢来源。
- *
- * 存的是 messages 数组的引用：流式过程中 push 与气泡更新都发生在这个数组上，
- * 不必每收到一个 delta 就重写一次缓存。
- */
+/** 会话 → 消息（含参考来源）的内存缓存 */
 const sessionMessages = new Map<string, Bubble[]>();
 
 /** 把当前会话的消息数组登记进缓存（会话 ID 未知时——首次提问 meta 之前——跳过） */
@@ -79,9 +53,6 @@ const activeSessionTitle = computed(() => {
     return current?.title || (sessionId.value ? '当前会话' : '新的对话');
 });
 
-/** 用户头像首字：账号可能是中文，取第一个字符即可，不做额外昵称接口 */
-const userInitial = computed(() => (user.account || '我').slice(0, 1).toUpperCase());
-
 async function scrollBottom() {
     await nextTick();
     if (windowRef.value) {
@@ -94,8 +65,6 @@ async function send() {
     if (!text || streaming.value) {
         return;
     }
-    // 后端会以 A0401 拒绝超长提问，但那是在一次网络往返之后；
-    // 前端先挡一道，用户不必为「粘贴了一大段」等一次失败
     if (text.length > MESSAGE_MAX_LENGTH) {
         ElMessage.warning(`提问不能超过 ${MESSAGE_MAX_LENGTH} 字，请精简后再发送`);
         return;
@@ -129,33 +98,24 @@ async function send() {
                     void scrollBottom();
                 },
                 onError: (payload) => {
-                    // 会话丢失（被删除 / 服务端数据重置）：本地 id 已失效，
-                    // 丢掉它让下一次提问自动开新会话——否则每次发送都会撞 A0402，
-                    // 用户只能自己去点「新建会话」
                     if (payload.code === 'A0402') {
                         sessionId.value = '';
                         localStorage.removeItem(SESSION_KEY);
                         answer.content = '（会话已失效，已自动开启新对话，请重新提问）';
                         return;
                     }
-                    // 配额用完（A0501）：不能自助恢复，必须管理员重置，
-                    // 所以单独给一句「该找谁」，而不是让他对着「回答失败」发呆
                     if (payload.code === 'A0501') {
                         aiDown.value = true;
                         answer.content =
                             '（提问次数已用完）请联系工作室负责人为你重置次数后继续使用。';
                         return;
                     }
-                    // SSE 的失败契约：error 事件里带业务码与文案（可能是参数错误、
-                    // 配额超限，也可能是 AI 不可用）。统一挂上提示条，让用户知道要重试
                     aiDown.value = true;
                     answer.content = `（回答失败）${payload.message || ''}`;
                 },
             },
             controller.signal,
         );
-        // 走到这里说明整条流正常收尾：清除提示条。
-        // （不能只在 onDelta 里清——回答为空时没有增量，提示会一直挂着）
         aiDown.value = false;
     } catch (e) {
         if ((e as Error).name !== 'AbortError') {
@@ -177,20 +137,13 @@ function stop() {
 }
 
 function newChat() {
-    // 先中止正在生成的回答：否则旧回答会继续往新会话的气泡里追加
-    // （abort 后 send 的 finally 会自行把 streaming 复位，这里不必手动改）
     stop();
     sessionId.value = '';
     localStorage.removeItem(SESSION_KEY);
     messages.value = [];
 }
 
-/**
- * 拉取历史会话
- *
- * 未登录时直接返回而不是发请求：接口要求登录，游客调它会拿到 A0201，
- * 而请求层遇到 A0201 会清掉本地令牌——为一个不该发的请求赔上登录态不划算。
- */
+/** 拉取历史会话 */
 async function loadSessionList() {
     if (!user.isLogin) {
         sessionList.value = [];
@@ -209,8 +162,6 @@ async function switchSession(id: string) {
     if (id === sessionId.value) {
         return;
     }
-    // 切会话前必须中止当前流：旧回答的 onDelta 闭包仍指着上一条气泡对象，
-    // 不中止的话会把旧会话的回答继续写进新会话界面
     stop();
     // 三处必须同时更新：只改内存 ref 的话，刷新页面后会跳回旧会话
     sessionId.value = id;
@@ -260,9 +211,6 @@ async function loadHistory() {
         cacheCurrentMessages();
         void scrollBottom();
     } catch (e) {
-        // 会话不存在（被删除 / 服务端数据重置）：本地存的 id 已经失效。
-        // 静默丢掉它，直接进入空白新对话——否则用户会卡在
-        // 「每次都要先点一次新建会话才能提问」上
         if (isRequestError(e) && e.code === 'A0402') {
             // 会话在服务端已不存在：缓存也一并丢掉，避免切回时还原出一份「幽灵对话」
             sessionMessages.delete(sessionId.value);
@@ -289,8 +237,6 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-    // 离开页面必须中止流：SSE 连接不关会一直占用后端资源，
-    // onDelta 回调也会继续往已经卸载的组件状态里写
     stop();
 });
 </script>
@@ -311,15 +257,13 @@ onBeforeUnmount(() => {
                     </svg>
                 </span>
                 <div class="ai-head-copy">
-                    <p class="eyebrow">AI ASSISTANT</p>
                     <h1>AI 助手</h1>
                     <p class="sub">基于工作室资料回答，命中资料时会在回答下方给出来源。</p>
                 </div>
             </div>
-            <span class="ai-badge"><i class="badge-dot"></i> RAG 知识库</span>
         </header>
 
-        <!-- 未登录：AI 服务需登录后使用（配额规则放在登录后的界面里说，避免游客被用不上的信息干扰） -->
+        <!-- 未登录：AI 服务需登录后使用（配额规则放在登录后的界面里说，避免游客被用不上的信息干扰）-->
         <div v-if="!user.isLogin" class="gate-wrap">
             <div class="gate-card">
                 <span class="gate-icon" aria-hidden="true">
@@ -343,7 +287,7 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-else class="ai-layout">
-            <!-- 历史会话：接口要求登录（此处已在「已登录」分支内） -->
+            <!-- 历史会话：接口要求登录（此处已在「已登录」分支内）-->
             <aside class="sessions">
                 <div class="sessions-head">
                     <div>
@@ -392,10 +336,7 @@ onBeforeUnmount(() => {
             </aside>
 
             <section class="chat-card">
-                <!--
-                  AI 不可用的持续提示条：替代全局红色弹窗。
-                  持续性故障下用户会连续提问，弹窗只会反复骚扰；这条一直挂着，下次成功自动消失
-                -->
+                <!-- AI 不可用的持续提示条：替代全局红色弹窗。持续性故障下用户会连续提问，弹窗只会反复骚扰；这条一直挂着，下次成功自动消失 -->
                 <el-alert
                     v-if="aiDown"
                     type="warning"
@@ -469,10 +410,7 @@ onBeforeUnmount(() => {
 
                             <div class="msg-body">
                                 <div class="bubble">
-                                    <!--
-                                        首个 delta 前显示「思考中」：模型首个 token 通常要等 1~5 秒（检索 + 生成），
-                                        一片空白会让用户以为卡住、反复点发送。sources 通常先到，可顺便告知「已参考 N 条资料」
-                                    -->
+                                    <!-- 首个 delta 前显示「思考中」：模型首个 token 通常要等 1~5 秒（检索 + 生成），一片空白会让用户以为卡住、反复点发送。sources 通常先到，可顺便告知「已参考 N 条资料」 -->
                                     <span
                                         v-if="
                                             item.role === 'assistant' &&
@@ -502,7 +440,11 @@ onBeforeUnmount(() => {
                             </div>
 
                             <span v-if="item.role === 'user'" class="msg-avatar user-avatar" aria-hidden="true">
-                                {{ userInitial }}
+                                <SmartImage
+                                    :src="user.displayAvatar"
+                                    :alt="user.displayName || '我'"
+                                    fallback="avatar"
+                                />
                             </span>
                         </div>
                     </template>
@@ -533,11 +475,8 @@ onBeforeUnmount(() => {
             </section>
         </div>
 
-        <!-- 配额规则只在登录后展示：游客用不上这段信息（门禁已挡在前头）。
-             次数用完后不能自助恢复，必须由管理员重置，所以把「找谁」直接写出来，
-             否则用户只会看到一句「次数已用完」然后无从下手 -->
         <p v-if="user.isLogin" class="quota">
-            普通用户可免费提问 5 次，成员与管理员不限次数；用完后可联系工作室负责人重置。
+            普通用户可免费提问 5 次，用完后可联系工作室负责人重置。
         </p>
     </div>
 </template>
@@ -570,10 +509,10 @@ onBeforeUnmount(() => {
     flex: 0 0 auto;
     width: 48px;
     height: 48px;
-    border-radius: 15px;
+    border-radius: var(--radius-lg);
     background: linear-gradient(135deg, #2563eb, #0ea5e9);
     color: #fff;
-    box-shadow: 0 12px 28px rgb(37 99 235 / 24%);
+    box-shadow: 0 8px 20px rgb(37 99 235 / 20%);
 }
 
 .ai-mark svg {
@@ -583,14 +522,6 @@ onBeforeUnmount(() => {
 
 .ai-head-copy {
     min-width: 0;
-}
-
-.eyebrow {
-    margin: 0 0 2px;
-    color: var(--brand);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.18em;
 }
 
 .ai-head h1 {
@@ -604,28 +535,6 @@ onBeforeUnmount(() => {
     margin: 4px 0 0;
     color: var(--muted);
     font-size: 13px;
-}
-
-.ai-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    flex-shrink: 0;
-    padding: 7px 12px;
-    border: 1px solid rgb(37 99 235 / 14%);
-    border-radius: 999px;
-    background: rgb(37 99 235 / 6%);
-    color: var(--brand);
-    font-size: 12px;
-    font-weight: 600;
-}
-
-.badge-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--brand);
-    box-shadow: 0 0 0 3px rgb(37 99 235 / 12%);
 }
 
 .ai-layout {
@@ -644,7 +553,7 @@ onBeforeUnmount(() => {
     padding: 16px 12px 12px;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 20px;
+    border-radius: var(--radius-xl);
     box-shadow: var(--shadow);
 }
 
@@ -735,7 +644,7 @@ onBeforeUnmount(() => {
     margin-bottom: 4px;
     padding: 9px 10px;
     border: 1px solid transparent;
-    border-radius: 10px;
+    border-radius: var(--radius-sm);
     cursor: pointer;
     transition: background 0.2s ease, border-color 0.2s ease;
 }
@@ -794,7 +703,7 @@ onBeforeUnmount(() => {
     overflow: hidden;
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 20px;
+    border-radius: var(--radius-xl);
     box-shadow: var(--shadow-md);
 }
 
@@ -829,7 +738,7 @@ onBeforeUnmount(() => {
     width: 34px;
     height: 34px;
     border: 1px solid #bfdbfe;
-    border-radius: 10px;
+    border-radius: var(--radius-sm);
     background: linear-gradient(135deg, #eff6ff, #e0f2fe);
     color: var(--brand);
 }
@@ -900,10 +809,10 @@ onBeforeUnmount(() => {
     width: 72px;
     height: 72px;
     margin-bottom: 16px;
-    border-radius: 24px;
+    border-radius: var(--radius-xl);
     background: linear-gradient(135deg, #eff6ff, #e0f2fe);
     color: var(--brand);
-    box-shadow: 0 14px 32px rgb(37 99 235 / 12%);
+    box-shadow: var(--shadow-md);
 }
 
 .empty-icon svg {
@@ -959,7 +868,9 @@ onBeforeUnmount(() => {
 }
 
 .msg.user {
-    flex-direction: row-reverse;
+    /* 用户消息整体贴右：气泡在左、头像在右。
+       不要用 row-reverse——它会把头像排到气泡左侧，看起来像「头像先于消息」 */
+    justify-content: flex-end;
 }
 
 .msg-avatar {
@@ -968,7 +879,7 @@ onBeforeUnmount(() => {
     flex-shrink: 0;
     width: 32px;
     height: 32px;
-    border-radius: 10px;
+    border-radius: var(--radius-sm);
     font-size: 12px;
     font-weight: 700;
 }
@@ -985,8 +896,10 @@ onBeforeUnmount(() => {
 }
 
 .user-avatar {
+    overflow: hidden;
     background: #e2e8f0;
     color: #475569;
+    box-shadow: 0 0 0 1px rgb(15 23 42 / 8%);
 }
 
 .msg-body {
@@ -1004,7 +917,7 @@ onBeforeUnmount(() => {
 .bubble {
     padding: 11px 15px;
     border: 1px solid var(--border);
-    border-radius: 4px 16px 16px 16px;
+    border-radius: 4px var(--radius-lg) var(--radius-lg) var(--radius-lg);
     background: #fff;
     box-shadow: 0 2px 8px rgb(15 23 42 / 4%);
     color: var(--text);
@@ -1016,10 +929,10 @@ onBeforeUnmount(() => {
 
 .msg.user .bubble {
     border: none;
-    border-radius: 16px 4px 16px 16px;
+    border-radius: var(--radius-lg) 4px var(--radius-lg) var(--radius-lg);
     background: linear-gradient(135deg, var(--brand), #0ea5e9);
     color: #fff;
-    box-shadow: 0 8px 20px rgb(37 99 235 / 20%);
+    box-shadow: 0 6px 16px rgb(37 99 235 / 18%);
 }
 
 .caret {
@@ -1112,7 +1025,7 @@ onBeforeUnmount(() => {
 .composer-box {
     padding: 4px;
     border: 1px solid var(--border);
-    border-radius: 14px;
+    border-radius: var(--radius);
     background: #fff;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
@@ -1153,7 +1066,7 @@ onBeforeUnmount(() => {
 .stop-btn {
     height: 32px;
     padding: 0 18px;
-    border-radius: 9px;
+    border-radius: var(--radius-sm);
     font-size: 13px;
 }
 
@@ -1180,7 +1093,7 @@ onBeforeUnmount(() => {
     max-width: 520px;
     padding: 42px 34px;
     border: 1px solid var(--border);
-    border-radius: 24px;
+    border-radius: var(--radius-xl);
     background:
         radial-gradient(500px 240px at 50% 0%, rgb(37 99 235 / 10%), transparent 70%),
         var(--surface);
@@ -1194,10 +1107,10 @@ onBeforeUnmount(() => {
     width: 64px;
     height: 64px;
     margin-bottom: 16px;
-    border-radius: 20px;
+    border-radius: var(--radius-xl);
     background: linear-gradient(135deg, #2563eb, #0ea5e9);
     color: #fff;
-    box-shadow: 0 12px 28px rgb(37 99 235 / 24%);
+    box-shadow: 0 8px 20px rgb(37 99 235 / 20%);
 }
 
 .gate-icon svg {
@@ -1226,10 +1139,6 @@ onBeforeUnmount(() => {
 @media (max-width: 900px) {
     .ai-head {
         align-items: flex-start;
-    }
-
-    .ai-badge {
-        display: none;
     }
 
     .ai-layout {

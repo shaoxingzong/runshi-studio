@@ -19,15 +19,6 @@ import java.util.concurrent.locks.ReentrantLock;
 /**
  * Redis 向量库实现（生产）
  *
- * 用 Redis 而不是另引向量数据库：项目本就有 Redis，8.4 的 Query Engine 原生支持向量索引，
- * 且持久化后重启与多实例部署都不丢向量。
- *
- * 维度是懒确定的：Redis 建索引必须给维度，而不同向量模型维度不同（1024/1536/2048），
- * 与其在配置里写死一个容易错的数字，不如第一次 addAll 时从 Embedding.dimension() 取。
- *
- * 坑：本类只管向量索引，不管数据库里的 chunk/doc 行。清空索引后必须调
- * KnowledgeDocService.reindexAll() 重新嵌入，否则检索一直为空。
- *
  * @author shaoshing
  */
 @Slf4j
@@ -64,14 +55,10 @@ public class RedisRagVectorStore implements RagVectorStore {
         init();
     }
 
-    /**
-     * 启动检查：索引存在时绑定现有索引，并核对模型元数据
-     */
+    /** 启动检查：索引存在时绑定现有索引，并核对模型元数据 */
     private void init() {
         indexLock.lock();
         try {
-            // 先做模块探针：Query Engine 缺失会在 ftList 报错；JSON 缺失会在 jsonSet 报错。
-            // 生产环境希望这类配置问题在启动期暴露，而不是等第一次入库才失败
             verifyRedisModules();
             if (!indexExists()) {
                 log.info("RAG 向量索引尚未创建，将在首次入库时按实际向量维度建立 | index={}", INDEX_NAME);
@@ -115,8 +102,6 @@ public class RedisRagVectorStore implements RagVectorStore {
 
     @Override
     public String add(Embedding embedding, TextSegment embedded) {
-        // LangChain4j 1.20.2 的 EmbeddingStore 没有 add(id, embedding, embedded) 重载，
-        // 单条带文本的写入走 addAll 的单元素列表，语义与返回 ID 的方式保持一致
         return delegateForAdd(embedding.dimension()).add(embedding, embedded);
     }
 
@@ -213,11 +198,9 @@ public class RedisRagVectorStore implements RagVectorStore {
         jedis.close();
     }
 
-    // ==================== 私有工具 ====================
+    // 私有工具
 
-    /**
-     * 取得用于写入的 delegate：索引不存在时按真实维度创建
-     */
+    /** 取得用于写入的 delegate：索引不存在时按真实维度创建 */
     private RedisEmbeddingStore delegateForAdd(int dimension) {
         RedisEmbeddingStore current = delegate;
         if (current != null) {
@@ -242,9 +225,7 @@ public class RedisRagVectorStore implements RagVectorStore {
         }
     }
 
-    /**
-     * 取得只读/删除用的 delegate；索引不存在时返回 null
-     */
+    /** 取得只读/删除用的 delegate；索引不存在时返回 null */
     private RedisEmbeddingStore existingDelegate() {
         RedisEmbeddingStore current = delegate;
         if (current != null) {
@@ -277,12 +258,7 @@ public class RedisRagVectorStore implements RagVectorStore {
         return jedis.ftList().contains(INDEX_NAME);
     }
 
-    /**
-     * 启动探针：确认 Redis 同时具备 Query Engine 与 JSON
-     *
-     * <p>不能只查 ftList：Query Engine 在、JSON 不在时，索引创建与写入仍会失败，
-     * 而且会拖到第一次 sync 才暴露。这里写一个临时 JSON key 再删掉，成本只有两条命令。
-     */
+    /** 启动探针：确认 Redis 同时具备 Query Engine 与 JSON */
     private void verifyRedisModules() {
         String probeKey = "rag:health:probe";
         try {

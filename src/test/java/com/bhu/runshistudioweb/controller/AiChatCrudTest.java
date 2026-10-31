@@ -45,27 +45,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * AI 咨询模块验收测试
  *
- * AI 调用用本地 HTTP Stub（JDK 自带 HttpServer，随机端口）代替真实服务商：
- * - 通过 @DynamicPropertySource 把 studio.ai.* 覆盖为 Stub 地址，
- * AiManager 在 @PostConstruct 构建 RestClient 时就会拿到它——这就是
- * 「base-url 必须来自配置」的验收理由；
- * - Stub 固定返回 OpenAI 兼容响应 {"choices":[{"message":{"content":"stub-回答"}}]}，
- * 并记录最近一次请求体，供「system 角色在首、上下文只取最近 N 条」断言取证；
- * - 请求正文包含 TRIGGER_FAIL 时 Stub 返回 500，用于验证失败分支
- * （C0200 + 保留用户消息 + 配额不加）。
- *
- * 覆盖十条线：
- * - 未登录一律 A0201（游客不可用）+ 精确白名单（既有公开接口回归、管理端接口仍 A0201）；
- * - 首轮自动建会话 + 落 user/assistant 两条消息（SQL 取证）；
- * - 续聊追加同会话、history 时间正序、上限 50；
- * - 普通用户配额逐次原子 +1（SQL 对齐）、超限 A0501；成员不限额；
- * - 参数非法 A0401、会话不存在 A0402；
- * - 会话归属：他人会话 A0402、匿名访问一律 A0201；
- * - AI 失败 → C0200 且无 assistant 消息、配额不加（SQL 取证）；
- * - 返回体 Long 全字符串；
- * - 上下文窗口：Stub 收到的 messages = system + 最近 10 条 + 本次提问；
- * - 全量基线用例保持全绿。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -95,12 +74,7 @@ class AiChatCrudTest {
     @Resource
     private AiQueryCountManager aiQueryCountManager;
 
-    /**
-     * AI 熔断器
-     *
-     * 本类有「故意让 AI 失败」的用例，连续失败会打开熔断；而熔断器是进程内单例，
-     * 不重置的话同一 JVM 里后跑的 AI 测试会被快速失败成一批 C0200。
-     */
+    /** AI 熔断器 */
     @Resource
     private AiCircuitBreaker circuitBreaker;
 
@@ -110,7 +84,7 @@ class AiChatCrudTest {
         circuitBreaker.reset();
     }
 
-    // ==================== 本地 AI Stub ====================
+    // 本地 AI Stub
 
     /** Stub 服务：只认识 /chat/completions，其余路径一律 404 */
     private static HttpServer stub;
@@ -147,9 +121,6 @@ class AiChatCrudTest {
         registry.add("studio.ai.base-url", () -> "http://127.0.0.1:" + port);
         registry.add("studio.ai.api-key", () -> "test-key");
         registry.add("studio.ai.model", () -> "test-model");
-        // 提示词改为「文件位置」：这里指向测试专用文件（src/test/resources/prompts/test-system-prompt.txt）。
-        // 断言仍校验模型收到的首条消息是「你是测试助手」——于是这条用例从「配置透传」
-        // 升级成「文件 → 模型」全链路验证，且与线上真实话术文本解耦
         registry.add("studio.ai.system-prompt-location", () -> "classpath:prompts/test-system-prompt.txt");
         // 配额上限调小：让「超限 A0501」用例不必真的问 100 次
         registry.add("studio.ai.query-limit", () -> 3);
@@ -160,7 +131,7 @@ class AiChatCrudTest {
         stub.stop(0);
     }
 
-    // ==================== 工具方法 ====================
+    // 工具方法
 
     private String postJson(String path, String json, String tokenValue) throws Exception {
         var request = post(path).contentType(MediaType.APPLICATION_JSON).content(json);
@@ -222,13 +193,7 @@ class AiChatCrudTest {
     /** 最近一次登录的用户 id（用于配额 SQL 断言） */
     private Long lastUserId;
 
-    /**
-     * 注册一个成员用户并登录
-     *
-     * 成员不受提问次数限制，用它可以连续提问而不撞配额上限——
-     * 需要「多次提问」的用例（续聊、上下文窗口等）都用它，
-     * 顺带也覆盖了「成员不限额」这条规则。
-     */
+    /** 注册一个成员用户并登录 */
     private String loginMember() throws Exception {
         String account = "ai_m_" + (System.nanoTime() % 100000);
         SysUser user = new SysUser();
@@ -272,12 +237,10 @@ class AiChatCrudTest {
         // 走 JdbcTemplate 直查库：不受 MyBatis 一级缓存影响，读到的是真实库值
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT ai_query_count FROM sys_user WHERE id=?", Integer.class, userId);
-        // 起计数先进 Redis、由定时任务回刷 DB，
-        // 因此「用户实际用量」= DB 基准 + Redis 未落库增量，只读 DB 会读到回刷前的旧值
         return aiQueryCountManager.merge(userId, count);
     }
 
-    // ==================== ① 白名单与鉴权 ====================
+    // ① 白名单与鉴权
 
     @Test
     @DisplayName("鉴权：/ai/* 未登录一律 A0201；登录后提问放行；管理端与既有白名单不受影响")
@@ -300,13 +263,10 @@ class AiChatCrudTest {
         assertEquals("A0201", code(getBody("/member/list/page", null)));
         assertEquals("A0201", code(postJson("/member/add", "{}", null)));
 
-        // 既有公开接口回归：仍匿名可用
-        // （成员接口已按「团队成员不对外展示」整体删除，访问得到 404 且响应体为空，
-        //   相关断言集中放在 StudioMemberCrudTest#anonymousCanBrowseFrontListButNotAdmin）
         assertEquals("00000", code(getBody("/project/list", null)));
     }
 
-    // ==================== ② 首轮建会话 + 落两条消息 ====================
+    // ② 首轮建会话 + 落两条消息
 
     @Test
     @DisplayName("首轮：自动建会话、标题取首问前 30 字、落 user + assistant 两条消息")
@@ -336,7 +296,7 @@ class AiChatCrudTest {
         assertEquals("stub-回答", msgs.get(1).getContent());
     }
 
-    // ==================== ③ 续聊 + history 正序 ====================
+    // ③ 续聊 + history 正序
 
     @Test
     @DisplayName("续聊：追加进同一会话；history 时间正序；上限 50 条")
@@ -382,7 +342,7 @@ class AiChatCrudTest {
         return count;
     }
 
-    // ==================== ④ 配额 ====================
+    // ④ 配额
 
     @Test
     @DisplayName("配额：登录用户每次成功提问原子 +1（SQL 对齐）；达上限 A0501")
@@ -399,9 +359,6 @@ class AiChatCrudTest {
         assertEquals("00000", code(r2));
         assertEquals(2, queryCountOf(userId), "第二次成功后计数应为 2（原子 +1，SQL 对齐）");
 
-        // 直接把计数顶到上限（避免真问 3 次），下一次提问必须 A0501
-        // 注意：本用例此前没有对这位用户做过 ORM select，这里首次读发生在 UPDATE 之后，
-        // 不会撞 MyBatis 一级缓存
         jdbcTemplate.update("UPDATE sys_user SET ai_query_count=3 WHERE id=?", userId);
         String blocked = chatLogged(sessionIdOf(r1), "第三次提问", token);
         assertEquals("A0501", code(blocked), "超限应 A0501：" + blocked);
@@ -409,7 +366,7 @@ class AiChatCrudTest {
                 "提示应说明次数用完并引导成员：" + message(blocked));
     }
 
-    // ==================== ⑤ 参数与不存在 ====================
+    // ⑤ 参数与不存在
 
     @Test
     @DisplayName("错误码：message 空/超长 A0401；会话不存在 A0402 统一提示")
@@ -427,7 +384,7 @@ class AiChatCrudTest {
         assertEquals("A0401", code(getBody("/ai/chat/history?sessionId=abc", token)), "脏 sessionId 应 A0401");
     }
 
-    // ==================== ⑥ 会话归属 ====================
+    // ⑥ 会话归属
 
     @Test
     @DisplayName("归属：他人会话 A0402（同码同提示）；匿名访问一律 A0201")
@@ -450,7 +407,7 @@ class AiChatCrudTest {
         assertEquals(4, countMessages(Long.parseLong(sessionA)), "A 两轮 = 4 条消息");
     }
 
-    // ==================== ⑦ AI 失败分支 ====================
+    // ⑦ AI 失败分支
 
     @Test
     @DisplayName("AI 失败：C0200、保留用户消息、无 assistant、配额不加")
@@ -475,7 +432,7 @@ class AiChatCrudTest {
         assertEquals(1, queryCountOf(userId), "AI 失败不应增加配额");
     }
 
-    // ==================== ⑧ 返回体 Long 字符串 ====================
+    // ⑧ 返回体 Long 字符串
 
     @Test
     @DisplayName("序列化：sessionId 与消息 id 均为字符串（防 JS 精度丢失）")
@@ -490,13 +447,11 @@ class AiChatCrudTest {
                 "消息 id 应序列化为字符串：" + history.substring(0, Math.min(300, history.length())));
     }
 
-    // ==================== ⑨ 上下文窗口 ====================
+    // ⑨ 上下文窗口
 
     @Test
     @DisplayName("上下文窗口：Stub 收到 system + 最近 10 条 + 本次提问（最早轮次被裁剪）")
     void contextWindowTrimsOldest() throws Exception {
-        // 6 轮 = 12 条消息；第 7 次提问时 history 只取最近 10 条。
-        // 用成员账号：7 次提问远超普通用户 5 次上限，正好验证「成员不限额」
         String token = loginMember();
         String sessionId = null;
         for (int i = 1; i <= 6; i++) {
@@ -511,7 +466,6 @@ class AiChatCrudTest {
         assertEquals("system", messages.get(0).get("role").asString(), "system 角色必须最先");
         assertEquals("你是测试助手", messages.get(0).get("content").asString());
 
-        // 最早一轮（ctx-q1）被窗口裁掉；最后一条是本次提问
         String joined = payload.toString();
         assertFalse(joined.contains("ctx-q1"), "最早一轮不应进入上下文窗口：" + joined);
         assertTrue(joined.contains("ctx-q2") && joined.contains("ctx-final"), "窗口内应有 q2~q6 与本次提问");

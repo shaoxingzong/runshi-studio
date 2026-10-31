@@ -26,20 +26,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * 成员模块验收测试
  *
- * 这组用例守四条线，对应本模块的四个考点：
- * - 鉴权边界：C 端 /member/list 匿名可用；
- * 管理端接口匿名 A0201、普通用户 A0301——「多放行一个路径」和「少放行一个路径」
- * 都会出问题，两个方向都要断言；
- * - user_id 绑定规则：账号必须存在、不能被两个成员同时绑定、
- * 改绑要排除自己、删除后账号可被重新绑定；
- * - 输入校验：入学年份区间（smallint 语义）、职务/状态枚举、
- * 「2026级」这类字符串在 JSON 解析阶段就被拒绝；
- * - 排序与脱敏：默认按 sort_order 倒序（不是 id 倒序）；
- * C 端 VO 不出现 userId / sortOrder 等内部字段。
- *
- * 测试直接插库造账号（不走注册接口，因为注册只会创建普通用户），
- * 再用真实登录接口换 token，权限链路上的每一环都是真的。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -60,7 +46,7 @@ class StudioMemberCrudTest {
     @Resource
     private JdbcTemplate jdbcTemplate;
 
-    // ==================== 工具方法 ====================
+    // 工具方法
 
     /** 插库造账号，返回其 id */
     private long insertUser(String account, String role) {
@@ -104,12 +90,7 @@ class StudioMemberCrudTest {
         return mockMvc.perform(request).andReturn().getResponse().getContentAsString();
     }
 
-    /**
-     * 取 HTTP 状态码
-     *
-     * 用途：被删除的接口返回 404 且响应体为空（不存在 handler 时，
-     * MVC 拦截器不执行，也就没有统一的 A0201 响应体），此时 code(body) 无法判读。
-     */
+    /** 取 HTTP 状态码 */
     private int statusOf(String path) throws Exception {
         return mockMvc.perform(get(path)).andReturn().getResponse().getStatus();
     }
@@ -140,7 +121,7 @@ class StudioMemberCrudTest {
         return prefix + (System.nanoTime() % 100000);
     }
 
-    // ==================== 1. 鉴权边界 ====================
+    // 1. 鉴权边界
 
     @Test
     @DisplayName("鉴权：成员对外接口已整体删除（404）；管理端接口匿名 A0201")
@@ -151,13 +132,6 @@ class StudioMemberCrudTest {
                 "{\"name\":\"" + uniqueName("front") + "\",\"gradeYear\":2022}", token);
         assertEquals("00000", code(addBody), "新增失败：" + addBody);
 
-        //「团队成员不对外展示」：对外的成员接口不存在（下面断言 404）。
-        //
-        // 断言方式很关键（这是本类最容易踩的坑）：
-        // Sa-Token 的 MVC 拦截器只在「匹配到 handler」时才执行，
-        // 接口被删掉后请求根本进不了拦截器链，于是拿到的是 404 且响应体为空。
-        // 因此不能用 code(body) 判读（body 为空会 StringIndexOutOfBounds），
-        // 只能看 HTTP 状态码；同时也说明「A0201」这个预期在这里是错的。
         assertEquals(404, statusOf("/member/list"), "成员对外列表不应存在");
         assertEquals(404, statusOf("/member/detail?id=1"), "成员对外详情不应存在");
         assertEquals(404, statusOf("/member/certificate/list?memberId=1"), "按成员查证书的对外接口不应存在");
@@ -181,7 +155,7 @@ class StudioMemberCrudTest {
         assertEquals("A0301", code(getBody("/member/get?id=1", token)), "普通用户不应能查看成员详情");
     }
 
-    // ==================== 2. 增删改查全流程 ====================
+    // 2. 增删改查全流程
 
     @Test
     @DisplayName("全流程：管理员 新增 → 详情 → 更新 → 分页查询 → 删除（逻辑删除）")
@@ -189,7 +163,7 @@ class StudioMemberCrudTest {
         String token = adminToken();
         String name = uniqueName("crud");
 
-        // ---------- 新增：全字段 ----------
+        // 新增：全字段
         String addBody = postJson("/member/add", """
                 {"name":"%s","gradeYear":2021,"major":"计算机科学与技术","direction":"Java后端",
                  "teamPosition":"leader","memberStatus":0,"githubUrl":"https://github.com/demo",
@@ -205,7 +179,7 @@ class StudioMemberCrudTest {
         assertNotNull(created.getCreatedAt(), "审计字段应由 MyMetaObjectHandler 自动填充");
         assertNotNull(created.getDeletedAt(), "deleted_at 初始应为 0（未删除）");
 
-        // ---------- 详情：管理端 VO 带内部字段，但绝不能带出 deletedAt ----------
+        // 详情：管理端 VO 带内部字段，但绝不能带出 deletedAt
         String getBody = getBody("/member/get?id=" + id, token);
         assertEquals("00000", code(getBody));
         assertEquals(name, data(getBody, "name"));
@@ -213,7 +187,7 @@ class StudioMemberCrudTest {
         assertTrue(getBody.contains("\"sortOrder\":66"), "管理端详情应包含置顶权重：" + getBody);
         assertFalse(getBody.contains("deletedAt"), "响应里不应出现逻辑删除字段");
 
-        // ---------- 更新：改姓名 + 置顶权重（部分更新，未传的字段不动）----------
+        // 更新：改姓名 + 置顶权重（部分更新，未传的字段不动）
         String updateBody = postJson("/member/update",
                 "{\"id\":" + id + ",\"name\":\"" + name + "改\",\"sortOrder\":88}", token);
         assertEquals("00000", code(updateBody), "更新失败：" + updateBody);
@@ -223,14 +197,14 @@ class StudioMemberCrudTest {
         assertEquals(2021, updated.getGradeYear(), "未传 gradeYear 时不应改动");
         assertEquals("Java后端", updated.getDirection(), "未传 direction 时不应改动");
 
-        // ---------- 分页查询：筛选生效 ----------
+        // 分页查询：筛选生效
         String listBody = getBody("/member/list/page?current=1&pageSize=10&name=" + name, token);
         assertEquals("00000", code(listBody));
         assertTrue(listBody.contains("\"total\":"), "分页结果必须带 total：" + listBody);
         assertTrue(listBody.contains(name), "按姓名模糊查询没查到刚创建的成员：" + listBody);
         assertTrue(listBody.contains("\"userId\":null"), "未绑定时 userId 应为 null：" + listBody);
 
-        // ---------- 删除：逻辑删除，删完查不到，库里留下 13 位毫秒时间戳 ----------
+        // 删除：逻辑删除，删完查不到，库里留下 13 位毫秒时间戳
         String deleteBody = postJson("/member/delete", "{\"id\":" + id + "}", token);
         assertEquals("00000", code(deleteBody));
         assertEquals("A0402", code(getBody("/member/get?id=" + id, token)), "删除后应查不到该成员");
@@ -240,7 +214,7 @@ class StudioMemberCrudTest {
                 "删除后 deleted_at 应为 13 位毫秒时间戳，实际：" + deletedAt);
     }
 
-    // ==================== 3. user_id 绑定规则 ====================
+    // 3. user_id 绑定规则
 
     @Test
     @DisplayName("绑定：账号不存在 / 重复绑定被拒；重复保存自身绑定合法；删除后账号可重新绑定")
@@ -285,7 +259,7 @@ class StudioMemberCrudTest {
                 "删除后账号应可重新绑定");
     }
 
-    // ==================== 4. 输入校验 ====================
+    // 4. 输入校验
 
     @Test
     @DisplayName("校验：入学年份越界/字符串、职务与状态非法值、缺少姓名都应被拒绝")
@@ -312,7 +286,7 @@ class StudioMemberCrudTest {
         assertEquals("A0401", code(postJson("/member/add", "{\"gradeYear\":2022}", token)));
     }
 
-    // ==================== 5. 排序与脱敏 ====================
+    // 5. 排序与脱敏
 
     @Test
     @DisplayName("排序：默认按 sort_order 倒序（不是 id 倒序）；C 端即使传 sortField 也固定置顶排序")
@@ -342,7 +316,7 @@ class StudioMemberCrudTest {
         // 上面管理端那条断言已经守住了「默认排序 = sort_order 倒序」这个行为。
     }
 
-    // ==================== 私有小工具 ====================
+    // 私有小工具
 
     /** 由用户 id 反查账号（仅在测试里用，避免把账号名传来传去） */
     private String findAccount(long id) {

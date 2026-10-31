@@ -97,6 +97,7 @@ npm run dev        # http://localhost:5173，/api 已代理到 8080
 |---|---|
 | [HELP.md](HELP.md) | **开发约定**：分层职责、请求链路、注释规范、12 条全局约定、常见坑速查 |
 | [DEPLOY.md](DEPLOY.md) | **部署指南**：环境变量清单、初始化管理员、内外网配置、上线检查清单 |
+| [docs/production-launch.md](docs/production-launch.md) | **生产上线手册**：本次检查结论、后端/前端发布步骤、数据库清理、冒烟与回滚 |
 | [deploy/nginx.conf](deploy/nginx.conf) | Nginx 反向代理 + 静态资源 + 安全响应头配置样例 |
 | [docs/erd.md](docs/erd.md) | 数据库 ER 图与关键设计取舍 |
 | [docs/spring-mvc-request-flow.md](docs/spring-mvc-request-flow.md) | 一次请求从进来到响应的完整链路 |
@@ -118,8 +119,11 @@ runshi-studio-web/
 ├── web/                                      Vue3 前端独立工程
 ├── db/
 │   ├── user.sql                              全量建库脚本（唯一权威 DDL 源头）
-│   ├── init-prod.sql                         生产初始化（只建库表，不灌演示数据）
-│   └── test-data-full.sql                    联调用的演示数据
+│   ├── init-prod.sql                         生产环境准备（建库 / 应用账号 / 最小权限）
+│   ├── audit-backfill.sql                    审计列一次性回填（存量库按需执行）
+│   ├── quiz-seed-history.sql                 刷题题库种子（生产内容，按需导入）
+│   ├── backup.sh                             数据库与上传目录备份脚本
+│   └── seg/sysUser.sql                       单表建表脚本（局部重建调试用）
 ├── docs/                                     ER 图与请求链路文档
 └── deploy/nginx.conf                         生产部署配置样例
 ```

@@ -5,15 +5,7 @@ import { reportApi } from '@/api/report';
 import ErrorRetry from '@/components/ErrorRetry.vue';
 import type { PageResult, ReportTicket } from '@/api/types';
 
-/**
- * 举报处理（管理员）
- *
- * 三个动作的语义必须让人一眼分清：
- *   撤下 —— 内容转「已驳回」，作者能在「我的发帖」里看到理由，可追溯；
- *   删除 —— 内容不可恢复，只在「撤下不足以消除影响」时使用；
- *   不成立 —— 内容保留，举报关闭。
- * 合成一个「通过/不通过」会让管理员无从选择，也会让事后复盘读不出实际发生了什么。
- */
+/** 举报处理（管理员） */
 const page = reactive({ current: 1, pageSize: 10 });
 
 /** 默认只看待处理：举报页的首要任务是清空队列 */
@@ -97,8 +89,6 @@ async function handle(row: ReportTicket, action: 'resolve' | 'delete' | 'dismiss
               ? `确认撤下这条${row.targetTypeLabel}？作者会看到「举报受理」的驳回理由。`
               : '确认举报不成立？内容会保留，举报将被关闭。';
 
-    // 确认与「处置说明」合成一个弹窗：两步弹窗在批量处理时非常烦人，
-    // 而说明本来就是选填（不填由服务端按动作生成默认文案）
     let handleResult: string | undefined;
     try {
         const prompted = await ElMessageBox.prompt(tip, label, {
@@ -181,7 +171,6 @@ onMounted(load);
                     <template #default="{ row }">
                         <div class="target">
                             <el-tag size="small" effect="plain">{{ row.targetTypeLabel }}</el-tag>
-                            <!-- 内容被删后标题为空：明确写「内容已删除」，而不是留一片空白 -->
                             <span class="target-title">{{ row.targetTitle || '内容已删除' }}</span>
                         </div>
                         <div class="target-id">ID: {{ row.targetId }}</div>

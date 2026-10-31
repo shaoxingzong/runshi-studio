@@ -29,14 +29,6 @@ import static org.mockito.Mockito.when;
 /**
  * IP 双窗口限流器单测（纯 Mockito，不启 Spring、不连 Redis）
  *
- * 为什么用纯单测而不是 MockMvc：本类只依赖 StringRedisTemplate，
- * mock 掉它就能覆盖全部分支；走 Spring 上下文会新建一个上下文，
- * 而多个测试类对上下文停止顺序敏感（pom 的 surefire 注释记载过相关教训），
- * 能不起容器就不起。
- *
- * 覆盖重点：超限判定边界（等于上限放行、超过才拒）、双窗口各自的键与文案、
- * 拿不到 IP 放行、Redis 故障降级放行——降级是本类最重要的安全属性之一。
- *
  * @author shaoshing
  */
 @ExtendWith(MockitoExtension.class)
@@ -126,8 +118,6 @@ class IpRateLimitManagerTest {
     @Test
     @DisplayName("分钟窗口 TTL 传 120（窗口 60s + 余量 60s，防窗口末尾失去保护）")
     void minuteWindowTtl_is120() {
-        // 用精确 TTL 做桩：生产代码若传错 TTL，桩不匹配会返回 null（计数为 0）而不超限，
-        // 下面的超限断言就会失败——以此间接锁定 TTL 取值
         when(stringRedisTemplate.execute(any(RedisScript.class), anyList(), eq("120"))).thenReturn(11L);
 
         IpRateLimitManager manager = newManager();

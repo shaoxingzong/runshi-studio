@@ -21,8 +21,7 @@ public class NotificationReadRequest implements Serializable {
     /**
      * 通知 ID（必填）
      *
-     * @Positive 是廉价兜底：挡住 -1、0 这类明显非法的探测请求，避免它们打到数据库
-     * 再返回「不存在」这种误导性提示。
+     * @Positive 是廉价兜底：挡住 -1、0 这类明显非法的探测请求，避免它们打到数据库再返回「不存在」。
      */
     @NotNull(message = "id 不能为空")
     @Positive(message = "id 必须为正整数")

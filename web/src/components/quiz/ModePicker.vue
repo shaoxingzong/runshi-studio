@@ -1,12 +1,7 @@
 <script setup lang="ts">
 import type { QuizMode } from '@/api/types';
 
-/**
- * 三种模式的选择卡（对照设计稿的三张卡）
- *
- * 「待复习为 0」时错题重刷置灰：后端对空错题本会返回 A0402，
- * 但让用户先点一下再看到报错，比一开始就不可点更糟。
- */
+/** 三种模式的选择卡（对照设计稿的三张卡） */
 const props = defineProps<{
     modelValue: QuizMode;
     // 待复习错题数（错题卡右上角显示，为 0 时整卡置灰）
@@ -83,7 +78,7 @@ function pick(option: ModeOption) {
     border-color: var(--brand);
 }
 
-/* 选中态：品牌色描边 + 浅底（与设计稿一致） */
+/* 选中态：品牌色描边 + 浅底（与设计稿一致）*/
 .mode.active {
     border-color: var(--brand);
     background: var(--brand-soft);

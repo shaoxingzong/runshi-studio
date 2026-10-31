@@ -14,13 +14,6 @@ import java.time.LocalDateTime;
 /**
  * 项目案例实体（对应 studio_project）
  *
- * leaderId 是队长的权威数据源：studio_member_project 里冗余的那行只是它的同步结果，
- * 读接口一律以 leader_id 为准，同步由 Service 在同一事务内完成。
- *
- * 坑：content 是大字段，列表接口绝不能带（C 端列表 VO 结构上就没有它）；
- * techStack 是 JSON 字符串快照，不参与筛选、不建索引——LIKE "Java" 会误中 "JavaScript"，
- * 真要按技术栈筛选应拆标签表；status 的 DDL 默认值是 1，Service 兜底必须与之一致。
- *
  * @author shaoshing
  */
 @Data

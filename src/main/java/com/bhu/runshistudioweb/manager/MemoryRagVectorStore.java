@@ -15,13 +15,6 @@ import java.util.List;
 /**
  * 内存向量库实现（开发/测试默认）
  *
- * <p>它就是改造前 KnowledgeBaseManager 里的那个 InMemoryEmbeddingStore，
- * 行为完全一致：进程内、重启即丢。包一层的原因只有一个——让上层依赖
- * {@link RagVectorStore} 而不是具体实现，生产切 Redis 时不用改业务代码。
- *
- * <p>为什么测试固定用它：测试上下文每次启动都是空库，
- * 不能依赖外部 Redis 的 Query Engine/JSON；同时避免测试之间共享索引互相污染。
- *
  * @author shaoshing
  */
 @Slf4j

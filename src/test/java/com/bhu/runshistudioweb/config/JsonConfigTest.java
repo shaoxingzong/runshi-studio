@@ -17,9 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 全局 JSON 配置验收测试
- * 关键：断言的是 Spring 容器里的 JsonMapper（即 Spring MVC 实际使用的那个），
- * 而不是 new 出来的实例，否则证明不了配置真的生效。
+ * 全局 JSON 配置验收测试。关键：断言的是 Spring 容器里的 JsonMapper（即 Spring MVC 实际使用的那个），而不是 new 出来的实例，否则证明不了配置真的生效。
  *
  * @author shaoshing
  */

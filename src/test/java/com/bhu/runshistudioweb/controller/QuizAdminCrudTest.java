@@ -23,25 +23,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 题库管理（管理端）验收测试
  *
- * 类名以 Quiz 开头：不能以 Admin 开头——
- * 那会排在 Ai* 测试类之前，而 Boot 4.1 在类切换时会 stop 紧邻的上下文，
- * 导致后续登录类测试复用被停掉的上下文（ LettuceConnectionFactory has been STOPPED）。
- * 详见 PostManageTest 的类注释。
- *
- * 覆盖的规则（与产品口径一一对应）：
- * - 鉴权：匿名 A0201、普通用户 A0301、admin 放行；
- * - 写入校验：单选恰好 1 个正确项、多选至少 2 个、标签从 A 连续、
- * 正确项必须属于选项、选项数在范围内——新增 / 修改 / 导入共用同一套；
- * - 部分更新：只传 analysis 时不因缺选项而报错；解析可以被清空；
- * - 判定相关变更：改答案 / 改题型 / 增删选项 → 重置错题连对进度，
- * 但不动 status（已消解的不退回待复习）；只改选项文字则不动；
- * - 停用 vs 删除：停用可逆（错题条目保留）、删除清理条目、作答记录都保留；
- * - 导入：整批全成功或全失败、dryRun 不落库、错误带行号；
- * - 章节/教材：批量改名（含合并）、移章、整章删除。
- *
- * 为什么用 @Transactional：所有写操作都在事务内，测试回滚即可撤销。
- * 用例里对错题条目的直接构造也会一并回滚，不污染开发库。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -83,7 +64,7 @@ class QuizAdminCrudTest {
         chapter = "T34章节_" + suffix;
     }
 
-    // ==================== ① 鉴权 ====================
+    // ① 鉴权
 
     @Test
     @DisplayName("鉴权：匿名 A0201、普通用户 A0301、admin 放行")
@@ -99,7 +80,7 @@ class QuizAdminCrudTest {
         assertEquals("00000", support.code(body), "admin 应放行：" + body);
     }
 
-    // ==================== ② 新增与写入校验 ====================
+    // ② 新增与写入校验
 
     @Test
     @DisplayName("新增单选题成功，列表与详情都能查到（含答案）")
@@ -171,7 +152,7 @@ class QuizAdminCrudTest {
         assertEquals("A0401", support.code(body), "非法题型应被拒：" + body);
     }
 
-    // ==================== ③ 部分更新 ====================
+    // ③ 部分更新
 
     @Test
     @DisplayName("只改解析：不因缺选项而报错，其余字段保持原值")
@@ -214,7 +195,7 @@ class QuizAdminCrudTest {
         assertEquals("A0401", support.code(body), "单选题改成 2 个正确项应被拒：" + body);
     }
 
-    // ==================== ④ 判定相关变更 → 重置连对进度 ====================
+    // ④ 判定相关变更 → 重置连对进度
 
     @Test
     @DisplayName("改答案：重置错题连对进度，但已消解状态保持不变")
@@ -290,7 +271,7 @@ class QuizAdminCrudTest {
         assertEquals(0, wrongStreak(userId, questionId), "选项标签集合变了，连对证据应作废");
     }
 
-    // ==================== ⑤ 停用 vs 删除 ====================
+    // ⑤ 停用 vs 删除
 
     @Test
     @DisplayName("停用：错题条目保留（可逆），重新启用后错题本恢复")
@@ -345,7 +326,6 @@ class QuizAdminCrudTest {
                 Integer.class, questionId);
         assertEquals(0, alive, "应为逻辑删除");
 
-        // 再删一次：A0402（已删除视为不存在）
         String again = support.postJson("/admin/quiz/question/delete",
                 "{\"id\":" + questionId + "}", token);
         assertEquals("A0402", support.code(again), "重复删除应 A0402：" + again);
@@ -364,7 +344,7 @@ class QuizAdminCrudTest {
         assertEquals(2, support.data(body).asInt(), "应删除 2 条（不存在的那条被跳过）");
     }
 
-    // ==================== ⑥ 导入 ====================
+    // ⑥ 导入
 
     @Test
     @DisplayName("导入 dryRun：只校验不落库，返回解析数量")
@@ -428,7 +408,7 @@ class QuizAdminCrudTest {
         assertEquals(0, questionCount(), "整批失败时一道题都不该落库");
     }
 
-    // ==================== ⑦ 章节 / 教材批量操作 ====================
+    // ⑦ 章节 / 教材批量操作
 
     @Test
     @DisplayName("章节改名：批量 UPDATE，题数不变")
@@ -494,7 +474,7 @@ class QuizAdminCrudTest {
         assertEquals(0, wrongRows(questionId), "错题条目应一并清理");
     }
 
-    // ==================== ⑧ 教材与章节树 ====================
+    // ⑧ 教材与章节树
 
     @Test
     @DisplayName("章节列表（管理端）：含停用题，并单独给启用数")
@@ -540,7 +520,7 @@ class QuizAdminCrudTest {
         assertEquals(-1, chapterCountOf(after), "停用后该章节不应再出现在 C 端目录：" + after);
     }
 
-    // ==================== 工具方法 ====================
+    // 工具方法
 
     /** 单选题 JSON：三个选项 A/B/C，答案由参数指定 */
     private String singleJson(String correct) {

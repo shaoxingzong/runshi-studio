@@ -38,12 +38,9 @@ studio:
     vector-store-type: ${VECTOR_STORE_TYPE:redis}
 
   attendance:
-    # ⚠️ 生产必须配置真实工作室网段：留空不会启动失败，
-    #    但启动日志会打一条 warn，且**所有签到都记为外网**（安全侧默认，不误发通行证）。
-    # 注入方式：ATTENDANCE_LAN_CIDRS=192.168.1.0/24，多个网段用逗号分隔
-    lan-cidrs: ${ATTENDANCE_LAN_CIDRS:}
+    # 内外网判定已移除，不再需要 ATTENDANCE_LAN_CIDRS。
     # Nginx 与应用同机时默认值即可；Nginx 在独立机器上时填入它的地址，
-    # 否则所有请求都会按 Nginx 自己的 IP 判定，结果是全员外网
+    # 否则签到记录里保存的会是 Nginx 自己的 IP
     trusted-proxies: ${ATTENDANCE_TRUSTED_PROXIES:127.0.0.1,::1}
 
   web:

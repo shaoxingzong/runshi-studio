@@ -10,14 +10,6 @@ import java.time.LocalDateTime;
 /**
  * 成员视图对象（管理端列表 / 详情使用）
  *
- * 与 C 端 MemberFrontVO 的分工是本模块最重要的一条边界：本类给管理员看，含 userId、sortOrder
- * 与创建/更新时间等内部字段，便于后台判断账号绑定与置顶配置；MemberFrontVO 给游客看，只暴露官网展示需要的字段。
- * 「两个 VO 而不是一个 VO 加开关」是刻意的：字段级的 if 判断一旦某处写错，内部字段就会静默泄露到公开接口；
- * 分两个类则是「结构上不可能泄露」。
- *
- * id 与 userId 显式标注 ToStringSerializer：雪花 ID 是 19 位、超出 JS 安全整数范围（全局 JsonConfig 已统一处理，
- * 这里是字段级兜底）。
- *
  * @author shaoshing
  */
 @Data

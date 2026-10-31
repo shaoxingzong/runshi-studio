@@ -3,19 +3,11 @@ package com.bhu.runshistudioweb.model.enums;
 /**
  * 管理端操作动作字典（studio_operation_log.action）
  *
- * 一个枚举同时承载三件事：落库的动作码、给人看的中文标签、以及被操作对象的类型。
- * 这样前端下拉、表格标签、后端校验都不必各写一份映射——三处各写一份，必然有一处先漂移。
- *
- * 新增动作要同步三处，漏一步都是静默问题：本枚举、DDL 里 action 列的注释、
- * 以及调用 OperationLogService#record 的埋点位置。
- *
- * 用字符串而非数字：排障时一眼读懂，新增动作也不必改表结构。
- *
  * @author shaoshing
  */
 public enum OperationTypeEnum {
 
-    // ==================== 内容：帖子 ====================
+    // 内容：帖子
 
     /** 帖子审核通过（批量审核时每篇一行，便于按单篇内容反查） */
     POST_APPROVE("POST_APPROVE", "帖子审核通过", TargetType.POST),
@@ -32,7 +24,7 @@ public enum OperationTypeEnum {
     /** 管理员代改帖子（保存后回到待审重审） */
     POST_UPDATE("POST_UPDATE", "管理员编辑帖子", TargetType.POST),
 
-    // ==================== 内容：评论 ====================
+    // 内容：评论
 
     /** 评论审核通过 */
     COMMENT_APPROVE("COMMENT_APPROVE", "评论审核通过", TargetType.COMMENT),
@@ -43,18 +35,12 @@ public enum OperationTypeEnum {
     /** 删除评论（连带删除其回复） */
     COMMENT_DELETE("COMMENT_DELETE", "删除评论", TargetType.COMMENT),
 
-    // ==================== 用户与权限 ====================
+    // 用户与权限
 
     /** 新增用户（detail 只写角色与状态，绝不写初始口令） */
     USER_ADD("USER_ADD", "新增用户", TargetType.USER),
 
-    /**
-     * 修改用户
-     *
-     * 改角色、封禁/解封、重置口令、改资料都走同一个接口，因此共用一个动作码，
-     * 靠 detail 里的「改了哪些字段 + 旧值→新值」区分——拆成四个动作会让
-     * 「一次请求同时改角色又封禁」这种真实场景无处安放。
-     */
+    /** 修改用户 */
     USER_UPDATE("USER_UPDATE", "修改用户", TargetType.USER),
 
     /** 删除用户（逻辑删除） */
@@ -63,7 +49,7 @@ public enum OperationTypeEnum {
     /** 重置用户的 AI 提问次数 */
     USER_AI_QUOTA_RESET("USER_AI_QUOTA_RESET", "重置 AI 配额", TargetType.USER),
 
-    // ==================== 题库 ====================
+    // 题库
 
     /** 新增题目 */
     QUIZ_QUESTION_ADD("QUIZ_QUESTION_ADD", "新增题目", TargetType.QUIZ),
@@ -95,7 +81,7 @@ public enum OperationTypeEnum {
     /** 教材重命名（全库批量改） */
     QUIZ_TEXTBOOK_RENAME("QUIZ_TEXTBOOK_RENAME", "教材重命名", TargetType.QUIZ),
 
-    // ==================== 举报处置 ====================
+    // 举报处置
 
     /** 举报成立：内容撤下（转已驳回，保留可追溯） */
     REPORT_RESOLVE("REPORT_RESOLVE", "举报成立（撤下内容）", TargetType.REPORT),
@@ -139,9 +125,6 @@ public enum OperationTypeEnum {
     /**
      * 把动作码翻译成枚举，查不到返回 null
      *
-     * 只用在读路径与参数校验：查不到时由调用方决定「忽略筛选」还是「报参数错误」，
-     * 本方法不做兜底猜测（兜底会把真正的拼写错误永久藏住）。
-     *
      * @param code 动作码，允许为 null
      * @return 命中的枚举；null 或未知动作码时返回 null
      */
@@ -157,12 +140,7 @@ public enum OperationTypeEnum {
         return null;
     }
 
-    /**
-     * 被操作对象的类型
-     *
-     * 与动作码分开一层，是因为「对象类型」既用于落库列，也用于前端筛选下拉；
-     * 如果只存动作码，前端要筛「所有用户相关操作」就得自己维护一份 action → 类型 的映射。
-     */
+    /** 被操作对象的类型 */
     public enum TargetType {
 
         /** 帖子 */

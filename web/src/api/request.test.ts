@@ -1,16 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AUTH_EXPIRED_EVENT, http, isRequestError, RequestError, tokenStore } from './request';
 
-// 请求层单测（纯逻辑，不起服务、不联网）
-//
-// 为什么值得单测：request.ts 是所有接口共用的一条命脉——
-// 响应解包、A0201 登录态回收、错误提示映射、网络兜底，任何一处回归都是全站性的
-// （表现：所有页面同时不弹提示或同时乱跳登录）。而它此前的验证方式是「点一遍页面」，
-// 漏掉某个分支毫无察觉。
-//
-// 策略：mock 掉 axios 实例与 ElMessage，只驱 unwrap 与响应拦截器的判断逻辑。
-// axios 的实例是模块内私有变量，因此 mock axios.create 的返回值来接管它。
-
 const { mockGet, mockPost, messageError, responseChain, runResponseChain } = vi.hoisted(() => {
     /** 收集 request.ts 注册的响应拦截器（与真 axios 的 interceptors.response 同构） */
     const responseChain = {
@@ -18,13 +8,7 @@ const { mockGet, mockPost, messageError, responseChain, runResponseChain } = vi.
         rejected: [] as Array<(e: unknown) => unknown>,
     };
 
-    /**
-     * 让 mock 的 axios 实例像真的一样跑响应拦截器链
-     *
-     * 为什么必须模拟这一层：request.ts 的网络兜底逻辑就注册在响应拦截器里，
-     * 若 mock 的 use 只是个 vi.fn()（只记录不执行），拦截器等于不存在，
-     * 「网络异常兜底」那条用例测的就是个空壳。
-     */
+    /** 让 mock 的 axios 实例像真的一样跑响应拦截器链 */
     const runResponseChain = <T>(promise: Promise<T>): Promise<T> =>
         promise.then(
             (res) =>
@@ -199,8 +183,6 @@ describe('A0201：登录态回收', () => {
 
         await expect(http.get('/user/current')).rejects.toThrow('未登录');
 
-        // 三件事必须同时发生：token 清掉（否则后续请求继续带废 token）、
-        // 事件派发（让 store 回收内存登录态，否则界面假装已登录）、提示用户
         expect(tokenStore.get()).toBe('');
         expect(events).toEqual([AUTH_EXPIRED_EVENT]);
         expect(messageError).toHaveBeenCalledWith('未登录');
@@ -236,7 +218,6 @@ describe('网络层兜底', () => {
     });
 
     it('超时与断网区分开：文案不同，用户处置也不同', async () => {
-        // 超时的特征是 ECONNABORTED，此前与断网共用一句「网络异常」，掩盖了真实原因
         mockGet.mockRejectedValue(
             Object.assign(new Error('timeout of 30000ms exceeded'), { code: 'ECONNABORTED' }),
         );

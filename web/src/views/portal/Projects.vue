@@ -48,7 +48,7 @@ onMounted(load);
 <template>
     <div class="page">
         <div class="page-head">
-            <h1>项目案例</h1>
+            <h1>项目</h1>
             <p>工作室的项目列表。</p>
         </div>
 
@@ -74,16 +74,11 @@ onMounted(load);
         <div v-loading="loading">
             <el-empty v-if="result && result.records.length === 0" description="没有符合条件的项目" />
             <div v-else class="grid cards-3">
-                <!--
-                  卡片整块可点，用「伸展式链接」而不是换成 <router-link>：卡内还有两个外链，
-                  嵌套 <a> 是非法 HTML。做法：标题伪元素铺满整卡，外链再抬到覆盖层之上
-                -->
+                <!-- 卡片整块可点，用「伸展式链接」而不是换成 <router-link>：卡内还有两个外链，嵌套 <a> 是非法 HTML。做法：标题伪元素铺满整卡，外链再抬到覆盖层之上 -->
                 <div v-for="project in result?.records ?? []" :key="project.id" class="project-card">
-                    <!-- 封面不做独立链接：整卡点击已由标题的伸展式伪元素接管，
-                         再套一层 <router-link> 只会多出一个 Tab 停留点，键盘用户要按两次 -->
+                    <!-- 封面不做独立链接：整卡点击已由标题的伸展式伪元素接管，再套一层 <router-link> 只会多出一个 Tab 停留点，键盘用户要按两次 -->
                     <div class="cover">
-                        <!-- 封面可能是外部图床链接（会失效）或已清理的上传文件，
-                             交给 SmartImage 兜底成「项目名首字 + 渐变块」，不留裂图 -->
+                        <!-- 封面可能是外部图床链接（会失效）或已清理的上传文件，交给 SmartImage 兜底成「项目名首字 + 渐变块」，不留裂图 -->
                         <SmartImage
                             :src="project.coverImage"
                             :alt="project.title"
@@ -177,7 +172,7 @@ onMounted(load);
     overflow: hidden;
 }
 
-/* SmartImage 的图片与兜底块都填满封面区（兜底时显示项目名首字 + 渐变底色） */
+/* SmartImage 的图片与兜底块都填满封面区（兜底时显示项目名首字 + 渐变底色）*/
 .cover :deep(.img-fallback__img),
 .cover :deep(.img-fallback__box) {
     width: 100%;
@@ -206,12 +201,7 @@ onMounted(load);
     color: var(--text);
 }
 
-/**
- * 伸展式链接：伪元素铺满整张卡片，卡片任意位置都能点进详情
- *
- * 不能用「把卡片包进 <router-link>」：卡内两个外链会形成嵌套 <a>，浏览器会拆标签。
- * 不能用 onclick + router.push：中键 / Ctrl+点击「新标签打开」会失效，伪元素则保留原生行为。
- */
+/** 伸展式链接：伪元素铺满整张卡片，卡片任意位置都能点进详情 */
 .title::after {
     content: '';
     position: absolute;

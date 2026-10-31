@@ -14,13 +14,6 @@ import java.time.LocalDateTime;
 /**
  * 工作室成员档案实体（对应 studio_member）
  *
- * 与 sys_user 是可选 1:1：user_id 可为 NULL（还没开号），
- * uk_userid_deleted 保证一个账号最多绑一条成员记录（唯一索引不约束 NULL，
- * 所以多条未绑定记录可以共存）。官网展示数据以本表为唯一权威源。
- *
- * grade_year 用 smallint / Integer 并校验 1950~2100，绝不用字符串存「2026级」——
- * 那样无法排序、无法按届筛选。member_status、team_position 取值见对应枚举。
- *
  * @author shaoshing
  */
 @Data
@@ -34,10 +27,7 @@ public class StudioMember implements Serializable {
     @TableId(type = IdType.ASSIGN_ID)
     private Long id;
 
-    /**
-     * 绑定的登录账号 ID（sys_user.id），可空：NULL 表示还没开号
-     * 非空时须保证账号存在且未被其他成员绑定（应用层校验 + uk_userid_deleted 兜并发）
-     */
+    /** 绑定的登录账号 ID（sys_user.id），可空：NULL 表示还没开号。非空时须保证账号存在且未被其他成员绑定（应用层校验 + uk_userid_deleted 兜并发） */
     private Long userId;
 
     /** 成员姓名（展示主体，NOT NULL） */

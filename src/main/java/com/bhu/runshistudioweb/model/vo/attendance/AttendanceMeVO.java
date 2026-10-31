@@ -11,12 +11,6 @@ import java.time.LocalDateTime;
 /**
  * 本人签到历史视图对象（只能查自己的）
  *
- * 与 AttendanceBoardVO 的区别：看板是成员之间的横向对比，本 VO 是单个成员自己的纵向记录，
- * 因此带上 attendanceDate 便于按天展示。
- *
- * 脱敏规则与看板完全一致：不含 ip / userAgent / userAccount。即便查自己的也照样脱敏——
- * 返回值同样会被前端缓存、被日志中间件采样打印，多一个敏感字段就多一处泄露面。
- *
  * @author shaoshing
  */
 @Data
@@ -33,7 +27,4 @@ public class AttendanceMeVO implements Serializable {
 
     /** 签到时刻（东八区），精确到秒 */
     private LocalDateTime checkInAt;
-
-    /** 是否内网签到（true-工作室网段） */
-    private Boolean inLan;
 }

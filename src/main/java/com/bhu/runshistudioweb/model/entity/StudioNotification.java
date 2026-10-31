@@ -14,10 +14,6 @@ import java.time.LocalDateTime;
 /**
  * 站内通知实体（对应 studio_notification）
  *
- * title / content 是快照而非模板引用：通知发出后业务数据怎么变，
- * 都不影响已收到通知的文字——它记录的是「那一刻发生了什么」。
- * 雪花 ID、逻辑删除、审计四列由 MyMetaObjectHandler 填充，与其它主表一致。
- *
  * @author shaoshing
  */
 @Data

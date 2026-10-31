@@ -3,9 +3,6 @@ package com.bhu.runshistudioweb.model.enums;
 /**
  * 成员状态（studio_member.member_status）
  *
- * 用 tinyint 而非 varchar：纯状态位、极少扩展，且需要按数值筛选（?memberStatus=0）。
- * 取值与 db/user.sql 列注释同源：0-在读/在队，1-毕业/离队。
- *
  * @author shaoshing
  */
 public enum MemberStatusEnum {
@@ -40,25 +37,22 @@ public enum MemberStatusEnum {
     /**
      * 把数字翻译成成员状态，查不到返回 null，由调用方决定报错还是降级
      *
-     * 作为查询参数时须判空报错（否则非法值会静默返回空列表），作为展示字段时可降级成「未知」。
-     * 遍历而非 switch：新增状态不必改这里；null 必须先挡，否则拆箱比较会 NPE。
-     *
      * @param value 待翻译的取值，允许为 null
      * @return 命中的枚举；null 或不是 0 / 1 时返回 null
      */
     public static MemberStatusEnum of(Integer value) {
-        // ① 先挡 null：不判空就拆箱比较会 NPE，而 null 在这里是正常输入
+        // 先挡 null：不判空就拆箱比较会 NPE，而 null 在这里是正常输入
         if (value == null) {
             return null;
         }
-        // ② 遍历全部常量：新增状态时这里不用改
+        // 遍历全部常量：新增状态时这里不用改
         for (MemberStatusEnum status : values()) {
             // 左边 int、右边 Integer，比较的是数值而非对象引用
             if (status.value == value) {
                 return status;
             }
         }
-        // ③ 查不到返回 null：报错还是降级，由调用方按场景决定
+        // 查不到返回 null：报错还是降级，由调用方按场景决定
         return null;
     }
 
@@ -72,11 +66,11 @@ public enum MemberStatusEnum {
     public static String valuesText() {
         StringBuilder text = new StringBuilder();
         for (MemberStatusEnum status : values()) {
-            // ① 只有已经拼过内容才补分隔符：末尾不会多出一个「 / 」
+            // 只有已经拼过内容才补分隔符：末尾不会多出一个「 / 」
             if (text.length() > 0) {
                 text.append(" / ");
             }
-            // ② 值 + 中文描述一起拼：数字本身没有语义
+            // 值 + 中文描述一起拼：数字本身没有语义
             text.append(status.value).append("（").append(status.desc).append("）");
         }
         return text.toString();

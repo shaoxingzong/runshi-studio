@@ -2,12 +2,6 @@
 import { ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import { uploadFile } from '@/api/file';
-
-// 通用图片上传组件（`v-model` 绑定站内相对路径）
-//
-// 把「选图 → 上传 → 回填路径 → 预览」串成一步，省得管理员手填 URL。
-// 绑定值始终是站内相对路径（如 `/uploads/2026/10/xxxx.png`），预览时直接当 `src`
-// （开发态由 Vite 代理 `/uploads`）。
 defineProps<{
     // 当前图片相对路径；空串表示未上传
     modelValue?: string | null;

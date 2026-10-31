@@ -17,27 +17,13 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 /**
  * 审计字段填充器的行为验收（纯单元测试，不启动 Spring、不连数据库）
  *
- * 只验三件最容易回归的事：
- * ① 没有登录上下文时必须回退成系统（0），且**不能抛异常**——定时任务、启动自检都跑在这条路径上；
- * ② 业务显式赋值的创建人不能被填充器覆盖（strictInsertFill 的「只在 null 时填」语义）；
- * ③ 更新时只碰 updated_by / updated_at，绝不能改写 created_by（审计链的根基）。
- *
- * 登录态为什么不在这里测：真实登录人需要 Sa-Token 请求上下文，属于集成测试的范畴；
- * 本用例是「填充器本身不闯祸」的底线保障。
- *
  * @author shaoshing
  */
 class MetaObjectHandlerTest {
 
     private final MyMetaObjectHandler handler = new MyMetaObjectHandler();
 
-    /**
-     * 手工初始化实体元信息
-     *
-     * MyBatis-Plus 的 strictInsertFill / strictUpdateFill 依赖 TableInfo（哪些字段标了
-     * FieldFill.INSERT / INSERT_UPDATE）。正常运行时由 Mapper 扫描顺带建好，
-     * 纯单元测试没有 MyBatis 容器，必须自己初始化一次，否则填充器会 NPE。
-     */
+    /** 手工初始化实体元信息 */
     @BeforeAll
     static void initTableInfo() {
         MapperBuilderAssistant assistant = new MapperBuilderAssistant(new MybatisConfiguration(), "");

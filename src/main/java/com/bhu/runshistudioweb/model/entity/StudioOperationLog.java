@@ -14,14 +14,6 @@ import java.time.LocalDateTime;
 /**
  * 管理端操作日志实体（对应 studio_operation_log）
  *
- * 一行 = 一次「会改变内容或权限」的管理员动作。留痕的价值全在事故之后：
- * 内容出了问题，能直接回答「谁、什么时候、对哪条、做了什么」，而不是先复原现场再猜。
- *
- * operator_account / operator_name / target_title 存的是**快照**而非外键：
- * 账号被删、帖子被删之后，日志仍然是可读证据；只存 ID 等于把可读性押在「数据还在」上。
- *
- * 本表只增不改：没有业务更新路径，updated_at 实际恒等于 created_at。
- *
  * @author shaoshing
  */
 @Data

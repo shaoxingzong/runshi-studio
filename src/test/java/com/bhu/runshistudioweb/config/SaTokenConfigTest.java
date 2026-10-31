@@ -21,11 +21,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Sa-Token 配置生效验收测试
  *
- * 为什么这组测试有必要：sa-token.* 的键名写错不会报错，
- * Spring Boot 的松散绑定只会把它当成一个没人读的属性静默忽略——
- * 表现就是「配置里明明写了 7 天有效期，实际还是默认 30 天」这种极难发现的问题。
- * 因此这里逐项断言关键配置是否真的绑到了 SaTokenConfig 上。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -91,9 +86,6 @@ class SaTokenConfigTest {
 
         try {
             dao.set(key, "v1", 120);
-            // update 是「保持原 TTL 只换值」，Sa-Token 在登录时写 session 就会走这里。
-            // 若底层实现使用 Redis 6.0+ 的 KEEPTTL 语法，在 Redis 5.x 上会抛
-            // RedisCommandExecutionException: ERR syntax error，导致登录接口 500。
             dao.update(key, "v2");
 
             assertEquals("v2", dao.get(key), "update 后读到的值不对");

@@ -11,16 +11,7 @@ import type {
     QuizOption,
 } from '@/api/types';
 
-/**
- * 题库管理（管理端）
- *
- * 章节不是独立实体：它只是题目上的两个名字列，所以没有「新增章节」，只有改名 / 移章 / 整章删除。
- * 停用与删除分开：停用是可逆下线（错题条目保留），删除会清理错题条目，故删除要二次确认。
- * 导入先 dryRun 校验再落库，避免「导入了一半」。
- *
- * 改题的两句提示必须让管理员看到（它们是后端真实行为的说明书）：
- * 有作答记录时「修改答案不会重算历史判定」；判定相关变更时「将重置错题连对进度」。
- */
+/** 题库管理（管理端） */
 const page = reactive({ current: 1, pageSize: 10 });
 const result = ref<PageResult<AdminQuizQuestion> | null>(null);
 const loading = ref(false);
@@ -63,7 +54,7 @@ const stats = computed(() => {
     };
 });
 
-// ==================== 列表 ====================
+// 列表
 
 async function load() {
     loading.value = true;
@@ -117,7 +108,7 @@ function turn(delta: number) {
     void load();
 }
 
-// ==================== 新增 / 编辑 ====================
+// 新增 / 编辑
 
 const dialogVisible = ref(false);
 const saving = ref(false);
@@ -217,12 +208,7 @@ function openEdit(row: AdminQuizQuestion) {
     dialogVisible.value = true;
 }
 
-/**
- * 判定相关变更检测（前端侧的提示用）
- *
- * 与后端 `isVerdictChanged` 同口径：改答案、改题型、改选项标签集合都算；只改选项文字不算
- * ——「提交时选了 C」仍指向同一个选项。这里只用于提前提示，两边不一致最多多一句或少一句提示。
- */
+/** 判定相关变更检测（前端侧的提示用） */
 function isVerdictChanged(): boolean {
     const old = editing.value;
     if (!old) {
@@ -254,8 +240,6 @@ async function save() {
         return;
     }
 
-    // 改题的后果提示：有作答记录时提醒「不会重算历史判定」，
-    // 判定相关变更时提醒「会重置错题连对进度」
     if (editing.value) {
         const hints: string[] = [];
         if (editing.value.answerCount > 0) {
@@ -303,7 +287,7 @@ async function save() {
     }
 }
 
-// ==================== 停用 / 删除 ====================
+// 停用 / 删除
 
 async function toggleStatus(row: AdminQuizQuestion) {
     const next = row.status === 0 ? 1 : 0;
@@ -360,7 +344,7 @@ async function batchRemove() {
     }
 }
 
-// ==================== 导入 ====================
+// 导入
 
 const importVisible = ref(false);
 const importText = ref('');
@@ -441,7 +425,7 @@ async function confirmImport() {
     }
 }
 
-// ==================== 章节操作 ====================
+// 章节操作
 
 async function renameChapter(row: AdminQuizChapter) {
     try {
@@ -612,7 +596,7 @@ onMounted(async () => {
             </div>
         </div>
 
-        <!-- 章节管理（不是独立实体：只有改名 / 整章删除） -->
+        <!-- 章节管理（不是独立实体：只有改名 / 整章删除）-->
         <div class="card chapter-card">
             <h2>章节概览</h2>
             <p class="muted small">

@@ -18,10 +18,6 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * 用户端举报接口
  *
- * 路径挂在 /post 下而不是新开 /report：举报的对象就是帖子或评论，同属社区资源。
- * 不在 SaTokenMvcConfig 白名单里，因此默认要求登录——匿名举报无法追溯，
- * 也挡不住同一个人反复刷举报。
- *
  * @author shaoshing
  */
 @RestController

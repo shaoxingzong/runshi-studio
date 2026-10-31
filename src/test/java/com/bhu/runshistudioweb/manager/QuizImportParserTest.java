@@ -15,11 +15,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 题目导入解析器验收测试（纯单测：不启 Spring、不连数据库）
  *
- * 解析器是本模块唯一「面向不规整输入」的组件：粘贴过来的文本
- * 全角半角混杂、答案有的用星号有的用「答案：」、块之间可能没有空行。
- * 这些边界全在这里覆盖——它们的失败表现为「导入报错但看不出哪错了」，
- * 比业务逻辑出错更让人烦躁。
- *
  * @author shaoshing
  */
 class QuizImportParserTest {
@@ -45,7 +40,7 @@ class QuizImportParserTest {
             解析：因果律属于认识论范畴，不是辩证法的基本规律。
             """;
 
-    // ==================== 正常解析 ====================
+    // 正常解析
 
     @Test
     @DisplayName("单选题：星号标正确项，解析被正确归位")
@@ -136,7 +131,7 @@ class QuizImportParserTest {
         assertEquals("题干就在题型行里", result.questions().get(0).stem());
     }
 
-    // ==================== 格式容错 ====================
+    // 格式容错
 
     @Test
     @DisplayName("半角方括号、长题型名、各种选项分隔符都认")
@@ -171,7 +166,7 @@ class QuizImportParserTest {
         assertEquals("AC", result.questions().get(0).correctLabels());
     }
 
-    // ==================== 错误定位 ====================
+    // 错误定位
 
     @Test
     @DisplayName("缺少题型行：报错并带行号")
@@ -276,7 +271,7 @@ class QuizImportParserTest {
         assertTrue(result.errors().get(0).line() >= 5, "行号应指向第二个块");
     }
 
-    // ==================== 空输入 ====================
+    // 空输入
 
     @Test
     @DisplayName("空文本：返回空结果，不报错")
@@ -288,7 +283,7 @@ class QuizImportParserTest {
         assertFalse(QuizImportParser.parse("   \n\n  ").hasError(), "空白文本不是错误");
     }
 
-    // ==================== 与 Service 的契约 ====================
+    // 与 Service 的契约
 
     @Test
     @DisplayName("解析结果能直接交给 Service 校验（选项标签从 A 连续、正确项属于选项）")

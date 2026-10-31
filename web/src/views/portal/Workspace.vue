@@ -4,18 +4,12 @@ import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { attendanceApi } from '@/api/attendance';
 import ErrorRetry from '@/components/ErrorRetry.vue';
+import MemberProfileDialog from '@/components/MemberProfileDialog.vue';
 import { userApi } from '@/api/user';
 import { useUserStore } from '@/stores/user';
 import type { AttendanceBoardItem, AttendanceRecord } from '@/api/types';
 
-/**
- * 成员工作台（考勤）
- *
- * 准入：只有在队成员能用（认 studio_member 表）。非成员被拦下并送回首页——
- * 不是报错，「不是成员」是正常的身份状态。
- *
- * 隐私：看板不含 IP / UA / 账号，只呈现「是否内网」的布尔结论。
- */
+/** 成员工作台（考勤） */
 const router = useRouter();
 const user = useUserStore();
 
@@ -33,13 +27,7 @@ const me = computed(() => board.value.find((item) => item.userId === userId.valu
 /** 今天是否已打卡（看板里我自己那行的标记） */
 const checkedToday = computed(() => !!me.value?.checkedIn);
 
-/**
- * 冷却剩余秒数
- *
- * 由后端给出的 nextCheckInAt 驱动（后端按「最后一次签到 + 配置间隔」计算），
- * 前端只做倒计时展示——间隔是配置项，写死 60 秒会在配置变化后与后端不一致，
- * 表现就是「按钮亮着，点下去必报错」。
- */
+/** 冷却剩余秒数 */
 const cooldownSeconds = ref(0);
 /** 每秒重算一次剩余时间；页面离开时必须清掉，否则反复进出会叠加多个定时器 */
 let cooldownTimer: number | null = null;
@@ -70,8 +58,6 @@ async function load() {
         // 看板刷新后立刻重算冷却：签到成功后按钮应马上变成「N 秒后可再次签到」
         refreshCooldown();
     } catch (e) {
-        // 三个并发请求任一失败都会落到这里：给出原因与重试，
-        // 而不是 loading 一关、整个工作台空白
         error.value = (e as Error).message || '加载失败';
     } finally {
         loading.value = false;
@@ -83,11 +69,8 @@ async function checkIn() {
     try {
         await attendanceApi.checkIn();
         ElMessage.success('签到成功');
-        // 刷新看板与历史：本次签到的时刻、是否内网、本月次数都会变
         await load();
     } catch {
-        // 失败原因（非成员 / 距上次签到太近）已由请求层统一提示，
-        // 这里不重复弹窗，也不重置数据——保持用户看到的是上一次的真实状态
     } finally {
         checkingIn.value = false;
     }
@@ -100,6 +83,9 @@ function formatTime(value?: string | null): string {
 function formatDate(value?: string | null): string {
     return value ? value.slice(0, 10) : '—';
 }
+
+/** 我的资料编辑弹窗：表单与保存逻辑收在 MemberProfileDialog 里，账号菜单复用同一份 */
+const profileVisible = ref(false);
 
 onMounted(async () => {
     // 布局不会在路由切换时重建，这里主动拉一次确保身份是最新的
@@ -127,7 +113,7 @@ onBeforeUnmount(() => {
     <div class="page" v-loading="loading">
         <div class="page-head">
             <div>
-                <h1>工作台</h1>
+                <h1>打卡</h1>
                 <p>成员签到与出勤情况，仅工作室成员可见。</p>
             </div>
         </div>
@@ -144,13 +130,10 @@ onBeforeUnmount(() => {
                     {{
                         checkedToday
                             ? `打卡时间 ${formatTime(me?.checkInAt)}`
-                            : '在工作室内网环境下签到会记为「内网」'
+                            : '点击下方按钮完成今日签到'
                     }}
                 </div>
-                <!--
-                  冷却期禁用：后端有 60 秒防抖（studio.attendance.min-interval-seconds），
-                  按钮一直可点等于「点了必然报错」。倒计时由 nextCheckInAt 驱动，前端不写死间隔
-                -->
+                <!-- 冷却期禁用：后端有 60 秒防抖（studio.attendance.min-interval-seconds），按钮一直可点等于「点了必然报错」。倒计时由 nextCheckInAt 驱动，前端不写死间隔 -->
                 <el-button
                     class="checkin-btn"
                     size="large"
@@ -172,12 +155,6 @@ onBeforeUnmount(() => {
                 <div class="stat">
                     <div class="stat-value">{{ formatTime(me?.checkInAt) }}</div>
                     <div class="stat-label">今日打卡</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-value">
-                        {{ me?.inLan ? '内网' : me ? '外网' : '—' }}
-                    </div>
-                    <div class="stat-label">本次网络</div>
                 </div>
                 <div class="stat">
                     <div class="stat-value">{{ me?.monthCount ?? 0 }}</div>
@@ -207,12 +184,6 @@ onBeforeUnmount(() => {
                 <el-table-column label="本月次数" width="110">
                     <template #default="{ row }">{{ row.monthCount ?? 0 }}</template>
                 </el-table-column>
-                <el-table-column label="网络" width="100">
-                    <template #default="{ row }">
-                        <span v-if="!row.checkedIn" class="muted">—</span>
-                        <span v-else>{{ row.inLan ? '内网' : '外网' }}</span>
-                    </template>
-                </el-table-column>
             </el-table>
         </section>
 
@@ -222,15 +193,43 @@ onBeforeUnmount(() => {
             <el-empty v-if="!history.length" description="还没有签到记录" />
             <div v-else class="history">
                 <div v-for="(record, index) in history" :key="index" class="history-item">
-                    <span class="dot" :class="{ lan: record.inLan }" />
+                    <span class="dot" />
                     <span class="date">{{ formatDate(record.attendanceDate) }}</span>
                     <span class="time">{{ formatTime(record.checkInAt) }}</span>
-                    <el-tag size="small" :type="record.inLan ? 'success' : 'info'">
-                        {{ record.inLan ? '内网' : '外网' }}
-                    </el-tag>
                 </div>
             </div>
         </section>
+
+        <!-- 我的资料：成员可自改展示字段；登录账号只读，由后端 DTO 白名单约束 -->
+        <section v-if="user.isMember" class="card">
+            <div class="profile-head">
+                <h2>我的资料</h2>
+                <el-button type="primary" plain @click="profileVisible = true">编辑资料</el-button>
+            </div>
+            <div class="profile-grid">
+                <div class="profile-item">
+                    <span class="label">登录账号</span>
+                    <span>{{ user.account }}<span class="muted">（不可修改）</span></span>
+                </div>
+                <div class="profile-item">
+                    <span class="label">姓名</span>
+                    <span>{{ user.memberProfile?.name || '—' }}</span>
+                </div>
+                <div class="profile-item">
+                    <span class="label">专业 / 方向</span>
+                    <span>
+                        {{ user.memberProfile?.major || '—' }} /
+                        {{ user.memberProfile?.direction || '—' }}
+                    </span>
+                </div>
+                <div class="profile-item wide">
+                    <span class="label">个人简介</span>
+                    <span>{{ user.memberProfile?.summary || '—' }}</span>
+                </div>
+            </div>
+        </section>
+
+        <MemberProfileDialog v-model="profileVisible" />
     </div>
 </template>
 
@@ -317,17 +316,13 @@ h2 {
     font-size: 14px;
 }
 
-/* 左侧小圆点：内网用绿色，外网用灰色，一眼区分 */
+/* 左侧小圆点：只作列表项目符号，不再表示网络类型 */
 .dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
     background: #d1d5db;
     flex-shrink: 0;
-}
-
-.dot.lan {
-    background: #059669;
 }
 
 .date {
@@ -337,6 +332,42 @@ h2 {
 
 .time {
     min-width: 60px;
+    color: #6b7280;
+}
+
+/* 我的资料 */
+.profile-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+}
+
+.profile-head h2 {
+    margin: 0;
+}
+
+.profile-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px 24px;
+    font-size: 14px;
+}
+
+.profile-item {
+    display: flex;
+    gap: 10px;
+    min-width: 0;
+}
+
+.profile-item.wide {
+    grid-column: 1 / -1;
+}
+
+.label {
+    flex-shrink: 0;
+    width: 76px;
     color: #6b7280;
 }
 </style>

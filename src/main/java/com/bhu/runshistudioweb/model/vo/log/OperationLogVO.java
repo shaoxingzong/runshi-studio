@@ -10,11 +10,6 @@ import java.time.LocalDateTime;
 /**
  * 管理端操作日志视图（列表行）
  *
- * 与实体相比多了 actionLabel / targetTypeLabel：标签文案由后端字典给出，
- * 前端不再维护第二份「动作码 → 中文」映射——两份映射必然有一份先过期。
- *
- * 快照字段原样返回：账号被删除、帖子被删除之后，这行日志仍然要能读懂。
- *
  * @author shaoshing
  */
 @Data

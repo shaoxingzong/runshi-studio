@@ -7,14 +7,7 @@ import QuestionCard from '@/components/quiz/QuestionCard.vue';
 import { useQuizSession } from '@/composables/useQuizSession';
 import { usePageMeta } from '@/composables/usePageMeta';
 
-/**
- * 答题页
- *
- * 进度来自 sessionStorage：服务端不持久化批次（题目不含答案，整批交给前端即可），刷新后靠本地恢复。
- * 换设备不能续答是刻意接受的——刷题不是考试，重开成本为 0。
- *
- * 键盘：A–F 选项、Enter 提交/下一题、S 跳过。桌面端鼠标在选项与「下一题」之间来回移动是最大的时间浪费。
- */
+/** 答题页 */
 const router = useRouter();
 const session = useQuizSession();
 
@@ -174,7 +167,7 @@ onBeforeUnmount(() => {
             </div>
         </template>
 
-        <!-- 结果视图：本轮结束时原地切换，不跳新路由（用户点「返回」能直接回首页） -->
+        <!-- 结果视图：本轮结束时原地切换，不跳新路由（用户点「返回」能直接回首页）-->
         <section v-else-if="finished" class="card result">
             <h2>本轮结束</h2>
             <div class="result-accuracy">{{ accuracyText }}</div>

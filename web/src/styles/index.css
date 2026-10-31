@@ -23,10 +23,96 @@
     --warning: #d97706;
     --danger: #dc2626;
 
-    --radius: 12px;
+    /* 正文与 Element Plus 共用同一套字体栈，避免表单控件字体和正文不一致 */
+    --font-sans: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+
+    /* 圆角只保留四档：小控件 / 输入按钮 / 卡片 / 大面板 */
+    --radius-xs: 6px;
     --radius-sm: 8px;
-    --shadow: 0 1px 3px rgb(0 0 0 / 6%), 0 1px 2px rgb(0 0 0 / 4%);
-    --shadow-md: 0 4px 12px rgb(0 0 0 / 8%);
+    --radius: 12px;
+    --radius-lg: 16px;
+    --radius-xl: 20px;
+
+    /* 阴影只保留三档：贴底 / 悬浮 / 大浮层，颜色统一带一点冷色 */
+    --shadow-xs: 0 1px 2px rgb(15 23 42 / 5%);
+    --shadow: 0 1px 3px rgb(15 23 42 / 6%), 0 1px 2px rgb(15 23 42 / 4%);
+    --shadow-md: 0 8px 24px rgb(15 23 42 / 8%);
+    --shadow-lg: 0 20px 48px rgb(15 23 42 / 10%);
+}
+
+/**
+ * Element Plus 主题对齐
+ *
+ * EP 默认 primary 是 #409eff、圆角 4px，和站点的 #2563eb / 12px 并列时
+ * 会明显出现「两套系统」。这里把 EP 的变量映射回站点 token。
+ *
+ * 用 :root:root 而不是 :root：按需引入的 EP 基础样式可能在本文件之后加载，
+ * 提高一级选择器优先级，保证覆盖不会因为 import 顺序失效。
+ */
+:root:root {
+    --el-color-primary: var(--brand);
+    --el-color-primary-rgb: 37, 99, 235;
+    --el-color-primary-light-3: #5b8def;
+    --el-color-primary-light-5: #8fb2f4;
+    --el-color-primary-light-7: #c0d3f9;
+    --el-color-primary-light-8: #d6e2fb;
+    --el-color-primary-light-9: var(--brand-soft);
+    --el-color-primary-dark-2: var(--brand-dark);
+
+    --el-color-success: var(--success);
+    --el-color-success-rgb: 5, 150, 105;
+    --el-color-success-light-3: #50b696;
+    --el-color-success-light-5: #82cab4;
+    --el-color-success-light-7: #b4e0d2;
+    --el-color-success-light-8: #cdeae1;
+    --el-color-success-light-9: #e6f5f0;
+    --el-color-success-dark-2: #047854;
+
+    --el-color-warning: var(--warning);
+    --el-color-warning-rgb: 217, 119, 6;
+    --el-color-warning-light-3: #e4a051;
+    --el-color-warning-light-5: #ecbb82;
+    --el-color-warning-light-7: #f4d6b9;
+    --el-color-warning-light-8: #f7e4d0;
+    --el-color-warning-light-9: #fbf1ec;
+    --el-color-warning-dark-2: #ae5f05;
+
+    --el-color-danger: var(--danger);
+    --el-color-danger-rgb: 220, 38, 38;
+    --el-color-danger-light-3: #e76767;
+    --el-color-danger-light-5: #ee9292;
+    --el-color-danger-light-7: #f5d6d6;
+    --el-color-danger-light-8: #f8e2e2;
+    --el-color-danger-light-9: #fcedec;
+    --el-color-danger-dark-2: #b01e1e;
+
+    /* error 是 danger 的别名，EP 里两套变量必须同步，否则 el-alert 的红色会不一致 */
+    --el-color-error: var(--danger);
+    --el-color-error-rgb: 220, 38, 38;
+    --el-color-error-light-3: #e76767;
+    --el-color-error-light-5: #ee9292;
+    --el-color-error-light-7: #f5d6d6;
+    --el-color-error-light-8: #f8e2e2;
+    --el-color-error-light-9: #fcedec;
+    --el-color-error-dark-2: #b01e1e;
+
+    --el-text-color-primary: var(--text);
+    --el-text-color-regular: var(--text-secondary);
+    --el-text-color-secondary: var(--muted);
+    --el-border-color: var(--border);
+    --el-border-color-light: var(--border);
+    --el-border-color-lighter: #f1f5f9;
+    --el-fill-color-light: var(--bg);
+    --el-fill-color-blank: var(--surface);
+
+    --el-border-radius-base: var(--radius-sm);
+    --el-border-radius-small: var(--radius-xs);
+    --el-border-radius-round: 999px;
+    --el-font-family: var(--font-sans);
+
+    --el-box-shadow: var(--shadow-lg);
+    --el-box-shadow-light: var(--shadow-md);
+    --el-box-shadow-lighter: var(--shadow);
 }
 
 * {
@@ -42,7 +128,7 @@ body,
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', sans-serif;
+    font-family: var(--font-sans);
     color: var(--text);
     background: var(--bg);
     line-height: 1.7;

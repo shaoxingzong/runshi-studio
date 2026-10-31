@@ -27,17 +27,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 刷题流程验收测试（C 端：三种模式、判分、跳过、错题本、概览）
  *
- * 覆盖的规则：
- * - 三种模式：顺序（排除已作答）、错题重刷（只出待复习）、随机（范围内不重复）；
- * - 判分：多选不给部分分（漏选/多选/错选均判错）、单选传多标签是 A0401 而不是判错；
- * - 跳过：不记错、不计入正确率、响应不含答案；
- * - 错题本状态机：答错入本 → 连对 2 次消解 → 再答错自动回待复习；
- * - 幂等：重复提交只落一条、返回首次判定、统计不翻倍；
- * - 概览口径：累计作答不含跳过、0 次作答时正确率为 null。
- *
- * 为什么用 @Transactional：答题的写操作（作答记录 + 错题本）都在事务内，
- * 测试回滚即可撤销。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -85,7 +74,7 @@ class QuizPracticeTest {
         memberToken = support.tokenOf(memberId);
     }
 
-    // ==================== ① 准入 ====================
+    // ① 准入
 
     @Test
     @DisplayName("准入：非成员（只有账号没有档案）一律 A0301，连教材列表都不给")
@@ -108,7 +97,7 @@ class QuizPracticeTest {
         assertEquals("A0201", support.code(body), "未登录应 A0201：" + body);
     }
 
-    // ==================== ② 顺序模式 ====================
+    // ② 顺序模式
 
     @Test
     @DisplayName("顺序模式：按题序出题，第二轮排除已作答的题")
@@ -170,7 +159,7 @@ class QuizPracticeTest {
         assertEquals("A0401", support.code(body), "顺序模式缺章节应 A0401：" + body);
     }
 
-    // ==================== ③ 判分 ====================
+    // ③ 判分
 
     @Test
     @DisplayName("单选答对：result=1，返回正确答案与解析")
@@ -255,7 +244,7 @@ class QuizPracticeTest {
         assertEquals("A0401", support.code(body), "不存在的选项应 A0401：" + body);
     }
 
-    // ==================== ④ 跳过 ====================
+    // ④ 跳过
 
     @Test
     @DisplayName("跳过：落一条 result=3 的记录，不写错题本，响应不含答案")
@@ -305,31 +294,31 @@ class QuizPracticeTest {
         assertEquals(questionId, second.get("questions").get(0).get("id").asLong());
     }
 
-    // ==================== ⑤ 错题本状态机 ====================
+    // ⑤ 错题本状态机
 
     @Test
     @DisplayName("错题本状态机：答错入本 → 连对 2 次消解 → 再答错回待复习")
     void wrongBookStateMachine() {
         long questionId = createQuestion("状态机题", 0, "A", 1);
 
-        // ① 答错 → 入本
+        // 答错 → 入本
         JsonNode verdict = answerInNewBatch(questionId, "B");
         assertEquals("added", verdict.get("wrongBookAction").asText());
         assertEquals(1, pendingWrong(questionId), "应进待复习");
 
-        // ② 第一次答对 → 进度 +1，还差 1 次
+        // 第一次答对 → 进度 +1，还差 1 次
         verdict = answerInNewBatch(questionId, "A");
         assertEquals("progress", verdict.get("wrongBookAction").asText(), "未达阈值应只是进度");
         assertEquals(1, verdict.get("remainingStreak").asInt(), "还差 1 次");
         assertEquals(1, pendingWrong(questionId), "仍在待复习");
 
-        // ③ 第二次答对 → 消解
+        // 第二次答对 → 消解
         verdict = answerInNewBatch(questionId, "A");
         assertEquals("resolved", verdict.get("wrongBookAction").asText(), "连对 2 次应消解");
         assertEquals(0, pendingWrong(questionId), "不应再出现在待复习");
         assertEquals(1, resolvedWrong(questionId), "应计入已消解");
 
-        // ④ 消解后再答错 → 自动回待复习
+        // 消解后再答错 → 自动回待复习
         verdict = answerInNewBatch(questionId, "B");
         assertEquals("reopened", verdict.get("wrongBookAction").asText(), "消解后再错应回到待复习");
         assertEquals(1, pendingWrong(questionId), "应重新出现在待复习");
@@ -393,7 +382,7 @@ class QuizPracticeTest {
         assertEquals(3, detail.get("options").size(), "应含选项");
     }
 
-    // ==================== ⑥ 错题模式 ====================
+    // ⑥ 错题模式
 
     @Test
     @DisplayName("错题模式：只出待复习的错题")
@@ -415,7 +404,7 @@ class QuizPracticeTest {
         assertEquals("A0402", support.code(body), "错题本为空应 A0402：" + body);
     }
 
-    // ==================== ⑦ 随机模式 ====================
+    // ⑦ 随机模式
 
     @Test
     @DisplayName("随机模式：范围内抽题、数量正确、一轮内不重复")
@@ -443,7 +432,7 @@ class QuizPracticeTest {
         assertEquals("A0402", support.code(body), "无题应 A0402：" + body);
     }
 
-    // ==================== ⑧ 幂等 ====================
+    // ⑧ 幂等
 
     @Test
     @DisplayName("幂等：同一题重复提交只落一条记录，返回首次判定，统计不翻倍")
@@ -466,7 +455,7 @@ class QuizPracticeTest {
         assertEquals(1, wrongCount(questionId), "错题本不能被重复计数");
     }
 
-    // ==================== ⑨ 概览口径 ====================
+    // ⑨ 概览口径
 
     @Test
     @DisplayName("概览：累计作答与正确数正确，0 次作答时正确率为 null")
@@ -487,7 +476,7 @@ class QuizPracticeTest {
         assertEquals(1, overview.get("wrongPending").asInt(), "一道待复习");
     }
 
-    // ==================== ⑩ 出题响应不含答案 ====================
+    // ⑩ 出题响应不含答案
 
     @Test
     @DisplayName("出题响应结构上没有答案字段（判分在服务端）")
@@ -503,7 +492,7 @@ class QuizPracticeTest {
         assertFalse(body.contains("isCorrect"), "选项绝不能带正确性标记");
     }
 
-    // ==================== 工具方法 ====================
+    // 工具方法
 
     /** 建一道题并返回 ID */
     private long createQuestion(String stem, int type, String correct, int seq) {

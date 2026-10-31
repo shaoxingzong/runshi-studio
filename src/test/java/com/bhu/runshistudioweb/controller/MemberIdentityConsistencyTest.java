@@ -24,33 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 「成员身份」一致性的验收测试
  *
- *
- * <p><b>本类要钉死的是一个真实 bug</b>（来自用户反馈）：
- * 「后台创建的成员有时候不显示这些功能，有时候显示了也报错用不了」。
- *
- * <p>根因是<b>两套身份判据不一致</b>：
- * <ul>
- *     <li>前端「是否显示成员入口」与后端「接口是否放行」都查
- *     {@code studio_member} 档案（认表）；</li>
- *     <li>而「后台入口 / 角色」查的是 {@code sys_user.user_role}（认角色）。</li>
- * </ul>
- * 于是出现两种坏状态：
- * <ol>
- *     <li><b>有档案但 user_id 为空</b>：档案永远不生效，本人看不到任何成员功能，
- *     管理员却在列表里看到「他是成员」；</li>
- *     <li><b>改了角色但没建档案</b>：入口不显示（前端按档案判断），
- *     强行进页面后端又返回 A0301。</li>
- * </ol>
- *
- * <p>修复后的规则（本类的断言即验收标准）：
- * <ul>
- *     <li><b>保留</b>「可创建未绑定账号的档案」——{@code db/user.sql} 明确支持历史导入，
- *     强制必填属于过度修正，会破坏既有契约与既有测试；</li>
- *     <li>授予 member / admin 角色前<b>必须</b>已有成员档案，否则 A0401 并提示先去建档
- *     （这一步堵住「有角色没档案」的坏状态）；</li>
- *     <li>合法路径（先建档绑定、再改角色）必须走通，且 {@code /member/mine} 能查到档案。</li>
- * </ul>
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -83,7 +56,7 @@ class MemberIdentityConsistencyTest {
         support = new QuizTestSupport(mockMvc, sysUserMapper, studioMemberMapper, jdbcTemplate, jsonMapper);
     }
 
-    // ==================== ① 未绑定账号的档案：允许创建，但确实不生效 ====================
+    // ① 未绑定账号的档案：允许创建，但确实不生效
 
     @Test
     @DisplayName("新增成员不绑账号：仍然允许（保留历史导入能力），但该档案不生效")
@@ -111,9 +84,6 @@ class MemberIdentityConsistencyTest {
         String token = support.adminToken();
         String body = support.postJson("/member/add",
                 "{\"name\":\"账号不存在测试\",\"gradeYear\":2023,\"userId\":999999999999999999}", token);
-        // 这里刻意用 A0401 而不是 A0402：既有实现（assertUserBindable）把
-        // 「账号不存在」与「账号已被绑定」合并成同一个可读提示，
-        // 本用例只保证「被拒绝且提示可读」，不去改变既有的错误码口径
         assertEquals("A0401", support.code(body), "账号不存在应被拒绝：" + body);
         assertTrue(support.message(body).contains("账号"),
                 "提示应说明账号问题：" + body);
@@ -137,7 +107,7 @@ class MemberIdentityConsistencyTest {
                 "绑定后应能查到档案（否则成员功能不显示）：" + mine);
     }
 
-    // ==================== ② 授予角色前必须有档案 ====================
+    // ② 授予角色前必须有档案
 
     @Test
     @DisplayName("给无档案的账号授予 member 角色：A0401，并提示先去建档")
@@ -204,7 +174,7 @@ class MemberIdentityConsistencyTest {
         assertEquals("00000", support.code(body), "普通资料修改不该被拦：" + body);
     }
 
-    // ==================== ③ 回归：真实坏数据的表现 ====================
+    // ③ 回归：真实坏数据的表现
 
     @Test
     @DisplayName("user_id 为 NULL 的档案确实不生效（复现原 bug 的形态）")
@@ -248,7 +218,7 @@ class MemberIdentityConsistencyTest {
                 "有档案即可用成员接口，不该被角色卡住：" + catalog);
     }
 
-    // ==================== ④ 解绑 / 重复绑定 ====================
+    // ④ 解绑 / 重复绑定
 
     @Test
     @DisplayName("同一账号不能被两个成员档案同时绑定")

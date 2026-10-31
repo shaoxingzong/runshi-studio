@@ -28,10 +28,6 @@ import static org.mockito.Mockito.when;
 /**
  * 启动自检单测（纯 Mockito）
  *
- * 这个类针对的是「配置写了但没生效」这类问题（见 StartupSelfCheck 类注释：
- * 缺环境变量时应用仍会照常启动），所以它的测试重点是三种坏配置都必须被拦下，
- * 以及本地开发的合法形态（AI 留空）不能被误伤——后者决定了测试环境能否启动上下文。
- *
  * @author shaoshing
  */
 @ExtendWith(MockitoExtension.class)
@@ -122,8 +118,6 @@ class StartupSelfCheckTest {
     void aiPlaceholderLiteral_fails() {
         when(jdbcTemplate.queryForObject(anyString(), any(Class.class))).thenReturn(1);
         givenRedisPong();
-        // 按检查顺序按需 stub：baseUrl 先过，apiKey 是字面量即抛——
-        // model / embeddingModel 在抛错点之后，不会被读取，不 stub（严格模式下避免 UnnecessaryStubbing）
         when(aiProperties.getBaseUrl()).thenReturn("https://api.example.com");
         // 模拟「环境变量没注入、占位符被字面化传入」的形态
         when(aiProperties.getApiKey()).thenReturn("${AI_API_KEY}");

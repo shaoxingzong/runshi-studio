@@ -1,16 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { nextTick } from 'vue';
 import type { QuizBatch, QuizVerdict } from '@/api/types';
-
-// 刷题会话状态机测试
-//
-// 为什么只测状态机，不测页面：答题页的绝大部分逻辑都在这个 composable 里
-// （phase 流转、sessionStorage 恢复、提交失败回退、跳过前移指针）。
-// 页面本身只剩模板绑定，测它的成本远高于收益。
-//
-// 为什么 mock `quizApi` 而不是 mock axios：请求层的解包逻辑
-// 已有 `request.test.ts` 覆盖；这里要验的是「拿到响应后状态怎么变」，
-// 直接替掉 API 层能让每个用例只有三五行。
 vi.mock('@/api/quiz', () => ({
     quizApi: {
         startBatch: vi.fn(),
@@ -18,9 +8,6 @@ vi.mock('@/api/quiz', () => ({
         skip: vi.fn(),
     },
 }));
-
-// 必须在 mock 之后 import：ESM 的静态导入会被提升，但 vi.mock 也提升，
-// 因此这里拿到的是被替换后的模块
 import { quizApi } from '@/api/quiz';
 import { QUIZ_STORAGE_KEY, useQuizSession } from './useQuizSession';
 

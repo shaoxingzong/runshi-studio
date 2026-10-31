@@ -3,11 +3,6 @@ package com.bhu.runshistudioweb.model.enums;
 /**
  * 举报处理状态（studio_post_report.status）
  *
- * 「已处置」与「举报不成立」必须分开：前者内容被撤下，后者内容保留，
- * 合并后就答不出「我们的举报里有多少是真的有问题」，而这是判断免审策略松紧的唯一依据。
- *
- * 取值与 DDL 列注释同源：0-待处理，1-已处置，2-举报不成立。
- *
  * @author shaoshing
  */
 public enum ReportStatusEnum {
@@ -45,43 +40,38 @@ public enum ReportStatusEnum {
     /**
      * 把数字翻译成举报处理状态，查不到返回 null，不兜成 PENDING
      *
-     * 兜底会让已关闭的举报重回待处理列表，管理员重复处置、作者收到重复通知；
-     * 作为筛选参数时非法值须报错，否则会漏掉真正需要处置的内容。
-     *
      * @param value 待翻译的取值，允许为 null
      * @return 命中的枚举；null 或不在 0~2 时返回 null
      */
     public static ReportStatusEnum of(Integer value) {
-        // ① 先挡 null：不判空就拆箱比较会 NPE，而 null 在这里是正常输入
+        // 先挡 null：不判空就拆箱比较会 NPE，而 null 在这里是正常输入
         if (value == null) {
             return null;
         }
-        // ② 遍历全部常量：新增状态时这里不用改
+        // 遍历全部常量：新增状态时这里不用改
         for (ReportStatusEnum status : values()) {
             // 左边 int、右边 Integer，比较的是数值而非对象引用
             if (status.value == value) {
                 return status;
             }
         }
-        // ③ 查不到返回 null：报错还是降级，由调用方按场景决定
+        // 查不到返回 null：报错还是降级，由调用方按场景决定
         return null;
     }
 
     /**
      * 拼出可直接放进错误提示的合法取值文案，如「0（待处理）/ 1（已处置）/ 2（举报不成立）」
      *
-     * 这里的 1 与 2 语义相反，必须带中文描述，只看数字极易选错。
-     *
      * @return 文案，枚举至少有一个常量，不会返回空串
      */
     public static String valuesText() {
         StringBuilder text = new StringBuilder();
         for (ReportStatusEnum status : values()) {
-            // ① 只有已经拼过内容才补分隔符：末尾不会多出一个「 / 」
+            // 只有已经拼过内容才补分隔符：末尾不会多出一个「 / 」
             if (text.length() > 0) {
                 text.append(" / ");
             }
-            // ② 值 + 中文描述一起拼：这里的 1 与 2 语义相反，只看数字极易选错
+            // 值 + 中文描述一起拼：这里的 1 与 2 语义相反，只看数字极易选错
             text.append(status.value).append("（").append(status.desc).append("）");
         }
         return text.toString();

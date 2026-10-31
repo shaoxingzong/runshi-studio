@@ -5,12 +5,7 @@ import { postApi } from '@/api/post';
 import ErrorRetry from '@/components/ErrorRetry.vue';
 import type { PageResult, PostCommentAudit } from '@/api/types';
 
-/**
- * 评论待审队列（管理员）
- *
- * 本页没有「删除」：后端删除接口只接受已通过的评论，待审内容应当走驳回，让作者收到反馈。
- * 删除入口在帖子详情页——管理员在那里看到的评论都是已通过的，符合接口语义。
- */
+/** 评论待审队列（管理员） */
 const page = reactive({ current: 1, pageSize: 10 });
 const result = ref<PageResult<PostCommentAudit> | null>(null);
 const selected = ref<string[]>([]);

@@ -3,14 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { tokenStore, AUTH_EXPIRED_EVENT } from '@/api/request';
 import { useUserStore } from './user';
 
-// 登录态 store 单测（纯逻辑）
-//
-// 为什么值得单测：这个 store 是「刷新页面后登录态不丢」的唯一依靠，
-// 管着三处持久化（token / 账号 / 角色）+ 两个派生判断（isAdmin / isMember）。
-// 它此前的验证方式是「登录一次、刷新看一眼」——而 isMember 的口径
-// （按档案不按角色，见 store 注释）恰恰是最容易在重构中被改成「按角色」的地方，
-// 那样的回归在界面上要等到「成员看到不该看的入口」才被发现。
-
 const { mineMember } = vi.hoisted(() => ({ mineMember: vi.fn() }));
 
 vi.mock('@/api/user', () => ({ userApi: { mineMember } }));
@@ -28,15 +20,19 @@ function flush() {
     return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-describe('setLogin：三处持久化', () => {
-    it('token / 账号 / 角色都写入，isLogin 与 isAdmin 随之成立', async () => {
+describe('setLogin：四处持久化', () => {
+    it('token / 账号 / 角色 / 姓名 / 账号 ID 都写入，isLogin 与 isAdmin 随之成立', async () => {
         const store = useUserStore();
-        store.setLogin('tok-xyz', 'alice', 'admin');
+        store.setLogin('tok-xyz', 'alice', 'admin', '张三', '', 'u-1');
         await flush();
 
         expect(tokenStore.get()).toBe('tok-xyz');
         expect(localStorage.getItem('user_account')).toBe('alice');
         expect(localStorage.getItem('user_role')).toBe('admin');
+        expect(localStorage.getItem('user_name')).toBe('张三');
+        expect(localStorage.getItem('user_id')).toBe('u-1');
+        expect(store.userId).toBe('u-1');
+        expect(store.displayName).toBe('张三');
         expect(store.isLogin).toBe(true);
         expect(store.isAdmin).toBe(true);
     });
@@ -54,7 +50,7 @@ describe('setLogin：三处持久化', () => {
 describe('logout：全清', () => {
     it('内存与 localStorage 一处不留（残留账号名会让界面假装已登录）', async () => {
         const store = useUserStore();
-        store.setLogin('tok-xyz', 'alice', 'admin');
+        store.setLogin('tok-xyz', 'alice', 'admin', '张三', '', 'u-1');
         await flush();
         store.memberProfile = { id: 'm1' } as never;
 
@@ -62,6 +58,8 @@ describe('logout：全清', () => {
 
         expect(store.token).toBe('');
         expect(store.account).toBe('');
+        expect(store.userId).toBe('');
+        expect(store.userName).toBe('');
         expect(store.role).toBe('');
         expect(store.memberProfile).toBeNull();
         expect(store.isLogin).toBe(false);
@@ -69,7 +67,9 @@ describe('logout：全清', () => {
         expect(store.isMember).toBe(false);
         expect(tokenStore.get()).toBe('');
         expect(localStorage.getItem('user_account')).toBeNull();
+        expect(localStorage.getItem('user_name')).toBeNull();
         expect(localStorage.getItem('user_role')).toBeNull();
+        expect(localStorage.getItem('user_id')).toBeNull();
     });
 });
 
@@ -105,10 +105,29 @@ describe('isMember：按档案不按角色', () => {
     });
 });
 
+describe('displayName：成员档案姓名 > 注册姓名 > 账号', () => {
+    it('成员档案存在时以档案姓名为准（与帖子作者名同口径）', async () => {
+        const store = useUserStore();
+        store.setLogin('t', 'chenyu', 'user', '陈宇');
+        store.memberProfile = { id: 'm1', name: '档案姓名' } as never;
+
+        expect(store.displayName).toBe('档案姓名');
+    });
+
+    it('没有档案时用注册姓名；注册姓名为空才回退登录账号', async () => {
+        const store = useUserStore();
+        store.setLogin('t', 'chenyu', 'user', '陈宇');
+        expect(store.displayName).toBe('陈宇');
+
+        store.setLogin('t', 'chenyu', 'user');
+        expect(store.displayName).toBe('chenyu');
+    });
+});
+
 describe('登录失效事件：回收内存里的假登录态', () => {
     it('收到 AUTH_EXPIRED_EVENT 后全清（只清 localStorage 会让界面假装已登录）', async () => {
         const store = useUserStore();
-        store.setLogin('tok-xyz', 'alice', 'admin');
+        store.setLogin('tok-xyz', 'alice', 'admin', '张三', '', 'u-1');
         store.memberProfile = { id: 'm1', name: '张三' } as never;
         await flush();
 
@@ -118,13 +137,17 @@ describe('登录失效事件：回收内存里的假登录态', () => {
         // 内存与持久化必须同时归零，否则导航栏仍显示已登录，而每个请求都会失败
         expect(store.token).toBe('');
         expect(store.account).toBe('');
+        expect(store.userId).toBe('');
+        expect(store.userName).toBe('');
         expect(store.role).toBe('');
         expect(store.memberProfile).toBeNull();
         expect(store.isLogin).toBe(false);
         expect(store.isAdmin).toBe(false);
         expect(tokenStore.get()).toBe('');
         expect(localStorage.getItem('user_account')).toBeNull();
+        expect(localStorage.getItem('user_name')).toBeNull();
         expect(localStorage.getItem('user_role')).toBeNull();
+        expect(localStorage.getItem('user_id')).toBeNull();
     });
 
     it('未登录时收到事件也不报错（幂等）', () => {

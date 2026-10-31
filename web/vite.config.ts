@@ -1,10 +1,38 @@
 /// <reference types="vitest/config" />
 import { fileURLToPath, URL } from 'node:url';
-import { defineConfig } from 'vite';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import AutoImport from 'unplugin-auto-import/vite';
 import Components from 'unplugin-vue-components/vite';
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers';
+
+/**
+ * 把分享预览图（og:image）改写成**绝对地址**
+ *
+ * 为什么必须绝对：微信 / Twitter / Discord 的抓取器不解析相对路径，
+ * og:image 写成 /logo.jpg 时，分享出去的链接没有预览图，只剩一行标题。
+ * 而域名只有部署时才知道，不能写死在仓库里，所以构建时由 VITE_SITE_URL 注入。
+ *
+ * 未配置 VITE_SITE_URL 时保持原样的相对路径：本地预览照常，不阻断构建。
+ *
+ * @param siteUrl 站点根地址（不带尾斜杠），空串表示未配置
+ * @returns 仅改写 og:image 的 Vite 插件
+ */
+function ogImageAbsoluteUrl(siteUrl: string): Plugin {
+    return {
+        name: 'og-image-absolute-url',
+        transformIndexHtml(html) {
+            if (!siteUrl) {
+                return html;
+            }
+            // 只改 content 以 / 开头的相对路径，避免把故意写死的完整地址再拼一次
+            return html.replace(
+                /(<meta\s+property="og:image"\s+content=")(\/)/,
+                `$1${siteUrl}$2`,
+            );
+        },
+    };
+}
 
 /**
  * 生产级 Vite 配置要点：
@@ -20,7 +48,16 @@ import { ElementPlusResolver } from 'unplugin-vue-components/resolvers';
  * 而不是把 import 换成 {@code vitest/config}——那样 {@code vite build}
  * 就会在没装 devDeps 的机器上直接失败，类型引用只在类型层面生效、构建零依赖。
  */
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+    /**
+     * 站点根地址（部署时通过 VITE_SITE_URL 注入，见 .env.production）
+     *
+     * 第三个参数传空串是为了把 .env 里**非 VITE_ 前缀**以外的变量也读进来，
+     * 这里只需要它一个；留空时 og:image 保持相对路径。
+     */
+    const siteUrl = (loadEnv(mode, process.cwd(), '').VITE_SITE_URL || '').replace(/\/+$/, '');
+
+    return {
     test: {
         environment: 'jsdom',
         globals: true,
@@ -50,6 +87,8 @@ export default defineConfig({
          */
         AutoImport({ resolvers: [ElementPlusResolver()] }),
         Components({ resolvers: [ElementPlusResolver()] }),
+        // 分享预览图必须绝对地址，域名由部署环境注入（见上方插件说明）
+        ogImageAbsoluteUrl(siteUrl),
     ],
     resolve: {
         alias: {
@@ -66,10 +105,13 @@ export default defineConfig({
             // 上传的图片由后端以静态资源方式提供（/uploads/**），与 /api 同源。
             // 不配这条，开发态（5173）下 /uploads/2026/10/xxx.png 会 404——
             // 表现为「编辑器里能插入图片，保存后页面上却裂图」。
-            // 生产是同源部署，这条代理不生效也不影响
+            // ⚠️ 必须 rewrite：后端 context-path 是 /api，静态映射的真实地址是
+            // /api/uploads/**；直接把 /uploads/x 转发过去同样会 404。
+            // 生产由 Nginx 的同名 location 完成同样的事（见 deploy/nginx.conf）
             '/uploads': {
                 target: 'http://localhost:8080',
                 changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/uploads/, '/api/uploads'),
             },
         },
     },
@@ -92,4 +134,5 @@ export default defineConfig({
             },
         },
     },
+    };
 });

@@ -39,25 +39,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * AI 会话管理验收测试
  *
- * 覆盖十条线（与施工图 AC 一一对应）：
- * - 鉴权边界：/ai/session/list 未登录 A0201（不进白名单）；
- * /ai/session/delete 匿名放行（白名单精确路径）；既有公开接口回归；
- * - 列表隔离：只返回本人的会话，看不到别人的；
- * - 排序与分页：updated_at 倒序 → id 倒序（同秒活跃的稳定次序），
- * pageSize 超过 50 收敛；
- * - messageCount 批量统计：与 SQL 逐行对齐，空会话补 0；
- * - 删除=双逻辑删：会话与消息在同一事务内写 deleted_at，
- * 物理行保留（可追溯），与/19 的物理删关联表形成对照；
- * - 删除后行为：chat / history / 重复删除 统一 A0402「会话不存在」；
- * - 归属规则：他人会话 A0402（同码同提示）；匿名会话凭 ID 可删；
- * - 参数校验：缺参 / 空白 / 脏值 A0401；不存在 A0402；
- * - 脱敏与序列化：无 userId / 审计字段；id 出字符串、messageCount 出数字；
- * - 全量基线 120 用例保持全绿。
- *
- * 会话数据通过提问接口自然创建（顺带验证「聊过就有会话」的集成路径），
- * 个别边界（空会话、批量计数对齐）用 Mapper 直插；断言一律以 SQL 直查为准，
- * 避免「用同一个 Service 的读方法验证它的写方法」。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -80,7 +61,7 @@ class AiSessionManageTest {
     @Resource
     private JdbcTemplate jdbcTemplate;
 
-    // ==================== 本地 AI Stub（会话需通过提问接口创建，故沿用 的 Stub 范式）====================
+    // 本地 AI Stub（会话需通过提问接口创建，故沿用 的 Stub 范式）
 
     private static HttpServer stub;
 
@@ -114,7 +95,7 @@ class AiSessionManageTest {
         stub.stop(0);
     }
 
-    // ==================== 工具方法 ====================
+    // 工具方法
 
     private String postJson(String path, String json, String tokenValue) throws Exception {
         var request = post(path).contentType(MediaType.APPLICATION_JSON).content(json);
@@ -200,7 +181,7 @@ class AiSessionManageTest {
         return count;
     }
 
-    // ==================== ① 鉴权边界与列表隔离 ====================
+    // ① 鉴权边界与列表隔离
 
     @Test
     @DisplayName("鉴权：列表 / 删除未登录一律 A0201；只返回本人会话")
@@ -226,7 +207,7 @@ class AiSessionManageTest {
         assertFalse(listA.contains("T22-b-only"), "不能看到别人的会话：" + listA);
     }
 
-    // ==================== ③ 排序与分页 ====================
+    // ③ 排序与分页
 
     @Test
     @DisplayName("排序：updated_at 倒序 → id 倒序；分页 pageSize 超限收敛到 50")
@@ -236,8 +217,6 @@ class AiSessionManageTest {
         String s2 = newSession(token, "T22-o2");
         String s3 = newSession(token, "T22-o3");
 
-        // 直接改库赋不同的 updated_at 保证次序确定（【先改库、后首次读】规避 MyBatis 一级缓存：
-        // 本用例只在改库完成后发起唯一一次列表读取——同一 SQL 二次读取会命中缓存拿到旧结果）
         jdbcTemplate.update("UPDATE studio_ai_session SET updated_at='2026-01-01 10:00:30' WHERE id=?",
                 Long.parseLong(s1));
         // s2 与 s3 故意同秒：验证次级排序键 id 倒序（s3 后建、id 更大，应排在 s2 前）
@@ -252,15 +231,13 @@ class AiSessionManageTest {
                         && list.indexOf("T22-o3") < list.indexOf("T22-o2"),
                 "应按 updated_at 倒序、同秒按 id 倒序：" + list);
 
-        // 分页收敛：pageSize=999 → size 收敛为 50；current<1 视为 1（数据未再变化，可安全复用读取）
-        // 注意：Page 元数据（size/current/total/pages）是 long，遵循全局 Long→字符串约定，出的是字符串
         String big = getBody("/ai/session/list?pageSize=999", token);
         assertTrue(big.contains("\"size\":\"50\""), "pageSize 应收敛到 50：" + big);
         String badCurrent = getBody("/ai/session/list?current=0&pageSize=50", token);
         assertTrue(badCurrent.contains("\"current\":\"1\""), "current<1 应视为 1：" + badCurrent);
     }
 
-    // ==================== ④ messageCount 批量统计对齐 ====================
+    // ④ messageCount 批量统计对齐
 
     @Test
     @DisplayName("messageCount：与 SQL 逐行对齐，空会话补 0（不是 null / 不是缺行）")
@@ -268,8 +245,7 @@ class AiSessionManageTest {
         String token = loginUser();
         String s1 = newSession(token, "T22-c1");
         String s2 = newSession(token, "T22-c2");
-        chat(token, s1, "T22-c1-follow");   // s1 → 4 条
-        // 空会话（0 条消息）：直插
+        chat(token, s1, "T22-c1-follow");   
         StudioAiSession empty = new StudioAiSession();
         empty.setUserId(lastUserId);
         empty.setTitle("T22-c-empty");
@@ -288,7 +264,7 @@ class AiSessionManageTest {
         assertEquals(2, countMessages(Long.parseLong(s2)));
     }
 
-    // ==================== ⑤⑥ 删除 = 双逻辑删 + 删后行为 ====================
+    // ⑤⑥ 删除 = 双逻辑删 + 删后行为
 
     @Test
     @DisplayName("删除：会话与消息同事务逻辑删（物理行保留）；删后 chat/history/重复删除 A0402")
@@ -326,7 +302,7 @@ class AiSessionManageTest {
         assertEquals("会话不存在", message(again));
     }
 
-    // ==================== ⑦ 归属规则 ====================
+    // ⑦ 归属规则
 
     @Test
     @DisplayName("归属：他人会话 A0402（同码同提示）；未登录一律 A0201")
@@ -349,7 +325,7 @@ class AiSessionManageTest {
                 "{\"sessionId\":\"" + aSid + "\"}", tokenA)), "重复删除 A0402");
     }
 
-    // ==================== ⑧ 参数校验 ====================
+    // ⑧ 参数校验
 
     @Test
     @DisplayName("参数：缺 sessionId / 空白 / 脏值 A0401；不存在 A0402")
@@ -368,7 +344,7 @@ class AiSessionManageTest {
                 "{\"sessionId\":\"999999999999999999\"}", token)), "不存在应 A0402");
     }
 
-    // ==================== ⑨ 脱敏与序列化 ====================
+    // ⑨ 脱敏与序列化
 
     @Test
     @DisplayName("脱敏：无 userId / 审计字段；id 出字符串、messageCount 出数字")
@@ -390,7 +366,7 @@ class AiSessionManageTest {
                 "updatedAt 应为 yyyy-MM-dd HH:mm:ss：" + list);
     }
 
-    // ==================== 空列表边界 + 回归 ====================
+    // 空列表边界 + 回归
 
     @Test
     @DisplayName("边界与回归：新用户空列表； 接口与既有白名单不受影响")
@@ -407,7 +383,5 @@ class AiSessionManageTest {
         assertEquals("A0201", code(getBody("/ai/chat/history?sessionId=1", null)), "匿名历史应 A0201");
         assertEquals("00000", code(chat(token, null, "T22-h 登录提问")), "登录用户提问应可用");
         assertEquals("A0201", code(getBody("/member/list/page", null)));
-        // 「团队成员不对外展示」：对外的成员接口不存在，访问得到 404 且响应体为空，
-        // 该断言集中在 StudioMemberCrudTest。
     }
 }

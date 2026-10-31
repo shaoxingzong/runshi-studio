@@ -3,8 +3,7 @@ import { baseUrl, tokenStore } from './request';
 import type { ApiResponse } from './types';
 
 /**
- * 通用文件上传：必须单独走 fetch（http.post 发的是 JSON，手写 Content-Type 会让后端解析不到
- * 文件），且不经过拦截器，所以要手动带 `satoken` 头。
+ * 通用文件上传：必须单独走 fetch（http.post 发的是 JSON，手写 Content-Type 会让后端解析不到 文件），且不经过拦截器，所以要手动带 `satoken` 头。
  *
  * @returns 站内相对访问路径，如 `/uploads/2026/10/xxxx.png`，可直接用作 src
  */

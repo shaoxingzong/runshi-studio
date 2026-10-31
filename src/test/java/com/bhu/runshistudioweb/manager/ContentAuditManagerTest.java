@@ -25,14 +25,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 内容审核判定逻辑（ ContentAuditManager）
  *
- * 纯单测：不启动 Spring、不连数据库、不真调模型——
- * AiManager 用 Mockito 替身，只验证「模型说什么 → 我们怎么判」这一层。
- *
- * 这些用例里最重要的是容错那几条：模型输出不规范是常态而不是意外，
- * 而本模块有一条不能退让的底线——
- * 解析不出结论时必须转人工，绝不能把内容放行。
- * 那几条断言就是这条底线的守门员。
- *
  * @author shaoshing
  */
 class ContentAuditManagerTest {

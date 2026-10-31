@@ -3,11 +3,6 @@ package com.bhu.runshistudioweb.model.enums;
 /**
  * 知识库文档来源类型（studio_knowledge_doc.source_type，varchar(16)）
  *
- * 取值与 db/user.sql 列注释同源：manual / project / member / certificate。
- * 它是三处的分支依据：拼正文模板、检索命中后反查业务表（溯源）、同步接口的合法性校验。
- *
- * 坑：用魔法字符串写这三处，早晚出现「某个分支拼错一个字母、静默走 default」的事故。
- *
  * @author shaoshing
  */
 public enum KnowledgeSourceTypeEnum {
@@ -48,16 +43,13 @@ public enum KnowledgeSourceTypeEnum {
     /**
      * 把来源类型字符串翻译成枚举，查不到返回 null，由调用方决定报错还是降级
      *
-     * 写路径拿到 null 必须报错——后续要靠它决定 source_id 去哪张表查；
-     * 读路径可降级展示。比较区分大小写，常量在前调用 equals 天然免判空。
-     *
      * @param value 待翻译的来源类型值，允许为 null
      * @return 命中的枚举；null 或不在四个合法取值内时返回 null
      */
     public static KnowledgeSourceTypeEnum of(String value) {
-        // ① 遍历全部常量：新增来源时这里不用改
+        // 遍历全部常量：新增来源时这里不用改
         for (KnowledgeSourceTypeEnum sourceType : values()) {
-            // ② 常量在前调用 equals：入参为 null 时返回 false，不会抛 NPE
+            // 常量在前调用 equals：入参为 null 时返回 false，不会抛 NPE
             if (sourceType.value.equals(value)) {
                 return sourceType;
             }
@@ -76,11 +68,11 @@ public enum KnowledgeSourceTypeEnum {
     public static String valuesText() {
         StringBuilder text = new StringBuilder();
         for (KnowledgeSourceTypeEnum sourceType : values()) {
-            // ① 只有已经拼过内容才补分隔符：末尾不会多出一个「 / 」
+            // 只有已经拼过内容才补分隔符：末尾不会多出一个「 / 」
             if (text.length() > 0) {
                 text.append(" / ");
             }
-            // ② 值 + 中文描述一起拼：这层对应关系并不直观
+            // 值 + 中文描述一起拼：这层对应关系并不直观
             text.append(sourceType.value).append("（").append(sourceType.desc).append("）");
         }
         return text.toString();

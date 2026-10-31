@@ -8,12 +8,6 @@ import java.io.Serializable;
 /**
  * 管理端题目分页查询请求（GET + 对象绑定）
  *
- * 分页字段由本类声明，Service 转成 MyBatis-Plus 的 Page。
- * 非法值不在这里报错：GET 传参校验失败抛 BindException，会落到兜底分支变成 B0001，
- * 且「页码传错」没必要让整个查询失败，故由 Service 兜底纠正（页码 < 1 视为 1、pageSize 收敛到上限）。
- *
- * 字段为 null 表示该条件不参与筛选，不是「查 null 值」。
- *
  * @author shaoshing
  */
 @Data

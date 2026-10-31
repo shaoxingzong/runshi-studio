@@ -23,15 +23,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * 管理端用户增删改查验收测试
  *
- * 这组用例守两条线：
- * - 越权：普通用户、未登录用户访问管理端接口必须分别拿到 A0301 / A0201
- * ——这是「权限」功能唯一真正重要的断言；
- * - 可用性：管理员走完 增 → 查 → 改 → 删 全流程，且每一步的数据落库结果正确
- * （密码必须是 BCrypt 哈希、昵称要有兜底值、删除必须是逻辑删除）。
- *
- * 测试直接插库造管理员账号（不走注册接口，因为注册只会创建普通用户），
- * 再用真实登录接口换 token，这样权限链路上的每一环都是真的。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -49,7 +40,7 @@ class UserAdminCrudTest {
     @Resource
     private JdbcTemplate jdbcTemplate;
 
-    // ==================== 工具方法 ====================
+    // 工具方法
 
     /** 插库造账号，返回其 id */
     private long insertUser(String account, String role) {
@@ -107,7 +98,7 @@ class UserAdminCrudTest {
         return data(body, "data");
     }
 
-    // ==================== 鉴权边界 ====================
+    // 鉴权边界
 
     @Test
     @DisplayName("鉴权：未登录访问管理端接口返回 A0201")
@@ -127,7 +118,7 @@ class UserAdminCrudTest {
         assertEquals("A0301", code(getBody("/user/get?id=1", token)), "普通用户不应能查看用户详情");
     }
 
-    // ==================== 增删改查全流程 ====================
+    // 增删改查全流程
 
     @Test
     @DisplayName("全流程：管理员 新增 → 详情 → 更新 → 分页查询 → 删除")
@@ -136,7 +127,7 @@ class UserAdminCrudTest {
         long adminId = insertUser(adminAccount, UserRoleConstant.ADMIN);
         String token = login(adminAccount);
 
-        // ---------- 新增：不填密码与昵称，走随机初始密码 + 账号兜底 ----------
+        // 新增：不填密码与昵称，走随机初始密码 + 账号兜底
         String newAccount = "crud" + (System.nanoTime() % 100000);
         String addBody = postJson("/user/add",
                 "{\"userAccount\":\"" + newAccount + "\",\"userRole\":\"" + UserRoleConstant.ADMIN + "\"}", token);
@@ -147,10 +138,6 @@ class UserAdminCrudTest {
 
         SysUser created = sysUserMapper.selectById(newId);
         assertTrue(created.getUserPassword().startsWith("$2a$"), "密码必须是 BCrypt 哈希，不能存明文");
-        // 随机口令的三重断言：
-        // ① 库里存的哈希必须与「响应里返回的明文」匹配——证明返回的就是本次生效的口令；
-        // ② 长度 10 位（INIT_PASSWORD_LENGTH）；
-        // ③ 字符集不含 0/O/1/l/I 等易混字符——转告时不会听错（见 PasswordUtils.generateRandomPassword）
         assertTrue(PasswordUtils.matches(initialPassword, created.getUserPassword()),
                 "入库的必须是响应里返回的那个随机口令");
         assertEquals(10, initialPassword.length(), "随机初始密码长度应为 10 位");
@@ -160,13 +147,13 @@ class UserAdminCrudTest {
         assertEquals(UserRoleConstant.ADMIN, created.getUserRole());
         assertEquals(0, created.getUserStatus(), "状态不填时应为 0-正常");
 
-        // ---------- 详情：返回 VO，且绝不能带出密码字段 ----------
+        // 详情：返回 VO，且绝不能带出密码字段
         String getBody = getBody("/user/get?id=" + newId, token);
         assertEquals("00000", code(getBody));
         assertEquals(newAccount, data(getBody, "userAccount"));
         assertFalse(getBody.contains("userPassword"), "详情的响应体里出现了密码字段：" + getBody);
 
-        // ---------- 更新：改昵称 + 重置密码（部分更新，未传的字段不动）----------
+        // 更新：改昵称 + 重置密码（部分更新，未传的字段不动）
         String updateBody = postJson("/user/update",
                 "{\"id\":" + newId + ",\"userName\":\"新昵称\",\"userPassword\":\"NewPass@2026\"}", token);
         assertEquals("00000", code(updateBody));
@@ -176,20 +163,18 @@ class UserAdminCrudTest {
         assertEquals(UserRoleConstant.ADMIN, updated.getUserRole(), "未传 userRole 时不应改动角色");
         assertEquals(0, updated.getUserStatus(), "未传 userStatus 时不应改动状态");
 
-        // ---------- 分页查询：条件生效且返回 VO ----------
+        // 分页查询：条件生效且返回 VO
         String listBody = getBody("/user/list/page?current=1&pageSize=10&userAccount=" + newAccount, token);
         assertEquals("00000", code(listBody));
         assertTrue(listBody.contains("\"total\":"), "分页结果必须带 total：" + listBody);
         assertTrue(listBody.contains(newAccount), "按账号模糊查询没查到刚创建的用户：" + listBody);
         assertFalse(listBody.contains("userPassword"), "列表里出现了密码字段");
 
-        // ---------- 删除：逻辑删除，删完查不到 ----------
+        // 删除：逻辑删除，删完查不到
         String deleteBody = postJson("/user/delete", "{\"id\":" + newId + "}", token);
         assertEquals("00000", code(deleteBody));
         assertEquals("A0402", code(getBody("/user/get?id=" + newId, token)), "删除后应查不到该用户");
 
-        // 必须是「逻辑删除」而不是物理删除：行还在、deleted_at 是 13 位毫秒时间戳。
-        // 这一条决定了数据可追溯，也决定了账号名能被重新注册
         Long deletedAt = jdbcTemplate.queryForObject(
                 "SELECT deleted_at FROM sys_user WHERE id = ?", Long.class, newId);
         assertTrue(deletedAt != null && deletedAt != 0 && String.valueOf(deletedAt).length() == 13,
@@ -199,7 +184,7 @@ class UserAdminCrudTest {
         assertEquals("00000", code(getBody("/user/get?id=" + adminId, token)));
     }
 
-    // ==================== 防锁死守卫 ====================
+    // 防锁死守卫
 
     @Test
     @DisplayName("守卫：管理员不能删除自己、不能封禁自己")

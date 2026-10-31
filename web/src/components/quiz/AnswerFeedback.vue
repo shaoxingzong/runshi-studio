@@ -1,12 +1,7 @@
 <script setup lang="ts">
 import type { QuizVerdict } from '@/api/types';
 
-/**
- * 判定反馈：正确/错误横幅 + 正确答案 + 解析 + 错题本动作提示
- *
- * 错题本文案要分五种：用户关心的不是对错（选项着色已说明），而是「这道题接下来会怎样」。
- * 只显示「回答错误」会让人以为错题本自动收录，实际只有 added / reopened 才是刚进本。
- */
+/** 判定反馈：正确/错误横幅 + 正确答案 + 解析 + 错题本动作提示 */
 const props = defineProps<{
     verdict: QuizVerdict;
 }>();

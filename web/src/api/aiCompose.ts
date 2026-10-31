@@ -1,11 +1,6 @@
 import { baseUrl, http, tokenStore } from './request';
 import type { ApiResponse } from './types';
 
-// AI 写作助手（发帖页）
-//
-// 润色走 SSE：与 AI 咨询同一理由——EventSource 带不了 satoken 头，
-// 只能用 fetch + ReadableStream 手动分帧。
-
 /** 生成的标题与摘要 */
 export interface ComposeMetaResult {
     title: string;
@@ -22,12 +17,7 @@ export interface PolishHandlers {
     onError?: (payload: { code: string; message: string }) => void;
 }
 
-/**
- * AI 润色选中的片段（SSE 流式）
- *
- * 事件序列（后端契约）：delta* → done / error。
- * 与问答不同，本接口不发 meta / sources——它不涉及会话与检索。
- */
+/** AI 润色选中的片段（SSE 流式） */
 export async function polishStream(
     payload: { text: string },
     handlers: PolishHandlers,
@@ -47,8 +37,6 @@ export async function polishStream(
         signal,
     });
 
-    // 未登录 / 非成员 / 服务端异常时返回的是统一响应体 JSON，不是事件流。
-    // 必须先判内容类型，否则会把一段 JSON 当 SSE 帧去分帧，最后一个事件也收不到。
     const contentType = response.headers.get('content-type') ?? '';
     if (!contentType.includes('text/event-stream')) {
         const body = (await response.json().catch(() => null)) as ApiResponse<unknown> | null;
@@ -112,11 +100,7 @@ function dispatchPolish(frame: string, handlers: PolishHandlers): void {
     }
 }
 
-/**
- * 生成标题与摘要（同步）
- *
- * 后端会结合知识库事实与高赞历史帖风格生成；失败抛 C0200。
- */
+/** 生成标题与摘要（同步） */
 export function generateMeta(payload: { content: string; title?: string }) {
     return http.post<ComposeMetaResult>('/ai/compose/meta', payload);
 }

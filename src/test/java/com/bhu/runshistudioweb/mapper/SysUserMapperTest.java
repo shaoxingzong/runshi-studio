@@ -17,13 +17,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 /**
  * SysUserMapper 验收测试
  *
- * 这是真连数据库的集成测试，验证的是「框架配置是否真的生效」，而不是业务逻辑：
- * - 主键是否回填（雪花 ID）、审计字段是否被自动填充；
- * - 逻辑删除是否生效、落库值是否为毫秒时间戳。
- *
- * 注意：测试数据必须保证唯一（账号后缀用 System.nanoTime()），
- * 否则 (user_account, deleted_at) 唯一索引会让第二次运行直接失败。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -37,13 +30,7 @@ class SysUserMapperTest {
     @Resource
     private JdbcTemplate jdbcTemplate;
 
-    /**
-     * 构造测试用户：这里只填必填字段，审计字段（createdAt 等）故意不填，
-     * 因为要验证的就是「不填也会被自动填充」
-     *
-     * @param account 登录账号，调用方负责保证唯一
-     * @return 待插入的实体
-     */
+    /** 构造测试用户：这里只填必填字段，审计字段（createdAt 等）故意不填，因为要验证的就是「不填也会被自动填充」 */
     private SysUser newUser(String account) {
         SysUser user = new SysUser();
         user.setUserAccount(account);
@@ -61,7 +48,6 @@ class SysUserMapperTest {
     @Transactional
     @DisplayName("插入：主键应回填，4 个审计字段应被自动填充")
     void insertShouldFillAuditFields() {
-        // 账号加时间戳后缀，避免与上一次运行残留的数据撞唯一索引
         SysUser user = newUser("it_" + System.nanoTime());
 
         int rows = sysUserMapper.insert(user);
@@ -116,8 +102,6 @@ class SysUserMapperTest {
             assertEquals(13, String.valueOf(deletedAt).length(),
                     "deleted_at 不是 13 位毫秒时间戳，实际值：" + deletedAt);
         } finally {
-            // 本用例未开启 @Transactional（要验证真实落库且不依赖事务实现），因此必须手工清理，
-            // 否则残留数据会污染后续运行（且逻辑删除行仍占用唯一索引）
             jdbcTemplate.update("DELETE FROM sys_user WHERE id = ?", id);
         }
     }

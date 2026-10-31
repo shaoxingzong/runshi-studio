@@ -14,12 +14,6 @@ import java.time.LocalDateTime;
 /**
  * 刷题作答记录实体（对应 studio_quiz_answer，append-only 审计凭证）
  *
- * 没有修改动作，updated_at 恒等于 created_at，两列只为结构统一保留。
- *
- * 坑：三种 result 语义不同——1 正确 / 2 错误参与统计，3 跳过也是事件（幂等与断点续答要靠它），
- * 但不写错题本、不计入正确率、响应不含答案，否则跳过按钮就成了看答案按钮；
- * chosenLabels 跳过时为 NULL 而非空串，判分用 equals，空串与 NULL 混用会多出一种状态。
- *
  * @author shaoshing
  */
 @Data
@@ -36,10 +30,7 @@ public class StudioQuizAnswer implements Serializable {
     /** 作答人 ID（关联 sys_user.id，NOT NULL） */
     private Long userId;
 
-    /**
-     * 批次 ID（NOT NULL）：服务端开批时生成，前端整批回传
-     * 没有会话表，只承担幂等键与本轮分组；与 uk_user_batch_question 配合保证同批同题只判一次
-     */
+    /** 批次 ID（NOT NULL）：服务端开批时生成，前端整批回传。没有会话表，只承担幂等键与本轮分组； */
     private Long batchId;
 
     /** 题目 ID（关联 studio_quiz_question.id，NOT NULL） */

@@ -43,38 +43,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * 管理端「帖子管理」验收测试（列表 / 删除 / 置顶 / 编辑）
  *
- * 类名不能以 Admin 开头（排序约束，改动前先读这段）：
- * 本类与其它非 AI 测试共用同一个 Spring 上下文，而 Ai* 测试类通过
- * @DynamicPropertySource 各自新建上下文。Boot 4.1 的测试框架在类切换时会
- * stop 紧邻的前一个上下文——若本类排在最前的 AI 类之前（ Admin < Ai），
- * 默认上下文就会被送到 AI 类面前停掉，后续所有登录类测试复用它时报
- * LettuceConnectionFactory has been STOPPED，成批 B0001 / A0201 失败
- * （改成以 P 开头的类名后恢复正常）。
- * 同类约束见 AiKnowledgeManageTest 的类注释。
- *
- * 覆盖的规则（与产品口径一一对应）：
- * - 鉴权：五个接口匿名一律 A0201、普通用户一律 A0301、admin 放行
- * （真正的权限判定在后端 Sa-Token，前端那层只是体验）；
- * - 全量列表：不传 status 三种状态都能查到；status 精确筛选；
- * 标题 / 作者（账号、成员姓名）模糊筛选；作者昵称被回填；
- * 分页参数非法时兜底纠正而不报错；status 取值非法 A0401；
- * - 删除：同事务级联删评论与点赞；待审帖不可删（引导走驳回）；
- * 删除后公开详情随即 404；操作人写入 updated_by；
- * - 置顶：仅已通过可置顶、待审置顶被拒；取消置顶不限状态；
- * 置顶后公开列表排在最前；pinned 取值非法 A0401；
- * - 编辑：已通过的帖子保存后重置为待审并清空上一轮审核痕迹；
- * 待审帖编辑后仍在待审；外链图片被拒；编辑不累加浏览量。
- *
- * 为什么用 @Transactional：删帖的三处写、置顶与编辑都在事务内，
- * 测试回滚即可撤销，不需要像非事务测试类那样按前缀手工清理。
- * 用例里对其它帖子 pinned 的清零同样会回滚，不会污染开发库。
- *
- * 为什么不担心编辑触发的异步 AI 初判：测试环境没有配置 AI，
- * ContentAuditManager#judge 立刻失败并转人工（ ai_audit_status=4），
- * 而该结论不改 status；且它跑在虚拟线程上，会先被本测试事务持有的行锁挡住，
- * 回滚后作用于一条已不存在的记录。因此断言只盯确定性字段（status / 标题 / 正文 /
- * 审核痕迹），不碰 ai_audit_status。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -109,7 +77,7 @@ class PostManageTest {
     @Resource
     private JsonMapper jsonMapper;
 
-    // ==================== ① 鉴权矩阵 ====================
+    // ① 鉴权矩阵
 
     @Test
     @DisplayName("鉴权：五个接口匿名 A0201、普通用户 A0301、admin 放行")
@@ -145,7 +113,7 @@ class PostManageTest {
         assertEquals("00000", code(getBody("/admin/post/detail?id=" + postId, admin)), "admin 应能读详情");
     }
 
-    // ==================== ② 全量列表与筛选 ====================
+    // ② 全量列表与筛选
 
     @Test
     @DisplayName("列表：不传 status 三种状态都能查到，且带作者昵称")
@@ -205,11 +173,11 @@ class PostManageTest {
         long authorId = createUser(account, UserRoleConstant.USER);
         long postId = createPost(authorId, AuditStatusEnum.APPROVED, "T33-author-filter");
 
-        // ① 按账号名搜（测试账号昵称与账号同名）
+        // 按账号名搜（测试账号昵称与账号同名）
         String byAccount = getBody("/admin/post/list/page?authorKeyword=" + account + "&pageSize=50", admin);
         assertTrue(idsOf(byAccount).contains(postId), "按账号名应能搜到：" + byAccount);
 
-        // ② 按成员姓名：门户展示用的是成员姓名，管理员照着屏幕上的名字搜必须能搜到
+        // 按成员姓名：门户展示用的是成员姓名，管理员照着屏幕上的名字搜必须能搜到
         String memberName = "T33成员" + (System.nanoTime() % 100000);
         StudioMember member = new StudioMember();
         member.setUserId(authorId);
@@ -222,11 +190,11 @@ class PostManageTest {
         String byMemberName = getBody("/admin/post/list/page?authorKeyword=" + memberName + "&pageSize=50", admin);
         assertTrue(idsOf(byMemberName).contains(postId), "按成员姓名应能搜到：" + byMemberName);
 
-        // ③ 作者昵称回填：绑了成员档案后用成员姓名（与门户口径一致），而不是账号名
+        // 作者昵称回填：绑了成员档案后用成员姓名（与门户口径一致），而不是账号名
         assertEquals(memberName, authorNameOf(byMemberName, postId),
                 "有成员档案时应显示成员姓名（与门户口径一致）");
 
-        // ④ 关键词一个用户都没命中：返回空页而不是全量
+        // 关键词一个用户都没命中：返回空页而不是全量
         String noHit = getBody("/admin/post/list/page?authorKeyword=no-such-person-xyz&pageSize=50", admin);
         assertEquals(0, idsOf(noHit).size(), "关键词无命中时应返回空页而不是全量：" + noHit);
     }
@@ -251,7 +219,7 @@ class PostManageTest {
         assertTrue(message(body).contains("待审"), "提示应列出合法取值：" + message(body));
     }
 
-    // ==================== ③ 删除 ====================
+    // ③ 删除
 
     @Test
     @DisplayName("删除：同事务级联清理帖子、评论与点赞，公开详情随即不可见")
@@ -342,15 +310,13 @@ class PostManageTest {
                 "已驳回帖应可删除（清理）");
     }
 
-    // ==================== ④ 置顶 ====================
+    // ④ 置顶
 
     @Test
     @DisplayName("置顶：仅已通过可置顶；置顶后公开列表排在最前，取消后让位")
     void pinOnlyApprovedAndSortsFirst() throws Exception {
         String admin = adminToken();
         long authorId = createUser(UserRoleConstant.USER);
-        // 显式固定创建时间，让「取消置顶后谁排前面」是确定性的：
-        // 同为未置顶时按 created_at 倒序，newer 的在前
         long newer = createPost(authorId, AuditStatusEnum.APPROVED, "T33-pin-newer");
         long older = createPost(authorId, AuditStatusEnum.APPROVED, "T33-pin-older");
         setCreatedAt(newer, LocalDateTime.now());
@@ -390,8 +356,6 @@ class PostManageTest {
         long postId = createPost(createUser(UserRoleConstant.USER), AuditStatusEnum.APPROVED, "T33-unpin-pending");
         assertEquals("00000", code(postJson("/admin/post/pin", pinJson(postId, 1), admin)));
 
-        // 编辑会让已通过的帖子回到待审（见编辑用例），此时 pinned 仍为 1——
-        // 若取消置顶也要求「已通过」，管理员就卡在一个改不回来的状态里
         StudioPost patch = new StudioPost();
         patch.setId(postId);
         patch.setStatus(AuditStatusEnum.PENDING.getValue());
@@ -417,7 +381,7 @@ class PostManageTest {
         assertEquals(0, pinnedOf(postId), "参数非法不应改写 pinned");
     }
 
-    // ==================== ⑤ 编辑 ====================
+    // ⑤ 编辑
 
     @Test
     @DisplayName("详情：管理端可读任意状态的正文，且不累加浏览量")
@@ -443,8 +407,6 @@ class PostManageTest {
         long postId = createPost(createUser(UserRoleConstant.USER), AuditStatusEnum.APPROVED, "T33-edit-before");
         setContent(postId, "T33-edit-before-content");
 
-        // 先打上「已审过」的痕迹（模拟一篇正常流转过的帖子）。
-        // audit_by 随便填个非空值即可——本用例要证的是它被清空，不是它原本是谁
         studioPostMapper.update(null, new LambdaUpdateWrapper<StudioPost>()
                 .eq(StudioPost::getId, postId)
                 .set(StudioPost::getPinned, 1)
@@ -513,7 +475,7 @@ class PostManageTest {
         assertEquals("T33-original-content", after.getContent(), "校验失败不应改动正文");
     }
 
-    // ==================== 工具方法 ====================
+    // 工具方法
 
     private String postJson(String path, String json, String tokenValue) throws Exception {
         var request = post(path).contentType(MediaType.APPLICATION_JSON).content(json);
@@ -549,9 +511,6 @@ class PostManageTest {
         return "{\"id\":" + postId + ",\"title\":\"" + title + "\",\"content\":\"" + content + "\"}";
     }
 
-    // 查询串编码：中文参数（成员姓名）必须先编码，否则 MockMvc 会按字节原样透出
-    // ---------- 响应解析 ----------
-
     /** 取列表响应里全部帖子 id */
     private List<Long> idsOf(String listBody) throws Exception {
         JsonNode records = jsonMapper.readTree(listBody).get("data").get("records");
@@ -583,7 +542,7 @@ class PostManageTest {
         return getBody("/post/list/page?current=1&pageSize=50", adminToken);
     }
 
-    // ---------- 数据库取证 ----------
+    // 数据库取证
 
     private long countBy(String sql, Object... args) {
         Long count = jdbcTemplate.queryForObject(sql, Long.class, args);
@@ -608,7 +567,7 @@ class PostManageTest {
         return views == null ? 0 : views;
     }
 
-    // ---------- 造数 ----------
+    // 造数
 
     /** 建一个指定角色的测试用户，返回用户 id */
     private long createUser(String role) {

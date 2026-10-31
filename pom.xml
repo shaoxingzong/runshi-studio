@@ -305,6 +305,10 @@
                              锁定行为由 AuthLockManagerTest 纯单测 + UserLoginLockTest 端到端
                              （@DynamicPropertySource 覆盖为 true）覆盖，不依赖该开关。 -->
                         <studio.auth.lock.enabled>false</studio.auth.lock.enabled>
+                        <!-- 同理关闭埋点限流：TrafficManageTest 在同一分钟内连续上报十几次，
+                             而 MockMvc 下来源 IP 都是 127.0.0.1，不关会中途集体 429（假失败）。
+                             限流行为由 TrafficRateLimitTest 覆盖。 -->
+                        <studio.traffic.rate-limit.enabled>false</studio.traffic.rate-limit.enabled>
                         <!-- 测试环境固定使用内存向量库：不要求本机 Redis 安装 Query Engine/JSON，
                              也避免测试之间共享 Redis 索引。生产由 application-prod.yml 切到 redis。 -->
                         <studio.ai.vector-store-type>memory</studio.ai.vector-store-type>

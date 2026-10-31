@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { ArrowDown, Bell, Document, Setting, SwitchButton, User } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { userApi } from '@/api/user';
 import { notificationApi } from '@/api/notification';
+import MemberProfileDialog from '@/components/MemberProfileDialog.vue';
+import SmartImage from '@/components/SmartImage.vue';
 import { useUserStore } from '@/stores/user';
 
 /** 门户布局：顶部导航 + 内容区 + 页脚（匿名可访问） */
@@ -11,36 +14,28 @@ const route = useRoute();
 const router = useRouter();
 const user = useUserStore();
 
-/**
- * 导航项
- *
- * 没有「团队成员」：业务规则「团队成员不对外展示」，后端三个成员接口已下线（访问 404）。
- * 成员信息唯一还会出现的地方是项目详情里的「参与成员」。
- */
+/** 页脚版权年份：只取当前年，跨年刷新即可自动更新 */
+const currentYear = new Date().getFullYear();
+/** ICP 备案号：线上展示与工信部备案系统查询入口 */
+const ICP_NUMBER = '豫ICP备2026054568号';
+const ICP_LINK = 'https://beian.miit.gov.cn/';
+
+/** 导航项 */
 const navItems = [
     { path: '/', label: '首页' },
-    { path: '/projects', label: '项目案例' },
-    { path: '/certificates', label: '荣誉墙' },
+    { path: '/projects', label: '项目' },
     { path: '/posts', label: '社区' },
-    // 工作台（考勤）只对在队成员显示：后端同样只准成员签到。
-    // 判定用 isMember（查 /member/mine 的档案）而不是 userRole——角色是权限标签，与档案可能不同步
-    { path: '/workspace', label: '工作台', memberOnly: true },
+    { path: '/certificates', label: '荣誉墙' },
+    { path: '/workspace', label: '打卡', memberOnly: true },
     // 刷题同样只对在队成员显示：后端对 /quiz/** 的全部接口都做成员校验（认 studio_member 表）
     { path: '/quiz', label: '刷题', memberOnly: true },
     { path: '/ai', label: 'AI 助手' },
 ];
-
-// 刷新后主动补一次「我的成员档案」
-//
-// 它决定「写文章」这类成员专属入口是否显示。布局只在启动时挂载一次，路由切换不再触发，
-// 不自己拉一次的话，刷新完入口就消失了，要等下次登录才恢复。
 onMounted(() => {
     void user.loadMemberProfile();
     // 角色只在登录时写过：刷新页面时补拉一次，管理员改过角色/封禁后入口能立刻变化
     void user.refreshProfile();
     void refreshUnread();
-    // 未读轮询：60s 一次。工作室量级下这是最简单可靠的方案——
-    // 上 WebSocket 长连接（心跳/断线重连/多实例）的成本远超收益
     unreadTimer = window.setInterval(() => {
         if (user.isLogin) {
             void refreshUnread();
@@ -71,25 +66,16 @@ async function logout() {
     await router.push('/');
 }
 
-/**
- * 实际渲染的导航项：带 memberOnly 的项只在确认是成员后才出现
- *
- * 集中过滤而不是在模板里逐个 v-if：每加一个成员入口就多一处要记得加判断的地方。
- * 高亮用下面的 isActive 而非 router-link-active——后者是前缀匹配，`/` 会让首页在每个页面都亮。
- */
+/** 实际渲染的导航项：带 memberOnly 的项只在确认是成员后才出现 */
 const visibleNavItems = computed(() => navItems.filter((item) => !item.memberOnly || user.isMember));
-
-// =
 /** 未读通知数（0 时 badge 隐藏）；未登录恒 0，不发请求 */
 const unreadCount = ref(0);
+/** 成员资料编辑弹窗：从账号菜单直接打开，与打卡页共用同一个组件 */
+const profileVisible = ref(false);
 /** 轮询定时器句柄（卸载时必须清，否则内存泄漏 + 接口打到已销毁的组件） */
 let unreadTimer: number | null = null;
 
-/**
- * 拉一次未读数
- *
- * 失败静默：铃铛是附属信息，保持上次的数字即可，下次轮询自然纠正，弹提示只会打扰阅读。
- */
+/** 拉一次未读数 */
 async function refreshUnread() {
     if (!user.isLogin) {
         unreadCount.value = 0;
@@ -110,6 +96,26 @@ function onNotificationRead() {
 function isActive(path: string): boolean {
     const current = route.path;
     return path === '/' ? current === '/' : current === path || current.startsWith(`${path}/`);
+}
+
+/** 账号下拉的菜单动作：资料编辑就地弹窗，其余走路由 */
+async function onAccountCommand(command: string) {
+    switch (command) {
+        case 'profile':
+            // 打开前先拉一次档案：刚登录 / 管理员改过资料时，本地 store 可能还是旧的
+            await user.loadMemberProfile();
+            profileVisible.value = true;
+            break;
+        case 'posts':
+            await router.push('/posts/my');
+            break;
+        case 'admin':
+            await router.push('/admin');
+            break;
+        case 'logout':
+            await logout();
+            break;
+    }
 }
 </script>
 
@@ -134,23 +140,47 @@ function isActive(path: string): boolean {
                 </nav>
                 <span class="spacer" />
                 <template v-if="user.isLogin">
-                    <!-- 通知铃铛：登录态才出现。未读为 0 时 badge 整体隐藏（不是显示 0） -->
+                    <!-- 通知铃铛：登录态才出现。未读为 0 时 badge 整体隐藏（不是显示 0）-->
                     <router-link to="/notifications" class="nav-item bell" aria-label="通知">
                         <el-badge :value="unreadCount" :hidden="unreadCount <= 0" :max="99" type="danger">
-                            <span class="bell-icon">🔔</span>
+                            <Bell class="bell-icon" aria-hidden="true" />
                         </el-badge>
                     </router-link>
-                    <!-- 成员优先显示档案里的姓名：账号（如 chenyu）是登录凭据，
-                     在右上角展示真实姓名才像「自己人」，也让成员身份一眼可辨 -->
-                <span class="who">{{ user.memberProfile?.name || user.account }}</span>
-                    <el-button link @click="logout">退出</el-button>
+                    <!-- 账号菜单：头像 + 展示名作为触发器，资料/我的文章/后台/退出都收进下拉 -->
+                    <el-dropdown trigger="click" placement="bottom-end" @command="onAccountCommand">
+                        <button type="button" class="account-trigger" aria-label="账号菜单">
+                            <span class="account-avatar">
+                                <SmartImage
+                                    :src="user.displayAvatar"
+                                    :alt="user.displayName"
+                                    :seed="user.account"
+                                />
+                            </span>
+                            <span class="account-name">{{ user.displayName }}</span>
+                            <el-icon class="account-caret"><ArrowDown /></el-icon>
+                        </button>
+                        <template #dropdown>
+                            <el-dropdown-menu>
+                                <el-dropdown-item v-if="user.isMember" command="profile" :icon="User">
+                                    编辑我的资料
+                                </el-dropdown-item>
+                                <el-dropdown-item v-if="user.isMember" command="posts" :icon="Document">
+                                    我的文章
+                                </el-dropdown-item>
+                                <el-dropdown-item v-if="user.isAdmin" command="admin" :icon="Setting" divided>
+                                    后台管理
+                                </el-dropdown-item>
+                                <el-dropdown-item command="logout" :icon="SwitchButton" divided>
+                                    退出登录
+                                </el-dropdown-item>
+                            </el-dropdown-menu>
+                        </template>
+                    </el-dropdown>
                 </template>
                 <template v-else>
                     <router-link to="/login" class="nav-item">登录</router-link>
                     <router-link to="/register" class="nav-item">注册</router-link>
                 </template>
-                <!-- 后台入口只对管理员显示（未登录时直接访问 /admin 会跳后台登录页） -->
-                <router-link v-if="user.isAdmin" to="/admin" class="nav-item ghost">后台管理</router-link>
             </div>
         </header>
 
@@ -159,11 +189,15 @@ function isActive(path: string): boolean {
         </main>
 
         <footer class="site-footer">
-            <div class="inner">
-                <span>© {{ new Date().getFullYear() }} 润石工作室</span>
-                <span class="muted"> · 项目 / 荣誉 / 社区 / 智能问答</span>
+            <div class="inner footer-inner">
+                <span>© {{ currentYear }} 润石工作室</span>
+                <span class="muted">· 项目 / 荣誉 / 社区 / 智能问答</span>
+                <a :href="ICP_LINK" class="icp" target="_blank" rel="noopener noreferrer">{{ ICP_NUMBER }}</a>
             </div>
         </footer>
+
+        <!-- 资料编辑弹窗挂布局层：账号菜单和打卡页共用，避免每个入口各写一份表单 -->
+        <MemberProfileDialog v-model="profileVisible" />
     </div>
 </template>
 
@@ -236,22 +270,78 @@ function isActive(path: string): boolean {
     background: var(--brand-soft);
 }
 
-.nav-item.ghost {
-    border: 1px solid var(--border);
-}
-
 .spacer {
     flex: 1;
 }
 
-.who {
+/* 账号菜单：头像 + 展示名 + 下拉箭头，资料/我的文章/后台/退出都收在菜单里 */
+.account-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    height: 36px;
+    padding: 2px 8px 2px 4px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
     font-size: 14px;
-    color: var(--muted);
-    margin-right: 4px;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
 }
 
-/* 铃铛：图标用文字 emoji 而非图标库——门户没有引图标库，
-   一个铃铛不值得为它增加依赖。尺寸与相邻的账号名协调 */
+.account-trigger:hover {
+    background: var(--brand-soft);
+    color: var(--brand);
+}
+
+.account-trigger:focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+}
+
+.account-avatar {
+    display: inline-flex;
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    overflow: hidden;
+    /* 细边框让浅色兜底头像与白色头部背景分得开 */
+    box-shadow: 0 0 0 1px rgb(15 23 42 / 8%);
+}
+
+.account-avatar :deep(.img-fallback__img),
+.account-avatar :deep(.img-fallback__box) {
+    width: 100%;
+    height: 100%;
+}
+
+.account-avatar :deep(.img-fallback__box) {
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.account-name {
+    max-width: 96px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.account-caret {
+    width: 12px;
+    height: 12px;
+    color: var(--muted);
+}
+
+.account-trigger:hover .account-caret {
+    color: var(--brand);
+}
+
+/* 铃铛：与全站其他图标一致用线性图标（@element-plus/icons-vue 已是现有依赖，
+   不再用 emoji——emoji 在不同系统里字形差异很大，也压不住导航的字重）*/
 .bell {
     display: inline-flex;
     align-items: center;
@@ -259,8 +349,13 @@ function isActive(path: string): boolean {
 }
 
 .bell-icon {
-    font-size: 15px;
-    line-height: 1;
+    width: 16px;
+    height: 16px;
+    color: var(--muted);
+}
+
+.bell:hover .bell-icon {
+    color: var(--brand);
 }
 
 /* el-badge 的圆点垂直居中于铃铛 */
@@ -273,11 +368,29 @@ main {
     flex: 1;
 }
 
+/* ===== 页脚 ===== */
 .site-footer {
     border-top: 1px solid var(--border);
     background: var(--surface);
     padding: 18px 0;
     font-size: 13px;
+}
+
+/* 保留原来的页脚高度，同时允许备案号在窄屏换行 */
+.site-footer .footer-inner {
+    height: auto;
+    min-height: 62px;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+}
+
+.icp {
+    color: var(--muted);
+}
+
+.icp:hover {
+    color: var(--brand);
+    text-decoration: none;
 }
 
 /* 小屏适配：头部横排约 830px，窄于此就会挤压换行。
@@ -299,7 +412,7 @@ main {
         height: 28px;
     }
 
-    /* 导航吃掉剩余空间并横向滚动；滚动条隐藏（触摸屏本来就是滑动操作） */
+    /* 导航吃掉剩余空间并横向滚动；滚动条隐藏（触摸屏本来就是滑动操作）*/
     .nav {
         flex: 1;
         min-width: 0;
@@ -320,9 +433,21 @@ main {
         white-space: nowrap;
     }
 
-    /* 账号名是纯展示，空间紧张时第一个让位 */
-    .who {
+    /* 账号名是纯展示，空间紧张时第一个让位；头像仍保留，账号菜单始终可点 */
+    .account-name,
+    .account-caret {
         display: none;
+    }
+
+    .account-trigger {
+        gap: 0;
+        padding: 2px 4px;
+        flex-shrink: 0;
+    }
+
+    .account-avatar {
+        width: 26px;
+        height: 26px;
     }
 }
 
@@ -331,8 +456,10 @@ main {
         display: none;
     }
 
+    /* 只收窄左右内边距；上下的页脚留白由 .site-footer 自己维护 */
     .site-footer .inner {
-        padding: 0 14px;
+        padding-left: 14px;
+        padding-right: 14px;
     }
 }
 </style>

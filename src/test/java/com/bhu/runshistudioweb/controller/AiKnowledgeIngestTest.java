@@ -54,38 +54,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * RAG 文档入库管道验收测试
  *
- * AI 调用用本地 Embedding Stub（JDK HttpServer）代替真实向量服务：
- * - 只认识 /embeddings，按 OpenAI 兼容格式返回确定性向量
- * （由文本 hashCode 派生，测试里可以用同一函数重建某个块的向量去向量库检索）；
- * 同时记录调用次数——用来取证「一次入库只发一次批量请求」；
- * - failEmbeddings=true 时返回 500，用于验证失败路径
- * （新文档不留残留且可重试；重建失败时旧块与旧向量原样保留）。
- *
- * 覆盖十二条线：
- * - 手工录入全链路：批量向量化 → doc 行 + N 块（embedding_id 齐全、序号连续、长正文正确多块）；
- * - 手工录入参数校验（标题/正文/超长边界）→ A0401；
- * - 手工录入不幂等：同内容两次 → 两篇文档；
- * - 同步项目（首次）：溯源字段完整、正文含「标题/摘要/正文」拼装；
- * - 同步幂等：内容未变 → skipped=true、零 Embedding、零写库（raw SQL 取证）；
- * - 重建：旧块逻辑删、新块替换、chunk_count 刷新、旧向量清理（向量库检索取证）；
- * - 源已删除：A0402 + 已有文档标 status=2 + 旧块保留；
- * - 同步参数校验：manual 被拒、非法 sourceType、sourceId 非法 → A0401；
- * - 权限：匿名 A0201、普通用户 A0301、admin 放行（白名单零改动）；
- * - 拼装规则：成员中文标签行；证书级别/类型转中文文案（不是库里的英文值）；
- * - 向量化失败（首次）：C0200 + 无残留行，且失败可重试；
- * - 向量化失败（重建）：C0200 + 旧块与旧向量原样保留 + status=2，恢复后重建成功。
- *
- * 类名以 Ai 开头是刻意的「排序约束」，改动前先读这段：
- * 本类通过 @DynamicPropertySource 指向自己的本地 Embedding Stub（端口不同 → 属性集不同），
- * 会新建一个 Spring 测试上下文。而 Sa-Token 用静态 SaManager 持有 DAO，
- * 它总是绑定「最后创建的上下文」；Boot 4.1 的测试框架在类切换时还会 stop 先前上下文
- * （日志里能看到 DefaultLifecycleProcessor: Stopping beans...，
- * Bean 'redisConnectionFactory' completed its stop process）。
- * 因此「新建上下文的测试类」必须全部排在 CertificateCrudTest 之前——
- * 它是第一个使用默认 MockMvc 上下文的类，该上下文会被其后所有测试类共享，
- * 而静态 DAO 必须始终指向「当前正在使用的上下文」。
- * 本类若排到它之后，后续所有登录类测试都会 B0001 失败。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -117,7 +85,7 @@ class AiKnowledgeIngestTest {
     @Resource
     private JsonMapper jsonMapper;
 
-    // ==================== 本地 Embedding Stub ====================
+    // 本地 Embedding Stub
 
     private static HttpServer stub;
 
@@ -196,10 +164,7 @@ class AiKnowledgeIngestTest {
         failEmbeddings = false;
     }
 
-    /**
-     * 与 Stub 共用的确定性向量函数：测试里用它重建某个块的向量，
-     * 再拿回向量库检索——这是验证「旧向量是否真的被清理/保留」的唯一手段
-     */
+    /** 与 Stub 共用的确定性向量函数：测试里用它重建某个块的向量，再拿回向量库检索——这是验证「旧向量是否真的被清理/保留」的唯一手段 */
     private static float[] vec(String text) {
         float[] vector = new float[DIM];
         int hash = text.hashCode();
@@ -209,7 +174,7 @@ class AiKnowledgeIngestTest {
         return vector;
     }
 
-    // ==================== 工具方法 ====================
+    // 工具方法
 
     private String adminToken() throws Exception {
         String account = "T25adm_" + (System.nanoTime() % 100000);
@@ -378,7 +343,7 @@ class AiKnowledgeIngestTest {
                 String.class, docId, chunkIndex);
     }
 
-    // ==================== ① 手工录入全链路 ====================
+    // ① 手工录入全链路
 
     @Test
     @DisplayName("手工录入：一次批量向量化 → doc 行 + N 块（序号连续、embedding_id 齐全）+ 长正文多块切分")
@@ -459,7 +424,7 @@ class AiKnowledgeIngestTest {
         assertEquals(2, countDocsByTitle(title));
     }
 
-    // ==================== ④⑤⑥ 业务来源同步 ====================
+    // ④⑤⑥ 业务来源同步
 
     @Test
     @DisplayName("同步项目（首次）：doc 溯源字段完整；正文含「标题/摘要/正文」三段拼装")
@@ -602,7 +567,7 @@ class AiKnowledgeIngestTest {
         assertEquals("A0401", code(postJson("/knowledge/doc/sync", "{\"sourceType\":\"project\"}", token)));
     }
 
-    // ==================== ⑨ 权限 ====================
+    // ⑨ 权限
 
     @Test
     @DisplayName("权限：匿名 A0201、普通用户 A0301、admin 放行（白名单零改动）")
@@ -617,7 +582,7 @@ class AiKnowledgeIngestTest {
         assertEquals("A0201", code(postJson("/knowledge/doc/sync", syncJson("project", 1L), null)));
     }
 
-    // ==================== ⑩ 拼装规则 ====================
+    // ⑩ 拼装规则
 
     @Test
     @DisplayName("拼装规则：成员为中文标签行；证书级别/类型转中文文案（不是库里的英文值）")
@@ -645,7 +610,7 @@ class AiKnowledgeIngestTest {
         assertTrue(certChunk.contains("获奖日期：2024-05-01"), certChunk);
     }
 
-    // ==================== ⑪⑫ 向量化失败 ====================
+    // ⑪⑫ 向量化失败
 
     @Test
     @DisplayName("向量化失败（首次）：C0200 + 无残留行（不写新 hash，避免污染幂等），恢复后可重试成功")
@@ -704,7 +669,7 @@ class AiKnowledgeIngestTest {
         assertTrue(rawChunkContent(docId, 0).contains("T25-重建失败-新正文"));
     }
 
-    // ==================== ⑬ 失败态复位 ====================
+    // ⑬ 失败态复位
 
     @Test
     @DisplayName("失败态复位：源恢复且内容未变时 sync 不再被幂等跳过，而是重建并回到 status=1")
@@ -719,8 +684,6 @@ class AiKnowledgeIngestTest {
         assertEquals("A0402", code(postJson("/knowledge/doc/sync", syncJson("project", projectId), token)));
         assertEquals(2, rawDocStatus(docId), "源删除后文档应标记失败");
 
-        // 源恢复（deleted_at 置回 0）且内容未变：reset 前的实现会因「hash 相同」直接 skipped，
-        // 文档永远停在 status=2；修复后必须走一次复位重建
         jdbcTemplate.update("UPDATE studio_project SET deleted_at=0 WHERE id=?", projectId);
         int callsBefore = embeddingCalls.get();
 

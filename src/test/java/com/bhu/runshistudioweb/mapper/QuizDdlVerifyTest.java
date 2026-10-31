@@ -18,20 +18,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 验收：刷题三张表的建库脚本结构 + 关键索引命中
  *
- * 验证三件事（与 AttendanceDdlVerifyTest 同一套路）：
- * - 三张表的建表语句连续执行两次不报错：用例把从 db/user.sql
- * 抽出的 CREATE TABLE 改写成 CREATE TABLE IF NOT EXISTS 后连跑两次。
- * 注意 MySQL 没有 CREATE INDEX IF NOT EXISTS，所以「索引写在建表语句内」
- * 是幂等的前提；
- * - 关键查询命中预期索引：断言 possible_keys（证明索引对该查询可用），
- * 而不是 key（那是优化器在当前数据量下的选择，表很小时可能合理地选全表扫描）；
- * - 结构就位：列、唯一键真实存在，且「选项 JSON 里不含正确性」这条设计
- * 在数据层也成立（ correct_labels 是独立列）。
- *
- * 为什么不用 @Transactional 回滚：MySQL 的 DDL 会隐式提交，
- * 且本用例的目的正是「确认表能建出来」，所以刻意不回滚。
- * 造的数据控制在固定 ID 段内，重复跑不会无限增长。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -64,8 +50,6 @@ class QuizDdlVerifyTest {
         assertColumn("studio_quiz_question", "question_seq", "int");
         assertColumn("studio_quiz_question", "deleted_at", "bigint");
 
-        // 这条断言是「答案与展示数据物理分离」的落地检查：
-        // 一旦有人把 correct_labels 合并进 options 列，本用例就会失败
         assertTrue(columnExists("studio_quiz_question", "correct_labels"),
                 "正确答案必须是独立列——合并进 options 会让 C 端 VO 无法原样下发选项");
 
@@ -96,8 +80,6 @@ class QuizDdlVerifyTest {
         assertUniqueIndex("studio_quiz_wrong", "uk_user_question");
         assertIndexExists("studio_quiz_wrong", "idx_user_status_time");
 
-        // 唯一键必须包含 deleted_at：这是全项目铁律，
-        // 少了它「移出错题本后再答错」会撞唯一键
         String columns = jdbcTemplate.queryForObject("""
                 SELECT GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) FROM information_schema.STATISTICS
                 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'studio_quiz_wrong'
@@ -124,7 +106,7 @@ class QuizDdlVerifyTest {
     void highFrequencyQueriesUseExpectedIndexes() {
         seedIfNeeded();
 
-        // ① 顺序模式抽题：教材 + 章节 + 状态，按题序排
+        // 顺序模式抽题：教材 + 章节 + 状态，按题序排
         assertIndexCandidate("""
                 EXPLAIN SELECT id FROM studio_quiz_question
                 WHERE textbook_name = 'Ddl教材' AND chapter_name = 'Ddl章节'
@@ -132,16 +114,12 @@ class QuizDdlVerifyTest {
                 ORDER BY question_seq, id
                 """, "idx_scope", "顺序模式抽题");
 
-        // ② 幂等键：同一批同一题的查重
-        //    注意不要把三个键全写成常量：MySQL 会把整条判成
-        //    「const 表 + no matching row」并直接返回空结果（possible_keys 为 null），
-        //    那样测的就不是索引了。这里用范围条件让优化器必须真的去查索引
         assertIndexCandidate("""
                 EXPLAIN SELECT * FROM studio_quiz_answer
                 WHERE user_id >= 1 AND batch_id >= 1 AND question_id >= 1 AND deleted_at = 0
                 """, "uk_user_batch_question", "作答幂等查重");
 
-        // ③ 错题本列表：按用户 + 状态 + 最近答错时间
+        // 错题本列表：按用户 + 状态 + 最近答错时间
         assertIndexCandidate("""
                 EXPLAIN SELECT * FROM studio_quiz_wrong
                 WHERE user_id = 1 AND status = 0 AND deleted_at = 0
@@ -149,18 +127,9 @@ class QuizDdlVerifyTest {
                 """, "idx_user_status_time", "错题本列表");
     }
 
-    // ==================== 工具方法 ====================
+    // 工具方法
 
-    /**
-     * 从全量建库脚本里取出指定表的建表语句
-     *
-     * 改写成 CREATE TABLE IF NOT EXISTS：全量脚本靠「先 DROP 再 CREATE」
-     * 保证可重跑，用例里不能真去 DROP（那会清空开发库），
-     * 也不能让第二次执行撞「表已存在」。
-     *
-     * 为什么必须去注释：JdbcTemplate 把整段当作一条语句发给 MySQL，
-     * 而连接串没开 allowMultiQueries，多余的注释会让语句解析失败。
-     */
+    /** 从全量建库脚本里取出指定表的建表语句 */
     private String readCreateTableDdl(String tableName) throws Exception {
         String raw = Files.readString(Path.of("db/user.sql"));
         StringBuilder sb = new StringBuilder();
@@ -213,12 +182,7 @@ class QuizDdlVerifyTest {
         assertTrue(count != null && count > 0, table + " 缺少唯一索引 " + indexName);
     }
 
-    /**
-     * 造数：让优化器有统计依据
-     *
-     * 20 道题 + 40 条作答 + 20 条错题。用固定 ID 段 + 先删后插，
-     * 保证重复执行不膨胀。
-     */
+    /** 造数：让优化器有统计依据 */
     private void seedIfNeeded() {
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM studio_quiz_question WHERE id >= " + SEED_ID_BASE, Integer.class);
@@ -254,18 +218,12 @@ class QuizDdlVerifyTest {
                     VALUES (?,?,?,?,?,?,NOW(),NOW(),NOW(),0,0,0)
                     """, SEED_ID_BASE + i, 1, SEED_ID_BASE + i, 0, 1, 0);
         }
-        // 刷新统计信息，否则优化器可能用上一次的旧统计决定执行计划
         jdbcTemplate.execute("ANALYZE TABLE studio_quiz_question");
         jdbcTemplate.execute("ANALYZE TABLE studio_quiz_answer");
         jdbcTemplate.execute("ANALYZE TABLE studio_quiz_wrong");
     }
 
-    /**
-     * 断言 EXPLAIN 的候选索引包含预期索引
-     *
-     * 断言 possible_keys 而不是 key：前者证明「索引能被这条查询用上」，
-     * 后者是优化器在当前数据量下的选择——表小时它可能合理地选全表扫描。
-     */
+    /** 断言 EXPLAIN 的候选索引包含预期索引 */
     private void assertIndexCandidate(String explainSql, String expectedIndex, String scene) {
         Map<String, Object> row = jdbcTemplate.queryForMap(explainSql);
         String possibleKeys = String.valueOf(row.get("possible_keys"));

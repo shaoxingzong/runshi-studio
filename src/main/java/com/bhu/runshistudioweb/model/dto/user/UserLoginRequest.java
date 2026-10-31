@@ -8,11 +8,6 @@ import java.io.Serializable;
 /**
  * 用户登录请求
  *
- * 用 DTO 而不是实体：杜绝前端夹带 userRole、userStatus 之类的字段。
- *
- * 这里不校验长度：登录只做「能不能对上」的判断。限制 8~20 位会把历史密码规则下的老用户
- * 直接拦下，且提示是「参数错误」而非「密码错误」，排查成本更高。
- *
  * @author shaoshing
  */
 @Data

@@ -2,12 +2,7 @@
 import type { QuizQuestionType, QuizVerdict } from '@/api/types';
 import OptionList from './OptionList.vue';
 
-/**
- * 题卡：题型标签 + 题干 + 选项
- *
- * 单选点击即提交：每道题少一次点击，代价是点了不能改，但判定后本就要禁用选项。
- * 多选必须显式提交，否则「逐个勾选」的选法会永远只能选到一个。
- */
+/** 题卡：题型标签 + 题干 + 选项 */
 const props = defineProps<{
     stem: string;
     type: QuizQuestionType;

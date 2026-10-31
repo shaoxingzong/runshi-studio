@@ -28,20 +28,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * 流量埋点与统计验收测试
  *
- * 覆盖的规则（与产品口径一一对应）：
- * - 鉴权：埋点匿名可访问（游客也要统计）；统计接口匿名 A0201、
- * 普通用户 A0301、admin 放行；
- * - 埋点：参数缺失 A0401；路径里的 query / hash 被服务端剥掉
- * （防 token 随埋点入库）；登录用户的 user_id 由登录态取而非请求体；
- * - 统计：PV 每次访问 +1、UV 按 visitor_id 去重；
- * 今日值只算当天；无访问的日期补 0 而不是断档；热门页面按 PV 倒序取前 10。
- *
- * 为什么用 @Transactional：埋点写入在本测试事务内，
- * 回滚即可撤销，不需要按前缀手工清理。
- *
- * 类名不能以 Admin 开头：会排在 Ai* 测试之前，
- * 导致 Spring 上下文被 stop、后续登录类批量失败（见 PostManageTest 注释）。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -63,7 +49,7 @@ class TrafficManageTest {
     @Resource
     private JsonMapper jsonMapper;
 
-    // ==================== ① 鉴权 ====================
+    // ① 鉴权
 
     @Test
     @DisplayName("鉴权：埋点匿名可访问；统计接口匿名 A0201、普通用户 A0301、admin 放行")
@@ -90,7 +76,7 @@ class TrafficManageTest {
         assertNotNull(data.get("topPages"), "响应应含热门页面");
     }
 
-    // ==================== ② 埋点规则 ====================
+    // ② 埋点规则
 
     @Test
     @DisplayName("埋点：参数缺失 A0401；query / hash 被剥掉（防 token 入库）")
@@ -137,7 +123,7 @@ class TrafficManageTest {
                 + "AND user_id IS NULL"), "游客的 user_id 应为 NULL");
     }
 
-    // ==================== ③ 统计口径 ====================
+    // ③ 统计口径
 
     @Test
     @DisplayName("统计：PV 逐次 +1、UV 按 visitor 去重、今日值只算当天、无访问日期补 0")
@@ -153,7 +139,6 @@ class TrafficManageTest {
         String overview = getBody("/admin/traffic/overview?days=7", admin);
         JsonNode data = jsonMapper.readTree(overview).get("data");
 
-        // 库里可能还有别的测试残留，所以用「>= 本次造的 4 条」而不是精确相等
         assertTrue(data.get("totalPv").asInt() >= 4, "总 PV 至少应含本次 4 次：" + overview);
         assertTrue(data.get("totalUv").asInt() >= 2, "总 UV 至少应含本次 2 个访客：" + overview);
         assertTrue(data.get("todayPv").asInt() >= 4, "今日 PV 至少应含本次 4 次（埋点即今天）");
@@ -161,7 +146,6 @@ class TrafficManageTest {
 
         // 趋势：近 7 天应返回 7 行（无访问的日期补 0，不断档）
         assertEquals(7, data.get("daily").size(), "近 7 天趋势应返回 7 行（缺位补 0）");
-        // 今天的行必须有本次的数据
         JsonNode todayRow = data.get("daily").get(data.get("daily").size() - 1);
         assertTrue(todayRow.get("pv").asInt() >= 4, "今日行应含本次访问：" + todayRow);
     }
@@ -171,10 +155,6 @@ class TrafficManageTest {
     void topPagesSortedByPv() throws Exception {
         String admin = tokenOf(createUser(UserRoleConstant.ADMIN));
 
-        // /hot 造 30 次 PV：TOP 10 是全局榜，开发库里躺着真实流量
-        // （本地起应用跑一会儿就有十几个页面、PV 6~14）。造 5 次会被真实数据挤出榜外，
-        // 断言「某页在榜」就变成了假失败——用压倒性 PV 保证在榜，
-        // 与隔壁 statisticsCountPvAndUv「库里可能有残留所以用 >=」是同一条纪律
         for (int i = 0; i < 30; i++) {
             String r = postJson("/traffic/report",
                     "{\"pagePath\":\"/hot\",\"visitorId\":\"v-hot" + i + "\"}", null);
@@ -188,8 +168,6 @@ class TrafficManageTest {
                 .get("data").get("topPages");
         assertTrue(topPages.size() > 0, "热门页面不应为空");
 
-        // ① 排序契约（本测试的核心）：PV 必须单调不增。
-        //    直接验「倒序」本身，不依赖任何特定页面在不在榜
         int prevPv = Integer.MAX_VALUE;
         for (JsonNode row : topPages) {
             int pv = row.get("pv").asInt();
@@ -197,26 +175,23 @@ class TrafficManageTest {
             prevPv = pv;
         }
 
-        // ② 本次造的 /hot 必须入榜且 PV >= 30（诊断信息带上完整响应，失败时一眼看出缺什么）
         Integer hotPv = pvOf(topPages, "/hot");
         assertNotNull(hotPv, "热门页面应包含 /hot | topPages=" + topPages);
         assertTrue(hotPv >= 30, "/hot 应有至少 30 次 PV | topPages=" + topPages);
 
-        // ③ 排序方向复验：/cold 在榜时（PV 最小，真实流量多时可能被挤出 TOP 10，
-        //    因此不断言它在榜）必须排在 /hot 之后
         if (pvOf(topPages, "/cold") != null) {
             assertTrue(indexOfPath(topPages, "/hot") < indexOfPath(topPages, "/cold"),
                     "PV 多的页面应排在前面 | topPages=" + topPages);
         }
 
-        // ④ 路径不带 query（埋点剥离逻辑在热门页面上的复验）
+        // 路径不带 query（埋点剥离逻辑在热门页面上的复验）
         for (JsonNode row : topPages) {
             assertFalse(row.get("pagePath").asText().contains("?"),
                     "热门页面路径不应含 query | topPages=" + topPages);
         }
     }
 
-    // ==================== 工具方法 ====================
+    // 工具方法
 
     private String postJson(String path, String json, String tokenValue) throws Exception {
         var request = post(path).contentType(MediaType.APPLICATION_JSON).content(json);

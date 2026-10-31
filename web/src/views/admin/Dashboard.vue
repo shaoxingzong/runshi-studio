@@ -7,14 +7,7 @@ import { portalApi } from '@/api/portal';
 import { trafficApi } from '@/api/traffic';
 import type { Overview, TrafficOverview } from '@/api/types';
 
-/**
- * 管理后台 · 首页概览
- *
- * 登录后的落地页，`/admin` 直接落地待审队列而不是成员列表：看不到积压就会漏掉最紧急的事。
- * 六项计数全部复用既有分页接口（pageSize=1 只取 total），不新增后端。
- *
- * 六项并行请求，任何一项失败只让那张卡片显示「—」，不拖垮整页——概览页挂掉比没有更糟。
- */
+/** 管理后台 · 首页概览 */
 const router = useRouter();
 
 /** 单项计数：value 为 null 表示「取数失败」，与「真的是 0」是两回事 */
@@ -60,11 +53,7 @@ function setCard(key: string, value: number | null) {
     }
 }
 
-/**
- * 取一项计数，失败时落 null 而不是抛出
- *
- * 每项各自 catch：一项接口挂掉不该让其余五项也变成「—」。
- */
+/** 取一项计数，失败时落 null 而不是抛出 */
 async function countOf(key: string, loader: () => Promise<number>) {
     try {
         setCard(key, await loader());

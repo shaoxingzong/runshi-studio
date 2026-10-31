@@ -10,8 +10,8 @@ const user = useUserStore();
 const menus = [
     { path: '/admin/dashboard', label: '首页概览' },
     { path: '/admin/members', label: '成员管理' },
-    // 用户管理 = 「给注册用户授予成员身份」的地方：注册只能得到普通用户（user），
-    // 管理员在这里把角色改成 member（或 admin），或封禁账号
+    // 考勤统计紧挨成员管理：它回答的就是「这些人这个月来了几次」
+    { path: '/admin/attendance', label: '考勤统计' },
     { path: '/admin/users', label: '用户管理' },
     { path: '/admin/projects', label: '项目管理' },
     { path: '/admin/certificates', label: '证书管理' },
@@ -27,12 +27,7 @@ const menus = [
     { path: '/admin/logs', label: '操作日志' },
 ];
 
-/**
- * 窄屏标志（< 768px）
- *
- * 必须用 JS 判断：el-aside 的宽度是 props（渲染成内联 style），CSS 类改不动，只能绑 :width。
- * 选「收窄到 132px」而不是抽屉：后台使用者多是电脑，为边缘场景引入一整套交互不划算。
- */
+/** 窄屏标志（< 768px） */
 const narrow = ref(false);
 
 function syncNarrow() {
@@ -132,7 +127,7 @@ function logout() {
     padding-inline: 12px;
 }
 
-/* 顶栏：账号信息是纯展示，空间紧张时让位（退出按钮保留，功能不丢） */
+/* 顶栏：账号信息是纯展示，空间紧张时让位（退出按钮保留，功能不丢）*/
 .header.narrow {
     padding-inline: 12px;
 }

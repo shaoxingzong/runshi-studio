@@ -9,12 +9,6 @@ import java.io.Serializable;
 /**
  * 管理端：新增用户请求
  *
- * 与自助注册（UserRegisterRequest）不能合并：管理员可以指定角色与状态，自助注册永远不能
- * （否则人人可注册管理员）——「谁能决定字段」才是两者的本质差异。
- *
- * 本类接口必须挂在 @SaCheckRole("admin") 之下（见 UserController），
- * 字段再宽松，只要入口是管理员专属的就不会被普通用户利用。
- *
  * @author shaoshing
  */
 @Data
@@ -27,31 +21,19 @@ public class UserAddRequest implements Serializable {
     @Size(min = 4, max = 16, message = "账号长度需为 4-16 位")
     private String userAccount;
 
-    /**
-     * 用户密码（选填）
-     * 为空时由 Service 使用默认初始密码；管理员创建的账号应要求首次登录后修改密码
-     */
+    /** 用户密码（选填）为空时由 Service 使用默认初始密码；管理员创建的账号应要求首次登录后修改密码 */
     @Size(min = 8, max = 20, message = "密码长度需为 8-20 位")
     private String userPassword;
 
-    /**
-     * 用户昵称（选填）
-     * 为空时用账号兜底：DDL 中 user_name 是 NOT NULL 且无默认值，不赋值会插入失败
-     */
+    /** 用户昵称（选填）为空时用账号兜底：DDL 中 user_name 是 NOT NULL 且无默认值，不赋值会插入失败 */
     @Size(max = 64, message = "昵称长度不能超过 64 个字符")
     private String userName;
 
-    /**
-     * 用户头像 URL（选填）
-     * 一般先调 /file/upload 拿到相对路径，再填到这里
-     */
+    /** 用户头像 URL（选填）一般先调 /file/upload 拿到相对路径，再填到这里 */
     @Size(max = 512, message = "头像地址过长")
     private String userAvatar;
 
-    /**
-     * 用户角色（选填），取值见 com.bhu.runshistudioweb.model.enums.UserRoleEnum
-     * 不填按普通用户处理。合法性由 Service 用枚举校验，不用 @Pattern 写死字符串——枚举一改注解就过期
-     */
+    /** 用户角色（选填），取值见 com.bhu.runshistudioweb.model.enums.UserRoleEnum 不填按普通用户处理。 */
     private String userRole;
 
     /** 用户状态（选填）：0-正常，1-封禁；不填按 0 处理 */

@@ -17,11 +17,6 @@ import java.util.concurrent.Executors;
 /**
  * RAG 启动健康检查：发现「切分块有数据、向量索引不可用」时自动重建
  *
- * <p>为什么需要它：向量索引是派生数据，可能因为 Redis 索引被清空、向量模型换了、
- * 历史残留或人工误操作而与数据库不一致。以前的表现是：应用启动成功，
- * 但 AI 永远检索不到资料，也不报错，只能靠管理员想起「点一下重建向量」。
- * 这里在启动完成后主动比对一次数量，发现不一致就异步重建。
- *
  * @author shaoshing
  */
 @Slf4j
@@ -40,21 +35,7 @@ public class RagIndexHealthChecker {
     /** 重建在虚拟线程里跑：不占平台线程，不阻塞应用启动后的其它请求 */
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
-    /**
-     * 启动完成后检查一次索引状态
-     *
-     * <p>执行步骤：
-     * <ol>
-     *     <li>开关关闭 / 非 redis 模式：只打日志，不做任何重建；</li>
-     *     <li>查数据库存活切分块数与向量数，打印一行可运维核对的状态；</li>
-     *     <li>数量不一致或索引标记为需重建：清空索引，异步 reindex-all；</li>
-     *     <li>任何异常只记日志，不阻断应用启动。</li>
-     * </ol>
-     *
-     * <p>容易踩的坑：不要在 chunks=0 时也重建——空知识库是正常状态，
-     * 此时重建没有任何文档可做，只会白打一条失败日志。反过来，
-     * chunks=0 但 vectors>0 说明有孤儿向量，需要清空。
-     */
+    /** 启动完成后检查一次索引状态 */
     @EventListener(ApplicationReadyEvent.class)
     public void checkOnStartup() {
         if (!Boolean.TRUE.equals(aiProperties.getRagStartupCheckEnabled())) {
@@ -94,9 +75,7 @@ public class RagIndexHealthChecker {
         }
     }
 
-    /**
-     * 异步执行全量重建，并把结果写进日志
-     */
+    /** 异步执行全量重建，并把结果写进日志 */
     private void rebuildAsync() {
         try {
             KnowledgeSyncAllVO summary = knowledgeDocService.reindexAll();

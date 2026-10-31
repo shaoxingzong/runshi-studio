@@ -10,12 +10,7 @@ import java.util.List;
 /**
  * 开批结果（C 端）
  *
- * 题目整批返回、服务端不保存「本轮是哪几题」，这是本模块最重要的简化：题目 VO 不含答案，
- * 整批交给前端持有不存在泄露风险；服务端只需要在作答时拿到 batchId 做幂等。
- *
  * 代价是「换设备不能续答」——刷题不是考试，重开一轮成本为 0，同设备刷新由前端的 sessionStorage 兜住。
- *
- * total 与 questions.size() 恒等，单独给一个字段是为了让前端不必写 questions.length。
  *
  * @author shaoshing
  */

@@ -36,16 +36,11 @@ const form = reactive<Record<string, unknown>>({
 
 const STATUS_TEXT: Record<string, string> = { 0: '研发中', 1: '已上线', 2: '已结题' };
 
-// ==================== 参与成员（关联维护）====================
+// 参与成员（关联维护）
 
 /** 已绑定的参与成员（含队长） */
 const projectMembers = ref<AdminMember[]>([]);
-/**
- * 候选成员（远程搜索）
- *
- * 后端分页上限是 50，原先写 pageSize: 100 只会被静默截断——第 51 位成员永远选不到，
- * 界面还没有任何提示。这里改成「先取前 50，再按姓名搜」，并在被截断时明确告知。
- */
+/** 候选成员（远程搜索） */
 const {
     options: memberOptions,
     total: memberTotal,
@@ -64,12 +59,7 @@ const {
 const memberLoading = ref(false);
 const pickedMember = ref('');
 
-/**
- * 是否为当前队长
- *
- * 队长由 `project.leaderId` 决定，后端拒绝把队长从成员列表里移除。
- * 这里提前禁用按钮，而不是让用户点了才收到报错。
- */
+/** 是否为当前队长 */
 function isLeader(memberId: string): boolean {
     return String(form.leaderId ?? '') === memberId;
 }
@@ -297,10 +287,7 @@ onBeforeUnmount(disposeMemberSearch);
                     </el-tag>
                 </template>
             </el-table-column>
-            <!--
-              权重是「首页项目怎么放」的唯一抓手：后端按官网口径（权重倒序 → 创建时间倒序 → id 倒序）
-              取前 6 条，列表默认顺序与之相同，所以这里看到的名次就是门户首页的名次
-            -->
+            <!-- 权重是「首页项目怎么放」的唯一抓手：后端按官网口径（权重倒序 → 创建时间倒序 → id 倒序）取前 6 条，列表默认顺序与之相同，所以这里看到的名次就是门户首页的名次 -->
             <el-table-column label="权重" width="80">
                 <template #default="{ row }">
                     {{ row.sortOrder ?? 0 }}

@@ -33,23 +33,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
 /**
- * 作者自助改稿验收测试（改自己被驳回的帖子）
- *
- * 覆盖的规则（与产品口径一一对应）：
- * - 准入：未登录 A0201；非本人的帖子按「不存在」A0402（同码同提示，
- * 不暴露存在性）；待审 / 已通过的帖子同样 A0402（作者只能改已驳回的）；
- * - 改稿效果：标题 / 正文更新、状态重置为待审、上一轮审核痕迹清空
- * （audit_by / audit_at / reject_reason / ai_audit_status）；
- * - 正文可读：/post/my/detail 让作者读到驳回稿的正文，
- * 且不累加浏览量；非本人、已通过的帖子读不到；
- * - 校验同源：外链图片被拒、空标题 / 空正文被拒，且被拒时不改动任何内容。
- *
- * 为什么不担心编辑触发的异步 AI 初判：测试环境没有配置 AI，
- * ContentAuditManager#judge 立刻失败并转人工，而该结论不改 status；
- * 且它跑在虚拟线程上，会先被本测试事务持有的行锁挡住。因此断言只盯确定性字段。
- *
- * 类名不能以 Admin 开头：会排在 Ai* 测试之前导致
- * Spring 上下文被 stop、后续登录类批量失败（见 PostManageTest 注释）。
+ * 作者自助改稿验收测试（待审 / 驳回 / 已通过均可改，保存后重新送审）
  *
  * @author shaoshing
  */
@@ -75,12 +59,7 @@ class PostSelfUpdateTest {
     @Resource
     private JsonMapper jsonMapper;
 
-    /**
-     * AI 熔断器：每个用例前重置。
-     *
-     * 改稿会触发「重新送 AI 初判」，而测试环境没有配置 AI，每次都是失败——
-     * 连续几个用例就会把熔断器打开，传染给后跑的测试类。
-     */
+    /** AI 熔断器：每个用例前重置。 */
     @Resource
     private AiCircuitBreaker circuitBreaker;
 
@@ -89,10 +68,10 @@ class PostSelfUpdateTest {
         circuitBreaker.reset();
     }
 
-    // ==================== ① 准入 ====================
+    // ① 准入
 
     @Test
-    @DisplayName("准入：未登录 A0201；非本人 / 待审 / 已通过一律按「不存在」A0402")
+    @DisplayName("准入：未登录 A0201；非本人按「不存在」A0402；待审 / 已通过也可由作者改")
     void accessControl() throws Exception {
         long authorId = createUser();
         String author = tokenOf(authorId);
@@ -110,14 +89,14 @@ class PostSelfUpdateTest {
         assertEquals("A0402", code(cross), "非本人应 A0402：" + cross);
         assertEquals("帖子不存在", message(cross), "非本人应与不存在同提示");
 
-        // 待审 / 已通过的帖子也不能改（作者只能改已驳回）
-        assertEquals("A0402", code(postJson("/post/update-mine",
-                updateJson(pending, "t", "c"), author)), "待审帖不应允许作者改");
-        assertEquals("A0402", code(postJson("/post/update-mine",
-                updateJson(approved, "t", "c"), author)), "已通过帖不应允许作者改");
+        // 待审 / 已通过也可由作者改：保存后统一重置为待审，审核通过前不再公开展示
+        assertEquals("00000", code(postJson("/post/update-mine",
+                updateJson(pending, "t", "c"), author)), "作者应能修改自己的待审帖");
+        assertEquals("00000", code(postJson("/post/update-mine",
+                updateJson(approved, "t", "c"), author)), "作者应能修改自己的已通过帖");
     }
 
-    // ==================== ② 改稿效果 ====================
+    // ② 改稿效果
 
     @Test
     @DisplayName("改稿：内容更新、状态重置为待审、上一轮审核痕迹全部清空")
@@ -188,7 +167,7 @@ class PostSelfUpdateTest {
         assertEquals(AuditStatusEnum.REJECTED.getValue(), after.getStatus(), "校验失败不应改状态");
     }
 
-    // ==================== ③ 作者读自己的未公开稿 ====================
+    // ③ 作者读自己的未公开稿
 
     @Test
     @DisplayName("详情：作者可读自己驳回稿的正文，且不累加浏览量")
@@ -212,16 +191,16 @@ class PostSelfUpdateTest {
     }
 
     @Test
-    @DisplayName("详情：非本人 / 已通过的帖子读不到；未登录 A0201")
+    @DisplayName("详情：非本人读不到；未登录 A0201；已通过也可由作者读")
     void myDetailAccessControl() throws Exception {
         long authorId = createUser();
         long postId = createPost(authorId, AuditStatusEnum.REJECTED);
         setContent(postId, "T35-正文");
 
-        // 已通过的走公开详情，本接口不覆盖
+        // 已通过的也可由作者通过本接口取回（不累计浏览量），用于改稿回填
         long approved = createPost(authorId, AuditStatusEnum.APPROVED);
         String approvedBody = getBody("/post/my/detail?id=" + approved, tokenOf(authorId));
-        assertEquals("A0402", code(approvedBody), "已通过的帖子不应走本接口");
+        assertEquals("00000", code(approvedBody), "作者应能读取自己的已通过帖：" + approvedBody);
 
         // 非本人
         String other = tokenOf(createUser());
@@ -232,7 +211,7 @@ class PostSelfUpdateTest {
         assertEquals("A0201", code(getBody("/post/my/detail?id=" + postId, null)), "未登录应 A0201");
     }
 
-    // ==================== 工具方法 ====================
+    // 工具方法
 
     private String postJson(String path, String json, String tokenValue) throws Exception {
         var request = post(path).contentType(MediaType.APPLICATION_JSON).content(json);

@@ -3,11 +3,6 @@ package com.bhu.runshistudioweb.model.enums;
 /**
  * 内容审核状态（studio_post.status / studio_post_comment.status）
  *
- * 帖子与评论共用一套：两者状态机完全一致，建两个只会让新增状态时改漏一处。
- * 取值与 DDL 列注释同源：0-待审，1-已通过，2-已驳回。
- *
- * 坑：默认态必须是「待审」而不是「已通过」，否则漏审直接等于发布。
- *
  * @author shaoshing
  */
 public enum AuditStatusEnum {
@@ -45,25 +40,22 @@ public enum AuditStatusEnum {
     /**
      * 把数字翻译成审核状态，查不到返回 null，由调用方决定报错还是降级
      *
-     * 作为筛选条件时须判空报错（否则非法值静默返回空列表，排查方向被带偏），
-     * 展示历史记录时可降级成「未知」；遍历而非 switch，null 必须先挡再拆箱比较。
-     *
      * @param value 待翻译的取值，允许为 null
      * @return 命中的枚举；null 或不在 0~2 时返回 null
      */
     public static AuditStatusEnum of(Integer value) {
-        // ① 先挡 null：不判空就拆箱比较会 NPE，而 null 在这里是正常输入
+        // 先挡 null：不判空就拆箱比较会 NPE，而 null 在这里是正常输入
         if (value == null) {
             return null;
         }
-        // ② 遍历全部常量：新增状态时这里不用改
+        // 遍历全部常量：新增状态时这里不用改
         for (AuditStatusEnum status : values()) {
             // 左边 int、右边 Integer，比较的是数值而非对象引用
             if (status.value == value) {
                 return status;
             }
         }
-        // ③ 查不到返回 null：报错还是降级，由调用方按场景决定
+        // 查不到返回 null：报错还是降级，由调用方按场景决定
         return null;
     }
 
@@ -77,11 +69,11 @@ public enum AuditStatusEnum {
     public static String valuesText() {
         StringBuilder text = new StringBuilder();
         for (AuditStatusEnum status : values()) {
-            // ① 只有已经拼过内容才补分隔符：末尾不会多出一个「 / 」
+            // 只有已经拼过内容才补分隔符：末尾不会多出一个「 / 」
             if (text.length() > 0) {
                 text.append(" / ");
             }
-            // ② 值 + 中文描述一起拼：单独的数字没有语义
+            // 值 + 中文描述一起拼：单独的数字没有语义
             text.append(status.value).append("（").append(status.desc).append("）");
         }
         return text.toString();

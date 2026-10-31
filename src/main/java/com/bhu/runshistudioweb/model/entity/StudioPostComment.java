@@ -14,12 +14,6 @@ import java.time.LocalDateTime;
 /**
  * 帖子评论实体（对应 studio_post_comment，楼中楼）
  *
- * 只支持两层：parentId 为 null 是直接评论，非 null 是回复，回复的回复仍挂在同一顶层下。
- * 列表组装只要一次查询 + 内存分组（WHERE post_id = ? 取回后按 parentId 挂树）。
- *
- * content 用 varchar(1000) 而非 text：Service 校验长度与列宽必须是同一个值。
- * deletedBy 单独存一列：光有 deletedAt 只知道何时删的，出争议时要能查到是谁删的。
- *
  * @author shaoshing
  */
 @Data

@@ -14,13 +14,6 @@ import java.time.LocalDateTime;
 /**
  * 知识库文档实体（对应 studio_knowledge_doc，RAG 源文档元数据）
  *
- * 不存向量：向量在 LangChain4j 的 EmbeddingStore 里（换库不必改表），
- * 本表只存「是什么、来自哪条业务数据、切了几块、索引到哪一步」。
- * 向量可重建，元数据与溯源不可重建，混在一起换库时就得连元数据一起迁。
- *
- * sourceType + sourceId 是溯源字段（manual 来源的 sourceId 为 null）；
- * contentHash 做增量去重（Embedding 既慢又要钱）；status 0-待处理 / 1-已索引 / 2-失败。
- *
  * @author shaoshing
  */
 @Data
@@ -40,10 +33,7 @@ public class StudioKnowledgeDoc implements Serializable {
     /** 来源类型：manual 手工录入 / project 项目案例 / member 成员档案 / certificate 荣誉证书 */
     private String sourceType;
 
-    /**
-     * 来源业务数据 ID（溯源用）：指向对应业务表主键，manual 来源为 null
-     * 刻意不建外键：来源可能是三张不同的表，外键表达不了这种多态来源
-     */
+    /** 来源业务数据 ID（溯源用）：指向对应业务表主键，manual 来源为 null 刻意不建外键：来源可能是三张不同的表，外键表达不了这种多态来源 */
     private Long sourceId;
 
     /** 正文内容哈希（增量更新去重：内容未变则跳过重建向量） */

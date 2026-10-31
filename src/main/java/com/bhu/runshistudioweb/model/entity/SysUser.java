@@ -14,12 +14,6 @@ import java.time.LocalDateTime;
 /**
  * 用户表实体（对应 sys_user）
  *
- * 三条全局约定：雪花主键 ASSIGN_ID（DDL 不带自增，两套策略并存会把自增计数器顶到天文数字）；
- * 逻辑删除 deleted_at 为毫秒时间戳（所有唯一索引都要带上它，否则注销的账号永久占用账号名）；
- * 时间列统一 _at 后缀 + datetime（不用 timestamp，避开 2038 与时区隐式转换）。
- *
- * 坑：字段与 DDL 一一对应，不要在此加业务展示字段；对外一律走 VO，避免密码泄露。
- *
  * @author shaoshing
  */
 @Data
@@ -57,10 +51,7 @@ public class SysUser implements Serializable {
     /** 用户状态：0-正常，1-封禁；与 userRole 正交，不要合并成「带 ban 的角色」 */
     private Integer userStatus;
 
-    /**
-     * AI 查询次数基准值，不是实时用量：增量先进 Redis，由定时任务批量回刷
-     * 读时必须取「本字段 + Redis 增量」的合并值，只查这里会读到回刷前的旧值
-     */
+    /** AI 查询次数基准值，不是实时用量：增量先进 Redis，由定时任务批量回刷。读时必须取「本字段 + Redis 增量」的合并值，只查这里会读到回刷前的旧值 */
     private Integer aiQueryCount;
 
     /** 创建人 ID：插入时由 MyMetaObjectHandler 填充 */
@@ -79,10 +70,6 @@ public class SysUser implements Serializable {
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 
-    /**
-     * 逻辑删除毫秒时间戳（0-未删除，非0-已删除）
-     * @TableLogic 让查询追加 deleted_at = 0，删除改写为 UPDATE；不能加 @TableField(fill = ...)
-     */
     @TableLogic
     private Long deletedAt;
 }

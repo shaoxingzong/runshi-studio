@@ -36,25 +36,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 考勤服务验收测试（纯单测：不启 Spring、不连数据库）
  *
- * 依赖全部替换成 Mock / 真实轻量实现：
- * - 两个 Mapper 用 Mockito 替身的——本类要验证的是 Service 的编排逻辑
- * （准入、防抖、落库参数、三次查询的合并），而不是 SQL 能不能跑通；
- * - ClientIpManager 用真实实例：内外网判定是本次的核心业务规则，
- * 用真实实现才能真正覆盖到「192.168.1.5 算内网」这条链路；
- * - StpUtil 是静态调用，用 mockStatic 替换登录态。
- *
- * 最关键的两条用例是准入（非成员必须被拒）与脱敏（VO 结构上不允许出现 ip）：
- * 前者是产品明确要求的安全边界，后者一旦被破坏就是隐私泄露，所以都用断言钉死。
- *
  * @author shaoshing
  */
 class AttendanceServiceTest {
 
     private static final long USER_ID = 1001L;
     private static final long OTHER_USER_ID = 1002L;
-
-    /** 配置的工作室网段，与 ClientIpManagerTest 的取值保持一致便于交叉理解 */
-    private static final String LAN_CIDR = "192.168.1.0/24";
 
     private StudioAttendanceMapper attendanceMapper;
     private StudioMemberMapper memberMapper;
@@ -68,18 +55,14 @@ class AttendanceServiceTest {
         memberService = Mockito.mock(StudioMemberService.class);
 
         AttendanceProperties properties = new AttendanceProperties();
-        properties.setLanCidrs(List.of(LAN_CIDR));
         properties.setTrustedProxies(List.of("127.0.0.1"));
         properties.setMinIntervalSeconds(60);
 
-        // 四个业务依赖走构造器注入，顺序与字段声明一致（studioMemberService / studioMemberMapper /
-        // clientIpManager / attendanceProperties）；baseMapper 属于父类 ServiceImpl，
-        // 拿不到构造器入口，仍只能反射注入
         service = new AttendanceServiceImpl(memberService, memberMapper, new ClientIpManager(properties), properties);
         ReflectionTestUtils.setField(service, "baseMapper", attendanceMapper);
     }
 
-    // ==================== 准入：登录态 ====================
+    // 准入：登录态
 
     @Test
     @DisplayName("未登录签到：A0201 未登录，根本不会走到成员校验")
@@ -95,7 +78,7 @@ class AttendanceServiceTest {
         }
     }
 
-    // ==================== 准入：必须是成员（产品核心规则）====================
+    // 准入：必须是成员（产品核心规则）
 
     @Test
     @DisplayName("普通注册用户签到：A0301 无权限（成员身份以 studio_member 表为准）")
@@ -129,11 +112,11 @@ class AttendanceServiceTest {
         }
     }
 
-    // ==================== 签到 ====================
+    // 签到
 
     @Test
-    @DisplayName("成员签到成功：内网地址判为 inLan=true，次数取自查询")
-    void memberCheckInSucceedsWithLanJudgement() {
+    @DisplayName("成员签到成功：记录时间与次数，不再判定内外网")
+    void memberCheckInSucceeds() {
         Mockito.when(memberService.getActiveMemberByUserId(USER_ID)).thenReturn(member(USER_ID, "张三"));
         // 两次 count：① 防抖（无近期记录）② 本月累计
         Mockito.when(attendanceMapper.selectCount(Mockito.any())).thenReturn(0L, 3L);
@@ -146,26 +129,8 @@ class AttendanceServiceTest {
             AttendanceCheckInVO vo = service.checkIn("192.168.1.5", null, null, "Mozilla/5.0");
 
             assertEquals(USER_ID, vo.getUserId());
-            assertTrue(vo.getInLan(), "192.168.1.5 应命中工作室网段");
             assertNotNull(vo.getCheckInAt());
             assertEquals(3, vo.getMonthCount());
-        }
-    }
-
-    @Test
-    @DisplayName("成员在外网签到：inLan=false（住址/手机流量不被当成在工作室）")
-    void memberCheckInOutsideLan() {
-        Mockito.when(memberService.getActiveMemberByUserId(USER_ID)).thenReturn(member(USER_ID, "张三"));
-        Mockito.when(attendanceMapper.selectCount(Mockito.any())).thenReturn(0L, 1L);
-        Mockito.when(attendanceMapper.insert(Mockito.any(StudioAttendance.class))).thenReturn(1);
-
-        try (MockedStatic<StpUtil> stp = Mockito.mockStatic(StpUtil.class)) {
-            stp.when(StpUtil::isLogin).thenReturn(true);
-            stp.when(StpUtil::getLoginIdAsLong).thenReturn(USER_ID);
-
-            AttendanceCheckInVO vo = service.checkIn("8.8.8.8", null, null, "Mozilla/5.0");
-
-            assertFalse(vo.getInLan());
         }
     }
 
@@ -188,7 +153,7 @@ class AttendanceServiceTest {
         }
     }
 
-    // ==================== 出勤看板 ====================
+    // 出勤看板
 
     @Test
     @DisplayName("看板：已打卡成员带时间与月次数，未打卡成员 checkedIn=false 且同样在列")
@@ -202,7 +167,7 @@ class AttendanceServiceTest {
         Mockito.when(attendanceMapper.selectMaps(Mockito.any()))
                 .thenReturn(
                         List.of(Map.<String, Object>of(
-                                "user_id", USER_ID, "first_check_in", firstAt, "any_lan", 1)),
+                                "user_id", USER_ID, "first_check_in", firstAt)),
                         List.of(Map.<String, Object>of("user_id", USER_ID, "cnt", 5L)));
 
         try (MockedStatic<StpUtil> stp = Mockito.mockStatic(StpUtil.class)) {
@@ -219,7 +184,6 @@ class AttendanceServiceTest {
             assertTrue(checked.getCheckedIn());
             assertEquals(firstAt, checked.getCheckInAt());
             assertEquals(5, checked.getMonthCount());
-            assertTrue(checked.getInLan());
 
             AttendanceBoardVO absent = board.get(1);
             assertEquals("李四", absent.getUserName());
@@ -229,7 +193,7 @@ class AttendanceServiceTest {
         }
     }
 
-    // ==================== 隐私红线 ====================
+    // 隐私红线
 
     @Test
     @DisplayName("隐私红线：考勤 VO 结构上不允许出现 ip / userAgent / userAccount")
@@ -247,7 +211,7 @@ class AttendanceServiceTest {
         }
     }
 
-    // ==================== 本人历史 ====================
+    // 本人历史
 
     @Test
     @DisplayName("本人历史：返回自己的记录，且 VO 不带 IP / UA")
@@ -258,7 +222,6 @@ class AttendanceServiceTest {
         record.setUserId(USER_ID);
         record.setAttendanceDate(LocalDate.of(2026, 10, 7));
         record.setCheckInAt(LocalDateTime.of(2026, 10, 7, 9, 30));
-        record.setInLan(1);
         // 实体里带着敏感的审计字段，下面验证它们不会流进 VO
         record.setIp("192.168.1.5");
         record.setUserAgent("Mozilla/5.0");
@@ -280,11 +243,10 @@ class AttendanceServiceTest {
             AttendanceMeVO vo = history.get(0);
             assertEquals(USER_ID, vo.getUserId());
             assertEquals(LocalDate.of(2026, 10, 7), vo.getAttendanceDate());
-            assertTrue(vo.getInLan());
         }
     }
 
-    // ==================== 辅助 ====================
+    // 辅助
 
     /** 构造一个已绑定账号的成员档案 */
     private static StudioMember member(Long userId, String name) {

@@ -32,21 +32,18 @@ build/
 ### VS Code ###
 .vscode/
 
-### 本地参考源码副本（保留在磁盘供查阅，但不参与版本管理）###
-# 根目录下的 ai-code-helper-master 是参考项目源码副本，只做本地参考，不应被提交
+### 本地参考源码副本 ###
 /ai-code-helper-master/
 
-### 历史备份：git bundle 全量备份，体积大且只用于本地灾难恢复 ###
+### git bundle 全量备份 ###
 *.bundle
 
-### 本地私有配置：含密钥/服务商地址，绝不提交 ###
-# application-dev.yml 用 spring.config.import 引入本地私有配置；文件不存在也能正常启动
+### 本地私有配置（含密钥，不提交）###
 application-local.yml
 **/application-local.yml
 
-# 环境变量文件：只忽略「本地私有」的那几种
-# ⚠️ 不能简单写 `.env*` —— 那样会把 web/.env.production 一起忽略，
-#    而它只含前端 API 地址（不含密钥），构建时必须存在，所以要提交（下方用 ! 取反保留）
+### 环境变量文件 ###
+# 只忽略本地私有的几种；web/.env.production 只含 API 地址，必须入库
 .env
 .env.local
 .env.*.local
@@ -61,26 +58,13 @@ logs/
 Thumbs.db
 *.swp
 *~
-# deploy/ 收录「配置样例」（如 nginx.conf，对部署有参考价值，必须入库）；
-# 本机的真实部署产物（jar、.env、密钥、备份）一律不入库——白名单式忽略：
-# 先忽略整个目录，再放行样例文件。新增样例时记得同步 ! 放行行
+# deploy/ 只入库配置样例，真实部署产物不入库
 /deploy/*
 !/deploy/nginx.conf
 
-### IDE 项目数据（含本地计划草稿，不入库） ###
+### 本地开发数据 ###
 .codebuddy/
-
-### 图绘制指南：本地参考资料，不入库 ###
-# 它是给开发过程看的清单，不是交付物；且内容随代码频繁变动，
-# 进了仓库很容易与实现漂移后无人维护
-docs/DIAGRAM_GUIDE.md
-
-### 临时诊断脚本（一次性排查用，不入库） ###
-# 根目录的 tools-*.mjs / tools-*.ps1 这类一次性脚本，用完即弃
-/tools-*
-
-### 工具与 IDE 的本地产物（不入库） ###
-# Playwright CLI 的调试日志与页面快照：只在本地排查界面问题时产生
 .playwright-cli/
-# Trae 编辑器生成的需求/方案草稿：随开发过程变化，不是交付物
 .trae/
+docs/DIAGRAM_GUIDE.md
+/tools-*

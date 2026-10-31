@@ -10,13 +10,6 @@ import java.time.LocalDateTime;
 /**
  * 评论视图对象（管理端待审队列专用）
  *
- * 不复用 PostCommentVO：那个 VO 用于「某帖子的评论列表」，是游客可访问的公开接口，
- * 因此刻意不含 status、rejectReason、审计字段；而待审队列恰恰需要这些，尤其要展示 AI 的初判结论与理由。
- * 脱敏纪律是「靠目标 VO 没有这些字段」，所以只能分开建。
- *
- * AI 三列是本类存在的主要理由：管理员打开队列时内容已被 AI 分好类，他只需要处理「灰色」与「判不了」两类，
- * 安全与违规的早已被自动处置、不在队列里，aiReason 给出机器的疑虑，据此一眼就能拍板。
- *
  * @author shaoshing
  */
 @Data
@@ -58,11 +51,7 @@ public class PostCommentAuditVO implements Serializable {
     /** 审核时间 */
     private LocalDateTime auditAt;
 
-    /**
-     * AI 审核结论：0-未判, 1-安全(自动通过), 2-违规(自动驳回), 3-灰色(转人工), 4-判定失败(转人工)
-     *
-     * 取值见 AiAuditStatusEnum。队列里的条目绝大多数是 3 或 4——1 与 2 已被自动处置，不会出现在待审队列中。
-     */
+    /** AI 审核结论：0-未判, 1-安全(自动通过), 2-违规(自动驳回), 3-灰色(转人工), 4-判定失败(转人工) */
     private Integer aiAuditStatus;
 
     /** AI 给出的理由：管理员据此快速判断机器在犹豫什么 */

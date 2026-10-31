@@ -15,13 +15,6 @@ import java.time.LocalDateTime;
 /**
  * 考勤签到记录实体（对应 studio_attendance）
  *
- * 审计凭证，没有修改动作：updated_at 恒等于 created_at，两列只为结构统一保留。
- * attendance_date 是刻意冗余：由 check_in_at 按东八区派生，让按天查询命中索引；
- * 写成 DATE(check_in_at) 会让索引失效，派生逻辑只在 AttendanceServiceImpl 一处。
- *
- * 坑：ip 与 userAgent 是位置信息，绝不进对外 VO；时间口径固定东八区，
- * 不用 ZoneId.systemDefault()，否则本地开发与生产会差 8 小时且不报错。
- *
  * @author shaoshing
  */
 @Data
@@ -44,16 +37,10 @@ public class StudioAttendance implements Serializable {
     /** 签到时刻（Asia/Shanghai）；DDL 是秒级 datetime，看板展示到分钟，秒级精度留作排查 */
     private LocalDateTime checkInAt;
 
-    /**
-     * 是否内网签到：0-外网，1-内网（由 ClientIpManager 按配置网段判定）
-     * 用 Integer 而非 Boolean：DDL 是 tinyint，且语义可能扩展出不同网段
-     */
+    /** 是否内网签到：0-外网，1-内网（由 ClientIpManager 按配置网段判定）用 Integer 而非 Boolean：DDL 是 tinyint，且语义可能扩展出不同网段 */
     private Integer inLan;
 
-    /**
-     * 来源 IP（IpUtils.normalize 归一化后；审计用，绝不对外）
-     * 取不到真实 IP 时存占位串，而不是让签到失败——记录本身比 IP 准确性更重要
-     */
+    /** 来源 IP（IpUtils.normalize 归一化后； */
     private String ip;
 
     /** 客户端 UA（截断到 USER_AGENT_MAX_LENGTH；审计用，绝不对外）：客户端可控，不截断会撑爆入库 */
@@ -75,10 +62,7 @@ public class StudioAttendance implements Serializable {
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 
-    /**
-     * 逻辑删除毫秒时间戳（0-未删除，非0-已删除）
-     * 应用层不提供删除，仅为 DBA 极端误操作保留；@TableLogic 让查询自动带 deleted_at = 0
-     */
+    /** 逻辑删除毫秒时间戳（0-未删除，非0-已删除）应用层不提供删除，仅为 DBA 极端误操作保留； */
     @TableLogic
     private Long deletedAt;
 }

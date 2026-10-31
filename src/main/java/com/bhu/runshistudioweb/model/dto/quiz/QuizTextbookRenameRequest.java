@@ -9,9 +9,6 @@ import java.io.Serializable;
 /**
  * 教材改名 / 调序请求（管理端）
  *
- * 教材没有独立表，它就是题目上的 textbook_name + textbook_seq 两列，
- * 因此「改名」= 一条批量 UPDATE；改到已存在的名字时合并。
- *
  * @author shaoshing
  */
 @Data

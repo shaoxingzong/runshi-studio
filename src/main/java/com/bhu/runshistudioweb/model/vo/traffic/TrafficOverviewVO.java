@@ -8,12 +8,6 @@ import java.util.List;
 /**
  * 流量统计总览视图对象（管理端「流量分析」页）
  *
- * 计数字段一律用 Integer 而不是 Long：与 StatisticOverviewVO 同一条理由——全局约定把 Long 序列化成字符串
- * （为 19 位雪花 ID 让路），而计数要的是数字。用 Long 存计数会让前端拿到 "128"，排序与加法还会按字典序算。
- *
- * UV 口径必须知道：按 visitor_id（前端 localStorage 随机 uuid）去重，因此「同一人换设备 / 清缓存 /
- * 用无痕模式」会算成多个 UV。这是轻量埋点的固有边界，与「不记 IP / UA」的取舍一致，页面文案需注明。
- *
  * @author shaoshing
  */
 @Data

@@ -1,11 +1,4 @@
 <script setup lang="ts">
-// 加载失败提示条（带重试按钮）
-//
-// 抽成组件：门户 6 个列表 / 详情页都是「请求失败 → 整页空白」，用户分不清是没数据还是坏了，
-// 也没有恢复手段。统一成「一条提示 + 一个重试按钮」，既是同一套体验，也免去 6 处各写一遍。
-//
-// 文案透传后端 message（取不到才用兜底）：同为失败，断网、超时、服务端故障、参数错误
-// 对应的用户动作完全不同，按 kind 补一句处置建议，并只在「重试有意义」时才显示按钮。
 import { computed } from 'vue';
 import { isRequestError, type ErrorKind } from '@/api/request';
 
@@ -43,12 +36,7 @@ const hint = computed(() => {
     return kind ? HINT[kind] : '';
 });
 
-/**
- * 重试按钮是否显示
- *
- * 参数类错误重试没有意义——同样的输入必然得到同样的拒绝，按钮只会误导用户。
- * 未分类错误保留按钮：不知道原因时，重试是唯一能做的事。
- */
+/** 重试按钮是否显示 */
 const canRetry = computed(() => {
     const kind = resolvedKind.value;
     if (!kind) {

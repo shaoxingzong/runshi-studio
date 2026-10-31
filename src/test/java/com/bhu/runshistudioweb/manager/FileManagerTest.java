@@ -23,14 +23,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 文件存储管理器验收测试
  *
- * 这组用例的重点不是「能上传成功」，而是不该通过的必须被拦住：
- * 伪装后缀的文本文件、空文件、超短文件、删除时的路径穿越。
- * 文件上传是最容易被拿来做攻击入口的功能，这些边界一个都不能少。
- *
- * 隔离策略：用 properties 把存储根目录指到系统临时目录，
- * 绝不在真实的上传目录里造垃圾文件（否则本机开发时目录很快会被测试数据淹没）。
- * 上传根目录由 surefire 的 FILE_ROOT_DIR 统一注入（见 pom.xml），这里保持默认配置以便与其它测试共用同一个容器
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -39,7 +31,6 @@ class FileManagerTest {
     @Resource
     private FileManager fileManager;
 
-    /** 本次用例创建的文件，用完即删 */
     private final List<Path> created = new ArrayList<>();
 
     /** 造一个「头部合法 + 填充字节」的假图片：校验只读前 12 字节，因此不需要真实图片数据 */

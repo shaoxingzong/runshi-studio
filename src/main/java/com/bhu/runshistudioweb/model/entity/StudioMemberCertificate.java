@@ -13,13 +13,6 @@ import java.time.LocalDateTime;
 /**
  * 成员-证书关联实体（对应 studio_member_certificate，物理删除）
  *
- * 只有 DDL 里真实存在的 4 列（id / member_id / certificate_id / created_at），
- * 绝不能加 deletedAt / updatedAt / createdBy / updatedBy：
- * 表里没有这些列，多一个字段就是一次 Unknown column 的 500。
- *
- * 本表是唯一的物理删除表：关联关系没有独立价值，成员或证书没了关系就该立刻消失。
- * created_at 无 DB 默认值，必须标 @TableField(fill = FieldFill.INSERT)。
- *
  * @author shaoshing
  */
 @Data

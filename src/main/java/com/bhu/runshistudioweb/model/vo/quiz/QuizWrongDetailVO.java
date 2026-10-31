@@ -8,11 +8,6 @@ import java.util.List;
 /**
  * 错题详情（含答案与解析）
  *
- * 这里可以有答案：能进错题本的前提是「这道题你做错过」，做错过的人看到正确答案本来就该看到——
- * 这正是错题本存在的意义。列表 QuizWrongItemVO 则刻意不带答案。
- *
- * lastChosenLabels 是「你上次选了什么」，用于回顾时对照：只显示正确答案的话，用户不知道自己错在哪。
- *
  * @author shaoshing
  */
 @Data
@@ -21,10 +16,7 @@ public class QuizWrongDetailVO extends QuizWrongItemVO {
 
     private static final long serialVersionUID = 1L;
 
-    /**
-     * 选项列表（仍不含正确性：正确性由 correctLabels 表达，
-     * 前端自己按 label 匹配即可着色，不需要选项自带 isCorrect）
-     */
+    /** 选项列表（仍不含正确性：正确性由 correctLabels 表达，前端自己按 label 匹配即可着色，不需要选项自带 isCorrect） */
     private List<QuizOptionVO> options;
     /** 正确选项标签（如 "ABD"） */
     private String correctLabels;

@@ -1,12 +1,7 @@
 <script setup lang="ts">
 import type { QuizOption, QuizQuestionType, QuizVerdict } from '@/api/types';
 
-/**
- * 选项列表：单选用 radio 语义、多选用 checkbox 语义，判定后着色
- *
- * 着色三条缺一条就看不懂错在哪：正确项绿框（无论选没选）、选错的项红框、漏选的正确项绿框。
- * 正确性只认 QuizVerdict#correctLabels——选项本身不带正确性标记。
- */
+/** 选项列表：单选用 radio 语义、多选用 checkbox 语义，判定后着色 */
 const props = defineProps<{
     options: QuizOption[];
     type: QuizQuestionType;
@@ -35,9 +30,7 @@ function isCorrect(label: string): boolean {
     return props.verdict?.correctLabels?.includes(label) ?? false;
 }
 
-/**
- * 选项的视觉状态，直接对应样式类：right 绿、wrong 红、picked 仅选中（未判定时）
- */
+/** 选项的视觉状态，直接对应样式类：right 绿、wrong 红、picked 仅选中（未判定时） */
 function stateOf(label: string): string {
     if (!props.verdict) {
         return isChosen(label) ? 'picked' : '';

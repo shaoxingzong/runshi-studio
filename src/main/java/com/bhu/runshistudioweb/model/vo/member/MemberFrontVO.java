@@ -9,13 +9,6 @@ import java.io.Serializable;
 /**
  * 成员视图对象（C 端官网展示使用，游客可获取）
  *
- * 本类存在的唯一理由：公开接口的字段白名单。C 端成员列表是匿名可访问的接口，任何多返回的字段都等于公开数据，
- * 因此这里刻意只带「官网展示需要的信息」，内部字段一个都不带：userId（账号绑定关系，公开它等于告诉外界
- * 这个成员对应哪个登录账号）、sortOrder（运营配置）、createdAt / updatedAt / createdBy / updatedBy /
- * deletedAt（审计字段）。
- *
- * 将来官网要加展示字段时，先问「这个字段愿意给所有人看吗」，愿意才加到这里。
- *
  * @author shaoshing
  */
 @Data
@@ -45,11 +38,7 @@ public class MemberFrontVO implements Serializable {
     /** 团队职务（member / leader / tech_lead），前端据此渲染「队长/组长」标签 */
     private String teamPosition;
 
-    /**
-     * 成员状态：0-在读/在队，1-毕业/离队
-     * 官网友情链接与「已毕业成员」板块需要区分展示，故保留；
-     * 它不含任何内部信息，暴露给游客没有风险
-     */
+    /** 成员状态：0-在读/在队，1-毕业/离队。官网友情链接与「已毕业成员」板块需要区分展示，故保留；它不含任何内部信息，暴露给游客没有风险 */
     private Integer memberStatus;
 
     /** GitHub 主页 */

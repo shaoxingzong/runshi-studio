@@ -2,11 +2,7 @@
 import { computed } from 'vue';
 import type { QuizOverview } from '@/api/types';
 
-/**
- * 学习概览的四个格子（对照设计稿）
- *
- * 正确率为 null 时显示「--」而不是「0%」：0 次作答时正确率无定义，显示 0% 读起来像「全错」。
- */
+/** 学习概览的四个格子（对照设计稿） */
 const props = defineProps<{
     overview: QuizOverview | null;
 }>();

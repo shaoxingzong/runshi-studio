@@ -14,13 +14,6 @@ import java.time.LocalDateTime;
 /**
  * 知识库切分块实体（对应 studio_knowledge_chunk）
  *
- * 检索落点是块而非文档：块级向量才能精准匹配，命中后再靠 docId 回到文档。
- * embeddingId 是向量库与本表的桥，可空：块入库与写向量是两步，
- * 允许「块已入库、向量写入中」，失败时按状态重试而不必回滚整份切分。
- *
- * 坑：chunkIndex 从 0 递增，命中多块时按它排序拼接，乱序会降低回答质量；
- * uk_doc_chunk 带 deleted_at，否则整份文档第二次重建会撞唯一键。
- *
  * @author shaoshing
  */
 @Data

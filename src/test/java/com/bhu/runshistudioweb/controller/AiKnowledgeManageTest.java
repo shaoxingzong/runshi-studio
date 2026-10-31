@@ -54,43 +54,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * 知识库管理端操作验收测试
  *
- * 覆盖九条线：
- * - 全量同步（首次）：三类业务数据全部 created、统计等式成立（created+rebuilt+skipped+failed==total）、
- * 每源恰好一次批量 Embedding 请求；
- * - 全量同步（复跑）：全部 skipped、Embedding 调用增量 0、updated_at 不变（零写库取证）；
- * - 单条失败不中断：成员正文带失败记号 → 该条 failed 且不留 doc 行，项目/证书照常入库；
- * 修复后重跑补齐、其余跳过；
- * - 分页契约：过滤（title 模糊 / sourceType 精确 / status 精确）、非法 sourceType → A0401、
- * docId/sourceId 为字符串、时间为约定格式、响应不含正文、pageSize 上限收敛；
- * - 级联删除：doc + chunk 同事务逻辑删（行仍在、deleted_at != 0）、提交后清向量
- * （向量库直查不再命中）、删除后检索不再命中、重复删除 A0402；
- * - 重建分支：manual 拒绝（A0401 且不改动原文档）、文档不存在 A0402、id 非法 A0401；
- * - 重建源类：内容变 → rebuilt（块替换、旧块逻辑删）；未变 → skipped；
- * - 重建源已删除：A0402 + 已有文档标记 status=2；
- * - 权限矩阵：4 个接口匿名 A0201、普通用户 A0301、admin 放行。
- *
- * 为什么本类不加 @Transactional：全量同步与删除内部用
- * TransactionTemplate（REQUIRED 传播）。若测试也开事务，内层会「加入」测试事务，
- * 一旦某条 sync 失败被 syncBatch 捕获，内层的 rollback 会把整个测试事务标记为
- * rollback-only，测试结束提交时抛 UnexpectedRollbackException——而真实运行时
- * 每条 sync 是独立事务、失败只回滚自己。因此本类数据真实提交、@AfterEach
- * 按 T27 前缀清理（先向量、再子表后父表）。
- *
- * Embedding Stub（JDK HttpServer）：
- * - 平面向量技巧与 AiKnowledgeRetrievalTest 相同（ V{n}-EXACT/NEAR/FAR），
- * 本类只用 V8 平面隔离「删除后检索」用例；
- * - 失败记号：请求体包含 FAIL-EMBEDDING 时返回 500——
- * 用于「单条失败不中断」用例（只有带记号的源会失败，其它源照常成功）。
- *
- * 类名以 Ai 开头是刻意的「排序约束」，改动前先读这段：
- * 本类通过 @DynamicPropertySource 指向自己的 Stub（端口不同 → 属性集不同），
- * 会新建一个 Spring 测试上下文。Sa-Token 用静态 SaManager 持有 DAO，
- * 它总是绑定「最后创建的上下文」；Boot 4.1 的测试框架在类切换时还会 stop 先前上下文。
- * 因此「新建上下文的测试类」必须全部排在 CertificateCrudTest 之前——
- * 它是第一个使用默认 MockMvc 上下文的类，该上下文会被其后所有测试类共享，
- * 而静态 DAO 必须始终指向「当前正在使用的上下文」。
- * 本类若排到它之后，后续所有登录类测试都会 B0001 失败。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -124,7 +87,7 @@ class AiKnowledgeManageTest {
     @Resource
     private JsonMapper jsonMapper;
 
-    // ==================== 本地 Embedding Stub ====================
+    // 本地 Embedding Stub
 
     private static HttpServer stub;
 
@@ -192,9 +155,6 @@ class AiKnowledgeManageTest {
         registry.add("studio.ai.api-key", () -> "test-key");
         registry.add("studio.ai.model", () -> "test-model");
         registry.add("studio.ai.embedding-model", () -> "test-embedding");
-        // 与 AiKnowledgeRetrievalTest 同一理由：LangChain4j 的 minScore 是 relevance=(1+cos)/2，
-        // 配 0.75 才能把「正交（0.5）与弱相关（0.7）」过滤掉；线上默认 0.5 属于不过滤
-        // （已在验收报告登记为观察项，本类沿用 0.75）
         registry.add("studio.ai.rag-min-score", () -> 0.75);
     }
 
@@ -216,7 +176,7 @@ class AiKnowledgeManageTest {
         jdbcTemplate.update("DELETE FROM sys_user WHERE user_account LIKE 'T27%'");
     }
 
-    // ==================== 工具方法 ====================
+    // 工具方法
 
     private String adminToken() throws Exception {
         String account = "T27adm_" + (System.nanoTime() % 100000);
@@ -387,10 +347,7 @@ class AiKnowledgeManageTest {
                 (rs, rowNum) -> rs.getString(1));
     }
 
-    /**
-     * 平面向量（与 Stub 共用）：V{n}-EXACT 与问题同向（relevance 1.0）；
-     * NEAR 余弦 0.6；FAR 余弦 0.4；无记号则落在保留维（与所有平面正交）
-     */
+    /** 平面向量（与 Stub 共用）：V{n}-EXACT 与问题同向（relevance 1.0）； */
     private static float[] vec(String text) {
         float[] vector = new float[DIM];
         Matcher matcher = PLANE_MARKER.matcher(text);
@@ -422,14 +379,7 @@ class AiKnowledgeManageTest {
                         .build()).matches();
     }
 
-    /**
-     * 当前未删除的源数据总条数（project + member + certificate），即 sync-all 的 total 基准
-     *
-     * 为什么需要它：直接断言 total == 3 会隐含假设「库是空的」。
-     * 一旦库里有演示数据（db/demo-data.sql 的 15 条），total 就变成 18 而断言失败——
-     * 那是测试把环境当成了前提，不是产品缺陷。断言「基线条数 + 用例新增」才能让
-     * 验收测试与业务数据共存。
-     */
+    /** 当前未删除的源数据总条数（project + member + certificate），即 sync-all 的 total 基准 */
     private int sourceCount() {
         return jdbcTemplate.queryForObject("SELECT COUNT(*) FROM studio_project WHERE deleted_at = 0", Integer.class)
                 + jdbcTemplate.queryForObject("SELECT COUNT(*) FROM studio_member WHERE deleted_at = 0", Integer.class)
@@ -437,12 +387,7 @@ class AiKnowledgeManageTest {
                         "SELECT COUNT(*) FROM studio_certificate WHERE deleted_at = 0", Integer.class);
     }
 
-    /**
-     * 统计等式：created + rebuilt + skipped + failed == total
-     *
-     * 它比任何单个计数都重要——调用方靠这个等式判断「有没有漏」。
-     * 有演示数据时各分项的具体数值会变，但等式必须永远成立。
-     */
+    /** 统计等式：created + rebuilt + skipped + failed == total */
     private void assertSummaryConsistent(JsonNode data, String body) {
         int total = data.get("total").asInt();
         int sum = data.get("created").asInt() + data.get("rebuilt").asInt()
@@ -450,7 +395,7 @@ class AiKnowledgeManageTest {
         assertEquals(total, sum, "统计等式必须成立（created+rebuilt+skipped+failed == total）：" + body);
     }
 
-    // ==================== ① 全量同步：首次 ====================
+    // ① 全量同步：首次
 
     @Test
     @DisplayName("全量同步首次：三类数据全部 created、统计等式成立、每源恰好一次批量 Embedding")
@@ -493,7 +438,7 @@ class AiKnowledgeManageTest {
         assertEquals(3, embeddingCalls.get() - callsBefore, "三类源应恰好 3 次批量 Embedding 请求");
     }
 
-    // ==================== ② 全量同步：复跑幂等 ====================
+    // ② 全量同步：复跑幂等
 
     @Test
     @DisplayName("全量同步复跑：全部 skipped、Embedding 零增量、updated_at 不变（零写库取证）")
@@ -525,7 +470,7 @@ class AiKnowledgeManageTest {
         assertEquals(updatedAtBefore, docUpdatedAtList(), "跳过路径不应发生任何写库");
     }
 
-    // ==================== ③ 单条失败不中断 ====================
+    // ③ 单条失败不中断
 
     @Test
     @DisplayName("单条失败不中断：带失败记号的成员 failed 且不留 doc 行，项目/证书照常入库；修复后重跑补齐")
@@ -563,8 +508,6 @@ class AiKnowledgeManageTest {
         assertEquals("00000", code(retry), "修复后重跑应成功：" + retry);
         JsonNode retryData = dataOf(retry);
         assertEquals(1, retryData.get("created").asInt(), "只有修复的那条应新建：" + retry);
-        // 跳过的 = 库里原有的（baseline）+ 本用例首跑成功的 2 条。
-        // 不能断言 2：库里若已有演示数据，它们内容未变也会一并 skipped。
         assertEquals(baseline + 2, retryData.get("skipped").asInt(),
                 "其余（原有 + 首跑成功的两条）都应跳过：" + retry);
         assertEquals(0, retryData.get("failed").asInt());
@@ -572,7 +515,7 @@ class AiKnowledgeManageTest {
         assertEquals(1, countDocsBySource("member", memberId), "补齐后成员应有 doc 行");
     }
 
-    // ==================== ④ 分页契约 ====================
+    // ④ 分页契约
 
     @Test
     @DisplayName("分页契约：过滤生效、非法来源类型 A0401、字段类型约定、响应不含正文、pageSize 收敛")
@@ -586,9 +529,6 @@ class AiKnowledgeManageTest {
         long memberDocId = syncSource(token, "member", memberId);
         assertNotEquals(projectDocId, manualDocId);
 
-        // 默认分页：本用例的 3 篇
-        // 必须带 title 过滤：不带过滤时 total 是全局文档数，
-        // 库里若有演示数据会把这个断言顶掉（那是测试把环境当成了前提，不是产品缺陷）。
         String body = postJson("/knowledge/doc/list/page",
                 "{\"current\":1,\"pageSize\":10,\"title\":\"T27-分页\"}", token);
         assertEquals("00000", code(body), "分页应成功：" + body);
@@ -613,8 +553,6 @@ class AiKnowledgeManageTest {
         assertEquals("manual", byTitle.get("records").get(0).get("sourceType").asString());
         assertTrue(byTitle.get("records").get(0).get("sourceId").isNull(), "manual 来源 sourceId 应为 null");
 
-        // sourceType 精确筛选 → 只回项目一篇，sourceId 为字符串
-        // 来源筛选也要带 title：演示数据里有 5 个项目文档，不带过滤会命中 6 篇
         JsonNode bySource = dataOf(postJson("/knowledge/doc/list/page",
                 "{\"sourceType\":\"project\",\"title\":\"T27-分页项目\"}", token));
         assertEquals(1, pageNumber(bySource, "total"), "来源筛选应命中 1 篇：" + bySource);
@@ -640,7 +578,7 @@ class AiKnowledgeManageTest {
                 "{\"pageSize\":999}", token)), "size"), "超过上限应被收敛到 50");
     }
 
-    // ==================== ⑤ 级联删除 + 检索不再命中 ====================
+    // ⑤ 级联删除 + 检索不再命中
 
     @Test
     @DisplayName("级联删除：doc+chunk 同事务逻辑删、向量清理、删除后检索不再命中、重复删除 A0402")
@@ -680,7 +618,7 @@ class AiKnowledgeManageTest {
                 "已删除的文档再删应 A0402");
     }
 
-    // ==================== ⑥ 重建分支：manual / 不存在 / id 非法 ====================
+    // ⑥ 重建分支：manual / 不存在 / id 非法
 
     @Test
     @DisplayName("重建分支：manual 拒绝（A0401 且不改动）、文档不存在 A0402、id 非法 A0401")
@@ -705,7 +643,7 @@ class AiKnowledgeManageTest {
                 "删除 id=0 应 A0401");
     }
 
-    // ==================== ⑦ 重建源类：内容变 rebuilt / 未变 skipped ====================
+    // ⑦ 重建源类：内容变 rebuilt / 未变 skipped
 
     @Test
     @DisplayName("重建源类：内容变更 → rebuilt（块替换、旧块逻辑删）；未变 → skipped")
@@ -740,8 +678,6 @@ class AiKnowledgeManageTest {
         assertFalse(againData.get("rebuilt").asBoolean());
     }
 
-    // ==================== ⑧ 重建：源已删除 ====================
-
     @Test
     @DisplayName("重建源已删除：A0402 + 已有文档标记 status=2（R2 收口）")
     void rebuildSourceMissingMarksFailed() throws Exception {
@@ -758,7 +694,7 @@ class AiKnowledgeManageTest {
         assertEquals(2, rawDocStatus(docId), "已有文档应标记 status=2");
     }
 
-    // ==================== ⑨ 权限矩阵 ====================
+    // ⑨ 权限矩阵
 
     @Test
     @DisplayName("权限矩阵：4 个接口匿名 A0201、普通用户 A0301、admin 放行（白名单零改动）")
@@ -776,17 +712,12 @@ class AiKnowledgeManageTest {
         assertEquals("A0301", code(postJson("/knowledge/doc/delete", "{\"id\":1}", userToken)), "delete 普通用户应 A0301");
         assertEquals("A0301", code(postJson("/knowledge/doc/rebuild", "{\"id\":1}", userToken)), "rebuild 普通用户应 A0301");
 
-        // admin：放行（用「通过权限层后到达业务层」的证据断言：
-        // list/page 空库可查；sync-all 空库统计为 0；delete/rebuild 走业务层得到 A0402 而不是 A0301）
         String admin = adminToken();
         String listBody = postJson("/knowledge/doc/list/page", "{}", admin);
         assertEquals("00000", code(listBody), "admin 应能查列表（不假设库为空）：" + listBody);
 
         String syncAll = postJson("/knowledge/doc/sync-all", "", admin);
         assertEquals("00000", code(syncAll), "admin 应能全量同步：" + syncAll);
-        // 不断言 total == 0：库里可能已有演示数据。
-        // 这里真正要证明的是「请求穿过了权限层、进入业务层并正常返回统计」，
-        // 所以断言统计等式成立 + 无失败项即可。
         assertSummaryConsistent(dataOf(syncAll), syncAll);
         assertEquals(0, dataOf(syncAll).get("failed").asInt(), "全量同步不应有失败项：" + syncAll);
 

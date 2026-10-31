@@ -1,19 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { renderMarkdown, sanitizeMarkdownHtml } from './markdown';
-
-// 渲染 + 清洗全链路测试（jsdom 环境，DOMPurify 需要真实 DOM）
-//
-// 这个测试补的是页面接线的盲区：renderMarkdown 的单测只验证
-// 「renderer 输出了什么」，而页面在它之后还有一道 DOMPurify 白名单清洗。
-// 两边任何一处没对齐（renderer 输出了 div/button/id，白名单没放行），
-// 增强就会被静默洗掉——复制按钮不见了、目录锚点失效了，但没有任何报错。
-// 这类回归单测 renderer 或单测 sanitize 都发现不了，必须测链路。
-//
-// 同时反向守住安全底线：白名单为增强放行了 div/button/id 等，
-// 不能顺手把 `<script>`、`onerror=` 也放进来。
-
-// 直接调生产实现（sanitizeMarkdownHtml）而不是在测试里复刻一份：
-// 复刻版测的是「测试自己写得对不对」，页面接错线它照样绿。
 const sanitize = sanitizeMarkdownHtml;
 
 const ARTICLE = [
@@ -48,8 +34,6 @@ describe('render + sanitize 全链路', () => {
 
         expect(clean).not.toContain('<script>alert(1)</script>');
         expect(clean).not.toContain('onerror=');
-        // 项目页策略（管理员录入）：外链图片本身允许，保留 src；
-        // 但 onerror 必须被剥掉——「允许外链」绝不等于「允许执行脚本」
         expect(clean).toContain('<img src="https://evil.example.com/x.png">');
     });
 
@@ -61,9 +45,6 @@ describe('render + sanitize 全链路', () => {
         expect(clean).not.toContain('evil.example.com');
     });
 });
-
-// 升级 DOMPurify 的直接理由：旧版本存在可绕过白名单的 mXSS 漏洞。
-// 这几条用例钉的是「绕过手法即使换了新花样，也只能得到一段无害文本」。
 describe('sanitizeMarkdownHtml 的 mXSS 绕过回归', () => {
     it('命名空间混淆（math/mglyph/style）夹带的 onerror 不能存活', () => {
         const payload =

@@ -229,6 +229,19 @@ studio:
     # 跨域来源白名单：逗号分隔，端口通配用 *；必须走 allowedOriginPatterns（见 CorsConfig）
     allowed-origins: ${WEB_ALLOWED_ORIGINS:http://localhost:*,http://127.0.0.1:*}
 
+  # ===== 流量埋点限流 =====
+  # /traffic/report 是全站唯一「匿名且直接写库」的接口，没有限流时一个脚本循环调用
+  # 就能在几分钟内把 studio_page_visit 写成几百万行（统计失真 + 查询变慢 + 磁盘与备份成本）。
+  # 阈值比真实浏览行为高一个数量级：正常一次页面跳转只上报一次，
+  # 60 次/分钟只可能是脚本；NAT 共享出口（工作室 / 校园网）也不会被 3000 次/日误伤。
+  traffic:
+    rate-limit:
+      # 测试环境由 surefire 置 false：MockMvc 下所有请求同源（127.0.0.1），
+      # TrafficManageTest 会在同一分钟内连续上报十几次，不关会中途集体 429（假失败）
+      enabled: ${TRAFFIC_RATE_LIMIT_ENABLED:true}
+      minute-limit: ${TRAFFIC_RATE_LIMIT_MINUTE:60}
+      daily-limit: ${TRAFFIC_RATE_LIMIT_DAILY:3000}
+
 # ===== Actuator 端点暴露范围（这是「安全边界」，不是调试开关）=====
 # 改成 "*" 会让 /actuator/env（配置项）、/actuator/heapdump（堆转储，可能含密码与 token）
 # 零鉴权对外开放。且这些端点由独立的 WebMvcEndpointHandlerMapping 处理，

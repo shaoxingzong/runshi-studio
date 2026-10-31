@@ -4,12 +4,7 @@ import { ElMessage } from 'element-plus';
 import { quizApi } from '@/api/quiz';
 import type { QuizWrongDetail, QuizWrongItem } from '@/api/types';
 
-/**
- * 错题本抽屉（分页列表 + 详情回看 + 手动标记已掌握）
- *
- * 列表不带答案、详情才带：列表一次几十条，每条都带答案等于把整页答案交给客户端，
- * 答题时另开标签页就能翻。详情里还要显示「你上次选了什么」——「错在哪」才是错题本的价值。
- */
+/** 错题本抽屉（分页列表 + 详情回看 + 手动标记已掌握） */
 const props = defineProps<{
     modelValue: boolean;
 }>();
@@ -55,12 +50,7 @@ async function openDetail(item: QuizWrongItem) {
     }
 }
 
-/**
- * 手动标记已掌握
- *
- * 后端幂等，已经消解时也返回 true，所以不用先查状态；但提示文案要区分「刚消解」与
- * 「本来就已经消解」，否则用户重复点击会以为没生效。
- */
+/** 手动标记已掌握 */
 async function resolve(item: QuizWrongItem) {
     try {
         await quizApi.resolveWrong(item.id);

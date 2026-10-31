@@ -10,12 +10,7 @@ import type { AdminMember, AdminUser, PageResult } from '@/api/types';
 /** 成员管理：分页表格 + 新增/编辑/删除 */
 const page = reactive({ current: 1, pageSize: 10 });
 
-/**
- * 筛选条件：空串表示「不限」，与后端「不传即不过滤」的口径一致
- *
- * 后端 MemberQueryRequest 早就支持这些参数，界面没接之前它们一直闲置——
- * 成员一多，只能靠翻页找人。
- */
+/** 筛选条件：空串表示「不限」，与后端「不传即不过滤」的口径一致 */
 const filters = reactive<{
     name: string;
     direction: string;
@@ -47,27 +42,11 @@ const form = reactive<Record<string, unknown>>({
 
 const POSITION_TEXT: Record<string, string> = { member: '成员', leader: '队长', tech_lead: '组长' };
 
-/**
- * 候选登录账号：用来把「注册用户」转成「成员」
- *
- * 这是成员能否发帖、能否打卡的唯一开关——成员身份认的是 studio_member.user_id，不是账号角色。
- * 没有这个入口，管理员就只能改数据库才能让自己变成成员。
- */
-/**
- * 账号 ID → 账号名的累积缓存
- *
- * 表格里的「绑定账号」要靠它反查。下拉改成远程搜索后，选项只包含当前关键词命中的那一页，
- * 若还从选项里 find，搜索一次其它行的账号名就全变成 ID 了——缓存只增不减，不受筛选影响。
- */
-// 用 reactive 而不是普通 Map：表格里的账号名是渲染时读缓存的，
-// 普通 Map 的写入不会触发重渲染，首次加载完成后名字会一直显示成 ID
+/** 候选登录账号：用来把「注册用户」转成「成员」 */
+/** 账号 ID → 账号名的累积缓存 */
 const userAccountById = reactive(new Map<string, string>());
 
-/**
- * 候选登录账号（远程搜索）
- *
- * 后端分页上限 50，原先 pageSize: 100 会被静默截断；改成「前 50 + 关键词搜索」并在被截断时提示。
- */
+/** 候选登录账号（远程搜索） */
 const {
     options: userOptions,
     total: userTotal,
@@ -154,12 +133,7 @@ async function save() {
         ElMessage.warning('姓名必填');
         return;
     }
-    /**
-     * 新增时未绑账号：**不阻止**，但必须让管理员知道后果
-     *
-     * {@code db/user.sql} 保留「可以有档案没账号」的能力，强制必填属于过度修正。但准入判据是
-     * 「档案的 userId 命中当前登录账号」，没绑定的档案永远不会生效——管理员却在列表里看到「这个人是成员」。
-     */
+    /** 新增时未绑账号：**不阻止**，但必须让管理员知道后果 */
     if (!editing.value && !form.userId) {
         try {
             await ElMessageBox.confirm(
@@ -173,10 +147,7 @@ async function save() {
             return;
         }
     }
-    /**
-     * 未选账号时不带该字段：后端 @Positive 不接受空串，而「null = 不修改绑定」是编辑时的既有语义
-     * ——留空不等于解绑
-     */
+    /** 未选账号时不带该字段：后端 @Positive 不接受空串，而「null = 不修改绑定」是编辑时的既有语义 ——留空不等于解绑 */
     const payload: Record<string, unknown> = { ...form };
     if (!payload.userId) {
         delete payload.userId;

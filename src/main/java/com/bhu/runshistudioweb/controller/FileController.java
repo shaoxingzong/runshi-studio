@@ -17,10 +17,6 @@ import org.springframework.web.multipart.MultipartFile;
 /**
  * 文件管理接口
  *
- * 本接口不在白名单里，必须登录后才能上传（匿名上传等于给攻击者一个免费图床）。
- * 方法上没有 {@code @SaCheckLogin} 不是漏写：不在白名单的路径先过全局登录拦截。
- * 上传后的 /uploads/** 是公开读，读开放、写受限。
- *
  * @author shaoshing
  */
 @Tag(name = "文件管理")
@@ -31,19 +27,11 @@ public class FileController {
 
     private final FileManager fileManager;
 
-    /**
-     * 每日上传配额
-     *
-     * 只要求登录就能上传，不设上限时任何注册账号都能把磁盘当免费图床。
-     * 配额检查必须在 FileManager 之前：超限时连文件流都不该读。
-     */
+    /** 每日上传配额 */
     private final UploadQuotaManager uploadQuotaManager;
 
     /**
      * 文件上传
-     *
-     * 校验与落盘全在 FileManager，三层缺一不可：魔数判真实类型、UUID 重命名、路径规范化。
-     * 请求必须是 multipart/form-data 且前端不手写 Content-Type，否则丢 boundary 解析不出文件。
      *
      * @param file 字段名固定为 file，只允许 PNG 与 JPEG（按魔数判定，改后缀绕不过去）
      * @return 相对访问路径，形如 /uploads/yyyy/MM/{uuid}.png，域名由前端拼接
@@ -51,13 +39,10 @@ public class FileController {
     @Operation(summary = "文件上传")
     @PostMapping("/upload")
     public BaseResponse<String> upload(@RequestParam("file") MultipartFile file) {
-        // ① Spring 按字段名 file 从 multipart 请求里取出文件；名字与前端 append 时不一致就会得到 null
-        // ② 配额先扣：超限时连文件流都不解析，也不该在磁盘上留下半成品
-        //    全局拦截器已保证登录，这里取 loginId 不会抛未登录
         uploadQuotaManager.assertAllowed(StpUtil.getLoginIdAsLong());
-        // ③ 三层安全防线（魔数、UUID 重命名、路径边界）都在 FileManager 里，Controller 不重复实现
+        // 三层安全防线（魔数、UUID 重命名、路径边界）都在 FileManager 里，Controller 不重复实现
         String accessPath = fileManager.upload(file);
-        // ③ 只回相对路径：域名由前端拼接，避免把本地地址写进生产数据
+        // 只回相对路径：域名由前端拼接，避免把本地地址写进生产数据
         return ResultUtils.success(accessPath);
     }
 }

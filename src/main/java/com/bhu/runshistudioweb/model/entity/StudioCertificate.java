@@ -15,12 +15,6 @@ import java.time.LocalDateTime;
 /**
  * 荣誉证书实体（对应 studio_certificate）
  *
- * 级别（award_level）与类型（award_type）正交，禁止合并成单字段：
- * 合并后任一维度都无法独立筛选统计，只能 LIKE 模糊匹配，既走不了索引也会误匹配。
- *
- * 坑：award_date 用 LocalDate 且不得晚于今天；image_url 是 NOT NULL，须在入参侧校验；
- * 默认排序 = sort_order 倒序 + award_date 倒序，与组合索引同向，避免 filesort。
- *
  * @author shaoshing
  */
 @Data
@@ -43,10 +37,7 @@ public class StudioCertificate implements Serializable {
     /** 类型维度：competition / soft_copyright / patent / paper，取值见 CertificateTypeEnum */
     private String awardType;
 
-    /**
-     * 获奖 / 颁发日期（date → LocalDate），业务上不得晚于今天
-     * 由 DTO 的 @PastOrPresent 与 Service 双重校验
-     */
+    /** 获奖 / 颁发日期（date → LocalDate），业务上不得晚于今天。由 DTO 的 @PastOrPresent 与 Service 双重校验 */
     private LocalDate awardDate;
 
     /** 证书图片 URL（NOT NULL）：先调 /file/upload 拿到 /uploads/... 相对路径再填入 */

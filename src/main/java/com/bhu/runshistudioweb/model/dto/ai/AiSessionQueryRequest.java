@@ -7,12 +7,6 @@ import java.io.Serializable;
 /**
  * AI 会话分页查询请求（「我的会话」列表用）
  *
- * 只有分页参数：列表范围就是当前登录用户的会话，用户维度由服务端从登录态取，
- * 绝不能让前端传 userId——那等于把「看别人的会话列表」做成了功能。
- *
- * 分页字段由本类声明、Service 转成 MyBatis-Plus 的 Page：
- * 页码 < 1 视为 1，pageSize < 1 视为 10、> 50 收敛到 50。
- *
  * @author shaoshing
  */
 @Data

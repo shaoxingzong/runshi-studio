@@ -2,12 +2,6 @@ import axios, { type AxiosResponse } from 'axios';
 import { ElMessage } from 'element-plus';
 import type { ApiResponse } from './types';
 
-// 统一请求层：自动带 satoken、解包 {code,data,message}、A0201 时清理登录态
-//
-// 业务代码拿到的是 data 本身，不必每层判断 code。
-// A0201 只清 localStorage 不够——内存里的登录态还在，界面照常显示「已登录」
-// 但每个请求都失败，所以还要派发事件让 store 回收。
-
 const TOKEN_KEY = 'satoken';
 
 export const tokenStore = {
@@ -22,12 +16,7 @@ export const tokenStore = {
     clear: () => localStorage.removeItem(TOKEN_KEY),
 };
 
-/**
- * 错误类别：决定「提示什么」与「用户能做什么」
- *
- * 后端 message 说的是「发生了什么」，用户要的是「我该怎么办」——断网、服务器挂了、
- * 参数错了对应三种动作，混成一句「请求失败」等于什么都没说。
- */
+/** 错误类别：决定「提示什么」与「用户能做什么」 */
 export type ErrorKind =
     /** 没连上服务器：断网、DNS 失败、服务未启动、跨域被拦 */
     | 'network'
@@ -42,12 +31,7 @@ export type ErrorKind =
     /** 其它未归类的失败 */
     | 'unknown';
 
-/**
- * 统一的请求错误对象：业务代码 catch 到的就是它
- *
- * kind 决定页面要不要给「重试」、文案怎么写；notified 表示请求层已经弹过全局提示，
- * 页面再 catch 时只更新状态、别再弹一次，否则同一个错误会提示两遍。
- */
+/** 统一的请求错误对象：业务代码 catch 到的就是它 */
 export class RequestError extends Error {
     readonly kind: ErrorKind;
     readonly code?: string;
@@ -72,12 +56,7 @@ export function isRequestError(e: unknown): e is RequestError {
     return e instanceof RequestError;
 }
 
-/**
- * 把后端业务码映射成错误类别
- *
- * 号段约定见后端 ErrorCode：A 用户端、B 当前系统、C 第三方。按首字母归类，
- * 后端新增错误码时前端不用跟着改。
- */
+/** 把后端业务码映射成错误类别 */
 function kindOfCode(code: string): ErrorKind {
     const head = code.charAt(0).toUpperCase();
     if (head === 'C') {
@@ -92,12 +71,7 @@ function kindOfCode(code: string): ErrorKind {
     return 'unknown';
 }
 
-/**
- * 网络层错误的可读文案
- *
- * axios 原始的 "Network Error" / "ECONNABORTED" 直接透给用户等于没说，
- * 这里按 kind 给出「原因 + 建议动作」。
- */
+/** 网络层错误的可读文案 */
 function describeNetworkError(kind: ErrorKind): string {
     if (kind === 'timeout') {
         return '请求超时，服务器响应太慢，请稍后重试';
@@ -118,12 +92,7 @@ instance.interceptors.request.use((config) => {
     return config;
 });
 
-/**
- * 把 HTTP 层错误翻译成可展示的 RequestError
- *
- * 只处理 400/413/414/431：这几个是网关或框架在进 Controller 前就拒绝的，响应体是 HTML 而不是
- * 统一 JSON（常见于搜索词过长，超出 ~8KB 请求行上限），不翻译页面只会显示「网络异常」。
- */
+/** 把 HTTP 层错误翻译成可展示的 RequestError */
 function toHttpRequestError(error: unknown): RequestError | null {
     const response = (error as { response?: { status?: number; data?: unknown } })?.response;
     const status = response?.status;
@@ -153,12 +122,6 @@ function toHttpRequestError(error: unknown): RequestError | null {
     ElMessage.error(message);
     return new RequestError(message, 'client', code, true);
 }
-
-// 网络层兜底：根本没连上服务端（断网 / 超时 / 服务未启动）时的统一处理
-//
-// 与 unwrap 的分工：unwrap 管「有响应但业务码非 0」，这里管「error.response 为空」。
-// 400/413/414/431 先翻译成人话（见 toHttpRequestError），其余状态码原样抛出。
-// 产出的是 RequestError：message 可直接展示，kind 决定要不要给「重试」。
 instance.interceptors.response.use(
     (response) => response,
     (error) => {
@@ -194,15 +157,10 @@ async function unwrap<T>(promise: Promise<AxiosResponse<ApiResponse<T>>>, silent
     const kind = kindOfCode(body.code);
 
     if (body.code === 'A0201') {
-        // 未登录（A 类：用户端错误 → 登录异常）：清掉本地令牌，后续请求会以游客身份访问公开接口。
-        // 只清 localStorage 是不够的——登录态还活在内存里，界面照常显示「已登录」，
-        // 之后每个请求都会继续失败却没有状态回退。因此派发事件让持有方统一回收
         tokenStore.clear();
         window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
     }
 
-    // 业务错误优先用后端 message（它比通用文案具体，如「账号或密码错误」），
-    // 为空时才退回带错误码的兜底文案——错误码对用户无意义，但排障时需要
     const message = body.message || `请求失败（${body.code}）`;
     if (!silent) {
         ElMessage.error(message);
@@ -214,29 +172,14 @@ async function unwrap<T>(promise: Promise<AxiosResponse<ApiResponse<T>>>, silent
 /** 单次请求的可选项：超时 + 静默 */
 export interface RequestOptions {
     timeout?: number;
-    /**
-     * 静默模式：失败时不弹全局提示，把「要不要告诉用户」交给调用方
-     *
-     * 用于后台轮询（未读数）和注销——注销时登录态可能本就已失效，
-     * 再弹一条红字会让用户误以为「退出失败」。
-     */
+    /** 静默模式：失败时不弹全局提示，把「要不要告诉用户」交给调用方 */
     silent?: boolean;
 }
 
-/**
- * 令牌失效事件名
- *
- * 用事件而不是直接 import store：stores/user.ts 反过来依赖本文件的 tokenStore，
- * 直接互引会形成循环依赖。
- */
+/** 令牌失效事件名 */
 export const AUTH_EXPIRED_EVENT = 'auth:expired';
 
-/**
- * 带超时的请求方法（默认 30 秒）
- *
- * 耗时接口（知识库同步 / 重建向量 / 手工录入）必须显式传更长的超时，
- * 否则前端先超时报错，后端其实还在跑，用户既看不到结果也不知道该等。
- */
+/** 带超时的请求方法（默认 30 秒） */
 export const http = {
     get<T>(url: string, params?: Record<string, unknown>, options?: RequestOptions): Promise<T> {
         return unwrap<T>(instance.get<ApiResponse<T>>(url, { params, ...options }), options?.silent);
@@ -245,10 +188,6 @@ export const http = {
         return unwrap<T>(instance.post<ApiResponse<T>>(url, data, options), options?.silent);
     },
 
-    // 长耗时请求：给后端真实调用模型的操作用（默认 5 分钟）
-    //
-    // 这些操作一旦被 30 秒掐断，前端会弹「请求失败」，但后端任务仍在继续，
-    // 结果是「以为失败了、其实跑完了」——比单纯的慢更糟糕。
     long<T>(url: string, data?: unknown, timeout = 300_000): Promise<T> {
         return unwrap<T>(instance.post<ApiResponse<T>>(url, data, { timeout }));
     },

@@ -7,12 +7,7 @@ import type {
     ProjectDetail,
 } from './types';
 
-/**
- * C 端公开接口（匿名可访问，全部只读）
- *
- * 没有成员列表 / 成员详情：业务规则「团队成员不对外展示」，后端不提供对应接口（访问得到 404）。
- * 成员信息对外唯一的出口是项目详情里的「参与成员」，由 `projectDetail` 一并返回。
- */
+/** C 端公开接口（匿名可访问，全部只读） */
 export const portalApi = {
     // 首页大盘（只剩证书维度：证书总数 + 级别/类型分布）
     overview: () => http.get<Overview>('/statistic/overview'),

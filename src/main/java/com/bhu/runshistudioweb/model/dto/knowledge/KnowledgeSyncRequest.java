@@ -10,12 +10,6 @@ import java.io.Serializable;
 /**
  * 业务来源同步请求（把某条业务数据重新灌进知识库）
  *
- * 与手工录入的关键差别：本接口幂等且可重建。靠 (sourceType, sourceId) 定位已有文档，
- * 再比对 content_hash 决定「跳过」还是「重建」，业务数据没变时重复调用零成本（不调 Embedding、不写库）。
- *
- * manual 会被拒绝（A0401）：手工录入没有业务主键，无从做幂等，要录手工内容请走 /knowledge/doc/manual。
- * 取值合法性由 Service 用枚举校验，提示文案由 valuesText() 生成，才不会跟枚举脱节。
- *
  * @author shaoshing
  */
 @Data

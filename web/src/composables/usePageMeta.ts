@@ -1,13 +1,5 @@
 import { type Ref, watch } from 'vue';
 
-// 页面级 title / description 管理
-//
-// SPA 切路由不会改标签页标题，不处理的话所有页面在标签、书签、历史里都叫「润石工作室」。
-// 静态页由路由 meta.title + afterEach 统一接线；详情页的标题依赖异步数据，页面内传 computed，
-// 数据到位后自动覆盖。
-//
-// 刻意不做 SSR / 预渲染：后端没有 Node 渲染层，为此引入 vite-ssg 是架构级变更。
-
 const SITE_NAME = '润石工作室';
 
 /** 取不到就建一个：index.html 里有静态 description，这里保证运行时覆盖一定有着落 */
@@ -51,8 +43,6 @@ export function usePageMeta(meta: {
     // 立即应用一次（切路由即刻生效，不等数据）
     apply();
 
-    // 传入响应式源的才挂监听：详情页数据异步回来时标题自动跟进。
-    // 页面内调用时监听器随组件卸载自动取消，不需要手动清理
     if (typeof meta.title !== 'string') {
         watch(meta.title, apply);
     }

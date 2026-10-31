@@ -44,17 +44,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * AI 写作助手验收测试：润色（SSE）与标题/摘要（同步）
  *
- * <p>覆盖四条线：
- * <ul>
- *     <li>准入：未登录 A0201、非成员 A0301（与发帖同一口径）；</li>
- *     <li>润色：delta 拼接 == 完整文本、done 带完整文本；空片段以 error 事件返回；</li>
- *     <li>标题摘要：解析 JSON 回填、字段完整；</li>
- *     <li>AI 故障：Stub 500 → 润色以 error 事件返回，标题摘要抛 C0200。</li>
- * </ul>
- *
- * <p>本类不加 @Transactional：润色跑在虚拟线程、独立事务里，测试事务回滚对它无效；
- * 因此按账号前缀手动清理（数据都带 T35compose 前缀）。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -81,10 +70,7 @@ class AiComposeControllerTest {
     @Resource
     private JsonMapper jsonMapper;
 
-    /**
-     * 熔断器是进程内单例：本类有用例故意让模型返回 500，
-     * 不重置会把失败传染给同一 JVM 里后跑的测试类
-     */
+    /** 熔断器是进程内单例：本类有用例故意让模型返回 500，不重置会把失败传染给同一 JVM 里后跑的测试类 */
     @Resource
     private AiCircuitBreaker circuitBreaker;
 
@@ -93,7 +79,7 @@ class AiComposeControllerTest {
         circuitBreaker.reset();
     }
 
-    // ==================== 本地 AI Stub ====================
+    // 本地 AI Stub
 
     private static HttpServer stub;
 
@@ -168,7 +154,7 @@ class AiComposeControllerTest {
         jdbcTemplate.update("DELETE FROM sys_user WHERE user_account LIKE '" + PREFIX + "%'");
     }
 
-    // ==================== 夹具 ====================
+    // 夹具
 
     /** 建在队成员（账号 + 档案）；只建账号会被判成非成员 */
     private long createMember() {
@@ -254,7 +240,7 @@ class AiComposeControllerTest {
         return m.group(1);
     }
 
-    // ==================== ① 准入 ====================
+    // ① 准入
 
     @Test
     @DisplayName("未登录生成标题摘要：A0201")
@@ -285,7 +271,7 @@ class AiComposeControllerTest {
         assertEquals("A0301", jsonField(dataOf(frames, "error"), "code"), frames);
     }
 
-    // ==================== ② 润色 ====================
+    // ② 润色
 
     @Test
     @DisplayName("成员润色：delta 拼接等于完整文本，done 带完整文本")
@@ -316,7 +302,7 @@ class AiComposeControllerTest {
         assertEquals("A0401", jsonField(dataOf(frames, "error"), "code"), frames);
     }
 
-    // ==================== ③ 标题摘要（含 RAG 降级）====================
+    // ③ 标题摘要（含 RAG 降级）
 
     @Test
     @DisplayName("成员生成标题摘要：解析 JSON 回填")
@@ -343,7 +329,7 @@ class AiComposeControllerTest {
         assertEquals("A0401", jsonMapper.readTree(body).get("code").asText(), body);
     }
 
-    // ==================== ④ AI 故障 ====================
+    // ④ AI 故障
 
     @Test
     @DisplayName("AI 故障：润色以 error 事件返回 C0200")

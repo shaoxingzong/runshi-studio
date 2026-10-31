@@ -30,14 +30,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * 项目案例模块验收测试
  *
- * 覆盖五条线：
- * - 鉴权边界：C 端列表/详情匿名可用；后台接口 A0201 / A0301；
- * - 队长不变量（本任务核心）：新增即同步进关联表、换队长幂等、旧队长保留、
- * 当前队长不可解绑；
- * - 关联管理：显式绑定冲突报错、解绑物理删除、重复解绑 A0402；
- * - 级联清理：删项目清项目关联；删成员清「成员-项目 + 成员-证书」两张表；
- * - tech_stack 的 JSON 边界：List ↔ JSON 往返、超长拦截、脏数据不炸接口。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -61,7 +53,7 @@ class ProjectCrudTest {
     @Resource
     private JdbcTemplate jdbcTemplate;
 
-    // ==================== 工具方法 ====================
+    // 工具方法
 
     private String adminToken() throws Exception {
         String account = "p_adm_" + (System.nanoTime() % 100000);
@@ -146,7 +138,7 @@ class ProjectCrudTest {
         return token;
     }
 
-    // ==================== 鉴权边界 ====================
+    // 鉴权边界
 
     @Test
     @DisplayName("鉴权：C 端匿名可访问；后台接口 A0201 / A0301")
@@ -175,7 +167,7 @@ class ProjectCrudTest {
         assertEquals("A0301", code(getBody("/project/list/page", normalToken)), "普通用户应 A0301");
     }
 
-    // ==================== 队长不变量 ====================
+    // 队长不变量
 
     @Test
     @DisplayName("队长不变量：新增即同步进关联表；重复提交同一队长幂等")
@@ -248,7 +240,7 @@ class ProjectCrudTest {
         assertEquals("A0402", code(again), "重复解绑应 A0402：" + again);
     }
 
-    // ==================== 级联清理 ====================
+    // 级联清理
 
     @Test
     @DisplayName("级联：删项目清空关联；删成员同时清「项目+证书」两张关联表")
@@ -273,7 +265,7 @@ class ProjectCrudTest {
         assertEquals(0, countRelations(otherProject, memberId), "删成员后项目关联应被级联清理");
     }
 
-    // ==================== 校验与脱敏 ====================
+    // 校验与脱敏
 
     @Test
     @DisplayName("状态枚举：非法值 A0401；筛选生效；C 端脱敏、详情含正文")
@@ -325,10 +317,6 @@ class ProjectCrudTest {
         long leaderId = insertMember("p-dirty-leader");
         long projectId = addProject("p-dirty-project", leaderId);
 
-        // 关键：本用例必须「先改库、后首次读」，不能与往返用例合并——
-        // MyBatis 一级缓存作用在同一事务的 SqlSession 上，JdbcTemplate 直改的库对 MyBatis
-        // 不可见：先读过的实体再读会拿到缓存旧值，把「脏数据容错」测成假失败。
-        // 这是测试基础设施的坑（不是实现的），拆开写才是有效的验证
         jdbcTemplate.update("UPDATE studio_project SET tech_stack = 'not-a-json' WHERE id = ?", projectId);
 
         String dirty = getBody("/project/detail?id=" + projectId, null);

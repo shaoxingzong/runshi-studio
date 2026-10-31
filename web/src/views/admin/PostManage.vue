@@ -7,20 +7,10 @@ import ErrorRetry from '@/components/ErrorRetry.vue';
 import ImageUploader from '@/components/ImageUploader.vue';
 import type { PageResult, PostAdminDetail, PostAudit } from '@/api/types';
 
-/**
- * 帖子管理（管理员）
- *
- * 与「帖子审核」分工：审核页只面对待审队列（一种状态、批量处置），本页管全部帖子——
- * 三种状态都能查，能删、能置顶、能代改。审核是治理的一环，不是全部。
- *
- * 保存后文章会「消失」：后端把非待审的帖子重置为待审重新送审（先审后发的后门必须堵住），
- * 成功提示里必须说清这件事，否则管理员会以为改坏了。
- */
+/** 帖子管理（管理员） */
 const page = reactive({ current: 1, pageSize: 10 });
 
-/**
- * 筛选条件：status 用 null 表示「全部状态」，与后端口径一致（不传该参数即不过滤）
- */
+/** 筛选条件：status 用 null 表示「全部状态」，与后端口径一致（不传该参数即不过滤） */
 const filters = reactive({
     status: null as number | null,
     titleKeyword: '',
@@ -97,14 +87,9 @@ function turn(delta: number) {
     load();
 }
 
-// ==================== 置顶 ====================
+// 置顶
 
-/**
- * 置顶 / 取消置顶
- *
- * 只有「已通过」的行开关可点（后端同规则）：置顶待审帖在公开列表里没有效果。
- * 失败时必须刷新——开关会停在用户点到的位置，不刷新界面就在撒谎。
- */
+/** 置顶 / 取消置顶 */
 async function togglePin(row: PostAudit, pinned: number) {
     loading.value = true;
     try {
@@ -116,14 +101,9 @@ async function togglePin(row: PostAudit, pinned: number) {
     }
 }
 
-// ==================== 删除 ====================
+// 删除
 
-/**
- * 删除帖子（级联删除评论与点赞）
- *
- * 确认文案必须写清「连带删除」与「无法恢复」——逻辑删除对用户不可见，
- * 不说清楚的话，管理员会以为这只是从列表里隐藏。
- */
+/** 删除帖子（级联删除评论与点赞） */
 async function remove(row: PostAudit) {
     try {
         await ElMessageBox.confirm(
@@ -144,12 +124,9 @@ async function remove(row: PostAudit) {
     } finally {
         loading.value = false;
     }
-    // 失败时不刷新列表：删除是单次请求，失败意味着服务端什么都没改，
-    // 列表展示与真实状态仍然一致（与 togglePin 不同——开关是本地立即变化的，
-    // 失败后必须刷新才能把开关拨回真实状态）
 }
 
-// ==================== 编辑 ====================
+// 编辑
 
 const editVisible = ref(false);
 const editLoading = ref(false);
@@ -163,12 +140,7 @@ const form = reactive({
     content: '',
 });
 
-/**
- * 打开编辑弹窗
- *
- * 列表 VO 不含正文（一页十条全文会撑爆响应体），所以先填已知字段让弹窗立刻可交互，
- * 再去拉正文；正文回来前保存按钮不可用，避免「半模态数据」被提交。
- */
+/** 打开编辑弹窗 */
 async function openEdit(row: PostAudit) {
     form.id = row.id;
     form.title = row.title;
@@ -185,9 +157,6 @@ async function openEdit(row: PostAudit) {
         form.coverImage = detail.coverImage ?? '';
         form.content = detail.content ?? '';
     } catch (e) {
-        // 拉不到正文时给一句明确提示：否则弹窗里正文是空的，
-        // 用户会以为「这篇本来就没内容」而直接提交一篇空壳。
-        // 请求层已弹过就不再重复（notified），避免同一条错误弹两次
         if (!isRequestError(e) || !e.notified) {
             ElMessage.error((e as Error).message || '正文加载失败，请重试');
         }
@@ -318,10 +287,7 @@ onMounted(load);
 
                 <el-table-column label="置顶" width="80">
                     <template #default="{ row }">
-                        <!--
-                          禁用只挡「置顶」、不挡「取消置顶」（后端同规则）：帖子被编辑后打回待审
-                          但 pinned 仍为 1，一刀切禁用会让管理员卡在改不回来的状态里
-                        -->
+                        <!-- 禁用只挡「置顶」、不挡「取消置顶」（后端同规则）：帖子被编辑后打回待审 但 pinned 仍为 1，一刀切禁用会让管理员卡在改不回来的状态里 -->
                         <el-switch
                             :model-value="row.pinned === 1"
                             :disabled="row.pinned !== 1 && row.status !== 1"
@@ -337,10 +303,7 @@ onMounted(load);
                 <el-table-column label="操作" width="150" fixed="right">
                     <template #default="{ row }">
                         <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-                        <!--
-                          待审行禁用删除（后端同规则）：删了作者什么都收不到，该走驳回。
-                          在点之前说明原因；tooltip 套 span 是因为禁用态按钮不派发鼠标事件
-                        -->
+                        <!-- 待审行禁用删除（后端同规则）：删了作者什么都收不到，该走驳回。在点之前说明原因；tooltip 套 span 是因为禁用态按钮不派发鼠标事件 -->
                         <el-tooltip
                             v-if="(row.status ?? 0) === 0"
                             content="待审帖子请改用驳回，让作者收到理由"
@@ -491,7 +454,7 @@ h2 {
     color: #6b7280;
 }
 
-/* 包住禁用按钮的 span：让 tooltip 能挂上去（禁用态按钮不派发鼠标事件） */
+/* 包住禁用按钮的 span：让 tooltip 能挂上去（禁用态按钮不派发鼠标事件）*/
 .op-wrap {
     display: inline-block;
     cursor: not-allowed;

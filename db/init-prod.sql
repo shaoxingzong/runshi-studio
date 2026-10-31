@@ -47,4 +47,5 @@ FLUSH PRIVILEGES;
 -- 完成后的收尾事项（本脚本管不到，见 DEPLOY.md 第 4 节）：
 --   1. 前台注册一个账号，再 UPDATE sys_user SET user_role='admin' WHERE user_account='...';
 --   2. 立即用强口令改密（后台「用户管理 → 重置密码」）；
---   3. 配置 ATTENDANCE_LAN_CIDRS（考勤网段），否则全员签到记「外网」。
+--   3. 配置 ATTENDANCE_TRUSTED_PROXIES（Nginx 与应用不同机时填 Nginx 地址），
+--      否则签到记录里保存的是 Nginx 的 IP（内外网判定已移除，不再需要考勤网段）。

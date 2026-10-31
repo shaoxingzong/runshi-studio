@@ -14,13 +14,6 @@ import java.time.LocalDateTime;
 /**
  * 刷题错题本实体（对应 studio_quiz_wrong，本模块唯一有状态的表）
  *
- * 必须落表而不是从作答记录派生：correctStreak、手动消解、「消解后再错要重开」都是状态。
- * 唯一写入口是 QuizWrongServiceImpl#applyOutcome：答错 → 回待复习、wrongCount+1、streak 归零；
- * 答对 → streak+1，达阈值即消解（resolveType=1）；手动标记 → 消解（2）；跳过 → 不调用。
- *
- * 坑：题目停用/删除时本表不动，过滤在查询侧，停用因此可逆；uk_user_question 带 deleted_at，
- * 否则「移出错题本后再答错」无法重新入本。
- *
  * @author shaoshing
  */
 @Data

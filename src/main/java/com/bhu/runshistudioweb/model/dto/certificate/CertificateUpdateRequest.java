@@ -12,14 +12,6 @@ import java.time.LocalDate;
 /**
  * 管理端：更新证书请求（部分更新）
  *
- * 部分更新：只有非 null 的字段会被更新，传 null 表示「这一项不动」。这依赖 MyBatis-Plus 的默认策略
- * （null 字段不参与 UPDATE），因此前端「只改名称」时不必先查整行回传，也不会漏字段清空数据。
- *
- * 不提供清空能力：imageUrl 传空串会与「不修改」混淆，且 DDL 里该列是 NOT NULL。要换图就传新 URL。
- *
- * 安全要点：本 DTO 的字段就是「允许修改的字段白名单」，Service 必须显式 set，
- * 绝不能把 DTO 整体转成实体 updateById。
- *
  * @author shaoshing
  */
 @Data

@@ -25,15 +25,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * 文件上传接口验收测试
  *
- * 验证的是「接口层面的边界」，而不是文件本身怎么写：
- * - 上传必须登录：/file/upload 不在白名单里，匿名调用要拿到 A0201，
- * 否则等于开放了一个免费图床；
- * - 上传后的图片必须匿名可访问：/uploads/** 在白名单里，
- * 而且 WebMvcConfig 的磁盘映射要真的生效——这条不测就很容易出现「存进去了但网页上全是裂图」。
- *
- * 存储目录同样指向系统临时目录，避免污染真实上传目录。
- * 上传根目录由 surefire 的 FILE_ROOT_DIR 统一注入（见 pom.xml），这里保持默认配置以便与其它测试共用同一个容器
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -74,7 +65,7 @@ class FileControllerTest {
     void uploadThenAnonymousAccess() throws Exception {
         String account = "file" + (System.nanoTime() % 100000);
         String registerJson = "{\"userAccount\":\"" + account
-                + "\",\"userPassword\":\"Studio@2026\",\"checkPassword\":\"Studio@2026\"}";
+                + "\",\"userName\":\"文件测试\",\"userPassword\":\"Studio@2026\",\"checkPassword\":\"Studio@2026\"}";
         mockMvc.perform(post("/user/register").contentType(MediaType.APPLICATION_JSON).content(registerJson));
 
         String loginBody = body(mockMvc.perform(post("/user/login").contentType(MediaType.APPLICATION_JSON)

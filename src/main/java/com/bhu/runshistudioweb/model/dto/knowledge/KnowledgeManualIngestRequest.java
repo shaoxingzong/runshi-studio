@@ -9,13 +9,6 @@ import java.io.Serializable;
 /**
  * 手工录入知识库文档请求
  *
- * 只有标题与正文：手工文档没有业务来源（source_type = manual、source_id = null），
- * 不参与幂等判定，每次调用都新建一篇。与「业务来源同步」（KnowledgeSyncRequest）是两种语义，
- * 合并后要么手工录入被误判为重复，要么同步失去幂等能力。
- *
- * 正文上限 20000 字是因为 Embedding 按量计费：块越多，每次重建重算向量的成本越高，
- * 没有上限的接口等于把「一次误操作」变成「一笔账单」。
- *
  * @author shaoshing
  */
 @Data

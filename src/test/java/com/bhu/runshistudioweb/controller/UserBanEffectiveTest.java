@@ -20,18 +20,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * 封禁 / 删除的即时生效验收测试
  *
- * 这组用例守的是一个真实安全窗口：token 在 Redis 里的有效期最长 7 天
- * （ sa-token.timeout）。若封禁只挡登录入口，被封禁的用户在 token 过期前
- * 仍可用全部登录态接口（发帖、评论、点赞……）——「封禁」在用户侧看起来毫无效果。
- *
- * 因此这里断言两层：
- * - 踢会话（主机制）：封禁 / 删除后，原 token 立即失效（A0201）；
- * - 状态兜底：即使 token 因故未失效，getLoginUser 的封禁校验也会拦住；
- * - 可恢复：解封后能重新登录——封禁不是永久封号，别把恢复路径堵死。
- *
- * 登录用真实接口换 token（与 UserAdminCrudTest 同一模式），
- * 保证权限链路上的每一环都是真的，而不是 mock 的。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -45,7 +33,7 @@ class UserBanEffectiveTest {
     @Resource
     private SysUserMapper sysUserMapper;
 
-    // ==================== 工具方法（与 UserAdminCrudTest 保持同一套）====================
+    // 工具方法（与 UserAdminCrudTest 保持同一套）
 
     private long insertUser(String account, String role) {
         SysUser user = new SysUser();
@@ -108,7 +96,7 @@ class UserBanEffectiveTest {
         return prefix + (System.nanoTime() % 100000000);
     }
 
-    // ==================== 封禁即时生效 ====================
+    // 封禁即时生效
 
     @Test
     @DisplayName("封禁即时生效：原 token 立即失效（A0201），且登录被明确拒绝")
@@ -128,10 +116,10 @@ class UserBanEffectiveTest {
                 "{\"id\":" + targetId + ",\"userStatus\":1}", adminToken);
         assertEquals("00000", code(banResult), "管理员封禁应成功：" + banResult);
 
-        // ① 踢会话：原 token 立即失效（不再等到 7 天后过期）
+        // 踢会话：原 token 立即失效（不再等到 7 天后过期）
         assertEquals("A0201", code(getBody("/user/current", targetToken)),
                 "封禁后原 token 必须立即失效，否则封禁在用户侧毫无效果");
-        // ② 登录入口同样挡住，且提示明确（FORBIDDEN_ERROR = A0302）
+        // 登录入口同样挡住，且提示明确（FORBIDDEN_ERROR = A0302）
         String relogin = postJson("/user/login",
                 "{\"userAccount\":\"" + targetAccount + "\",\"userPassword\":\"Studio@2026\"}", null);
         assertEquals("A0302", code(relogin), "封禁账号再次登录应被拒绝");

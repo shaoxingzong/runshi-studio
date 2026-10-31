@@ -1,14 +1,7 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
 
-/**
- * 404 页
- *
- * 兜底不能写成 `redirect '/'`：输错网址的人被悄悄送回首页，无法判断是「页面下线了」
- * 还是「自己打错了」，只会以为网站坏了。
- *
- * 给两个出口：回首页 / 退回上一页（从站内旧链接点进来时，退回去更顺）。
- */
+/** 404 页 */
 const router = useRouter();
 
 function goBack() {

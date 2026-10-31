@@ -2,13 +2,7 @@ import { computed, ref } from 'vue';
 import { quizApi } from '@/api/quiz';
 import type { QuizMode, QuizQuestion, QuizVerdict } from '@/api/types';
 
-/**
- * 一轮刷题的状态机
- *
- * 用 composable 而不是 Pinia：会话状态只属于当前页面。进度存 sessionStorage 而非 localStorage：
- * 关标签页这一轮就该结束，刷新则要能接着答。
- * phase：idle 未作答（提交失败也退回这里）/ submitting 请求在飞 / graded 已判定且禁用选项。
- */
+/** 一轮刷题的状态机 */
 export type QuizPhase = 'idle' | 'submitting' | 'graded';
 
 /** sessionStorage 的键：单数，因为同时只会有一轮 */
@@ -63,7 +57,7 @@ export function useQuizSession() {
     /** 当前题是否为多选（决定 radio / checkbox 与「点击即提交」） */
     const isMultiple = computed(() => current.value?.type === 1);
 
-    // ==================== 持久化 ====================
+    // 持久化
 
     /** 从 sessionStorage 恢复（刷新页面后接着答） */
     function restore(): boolean {
@@ -99,8 +93,6 @@ export function useQuizSession() {
         try {
             sessionStorage.setItem(QUIZ_STORAGE_KEY, JSON.stringify(batch.value));
         } catch {
-            // 存储写满 / 隐私模式：静默失败。进度丢失只影响「刷新续答」，
-            // 不该因此中断正在进行的答题
         }
     }
 
@@ -114,7 +106,7 @@ export function useQuizSession() {
         sessionStorage.removeItem(QUIZ_STORAGE_KEY);
     }
 
-    // ==================== 开始一轮 ====================
+    // 开始一轮
 
     /**
      * 开一批并进入答题
@@ -146,14 +138,12 @@ export function useQuizSession() {
             persist();
             return true;
         } catch (e) {
-            // 具体原因（章节刷完 / 错题本为空）已由请求层弹出，
-            // 这里额外留一份给页面内的提示条
             error.value = (e as Error).message || '开始失败';
             return false;
         }
     }
 
-    // ==================== 选择与提交 ====================
+    // 选择与提交
 
     /**
      * 切换某个选项：单选直接覆盖，多选加入或移除
@@ -210,11 +200,7 @@ export function useQuizSession() {
         }
     }
 
-    /**
-     * 跳过当前题：不产生判定、不进错题本、不返回答案
-     *
-     * 前端直接前移指针即可，服务端只落一条「跳过过」的记录。
-     */
+    /** 跳过当前题：不产生判定、不进错题本、不返回答案 */
     async function skip(): Promise<boolean> {
         const data = batch.value;
         const question = current.value;
@@ -245,7 +231,7 @@ export function useQuizSession() {
         persist();
     }
 
-    // ==================== 本轮统计 ====================
+    // 本轮统计
 
     /** 本轮已答数（不含跳过） */
     const answeredCount = computed(() => batch.value?.answered ?? 0);

@@ -25,6 +25,8 @@ const user = useUserStore();
 
 const id = String(route.params.id);
 const detail = ref<PostDetail | null>(null);
+/** 当前登录用户是不是这篇文章的作者：只用于展示作者操作，真正权限在后端 */
+const isMine = computed(() => !!user.userId && detail.value?.authorId === user.userId);
 const comments = ref<PostComment[]>([]);
 const loading = ref(false);
 /** 加载失败 / 帖子不存在：非空时展示错误条 + 重试 */
@@ -39,7 +41,7 @@ const submitting = ref(false);
 /** 点赞请求中（按钮 loading，防连点） */
 const liking = ref(false);
 
-// ==================== 举报 ====================
+// 举报
 
 const reportVisible = ref(false);
 /** 正在举报的对象：帖子或某条评论 */
@@ -47,12 +49,7 @@ const reportTarget = ref<{ type: 'post' | 'comment'; id: string } | null>(null);
 const reportReason = ref('');
 const reporting = ref(false);
 
-/**
- * 打开举报弹窗
- *
- * 未登录直接引导去登录：匿名举报既无法追溯，也挡不住同一个人反复刷。
- * redirect 带上当前路径，登录后能回到这篇帖子。
- */
+/** 打开举报弹窗 */
 function openReport(type: 'post' | 'comment', targetId: string) {
     if (!user.isLogin) {
         ElMessage.warning('登录后才能举报');
@@ -93,25 +90,20 @@ async function submitReport() {
 /** 评论区容器：点 meta 行里的「评论 N」要能直接滚过去 */
 const commentsRef = ref<HTMLElement | null>(null);
 
-/**
- * 跳到评论区
- *
- * 用 scrollIntoView 而不是改 location.hash：本页 hash 已用于目录锚点，再塞 #comments 会污染
- * 前进后退历史；prevent 掉默认跳转后手动滚动，顺带把焦点交给输入框附近。
- */
+/** 跳到评论区 */
 function scrollToComments() {
     commentsRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/** 作者改自己的文章：改完会重新送审，审核通过前不再公开展示 */
+function editMyPost() {
+    router.push({ path: '/posts/new', query: { edit: id } });
 }
 
 /** 正文容器：代码块复制与目录高亮都要在真实 DOM 上接线（v-html 的内容 Vue 管不着） */
 const bodyRef = ref<HTMLElement | null>(null);
 
-/**
- * 正文渲染：renderMarkdown → 白名单清洗 → v-html
- *
- * 必须清洗：marked v15 起移除了内置 sanitize，而 v-html 直接写 DOM，等于把发帖人当成可信来源。
- * 比项目详情更严一步：帖子的 `img` 只允许站内 `/uploads/`——外链图可作追踪像素泄露访客 IP。
- */
+/** 正文渲染：renderMarkdown → 白名单清洗 → v-html */
 const rendered = computed(() => {
     const result = renderMarkdown(detail.value?.content ?? '');
     // 清洗实现收在工具里：钩子的挂/摘必须成对，写在页面里就有漏摘污染全局的风险
@@ -214,12 +206,7 @@ async function submitReply(parentId: string) {
     }
 }
 
-/**
- * 删除评论（管理员）
- *
- * 入口在本页而不是审核队列：本页评论只含已通过的，正好符合后端「只能删已通过评论」的约束。
- * 删除是级联的，删顶层会连回复一起删，所以确认文案必须说清会连带影响回复。
- */
+/** 删除评论（管理员） */
 async function removeComment(id: string, withReplies: boolean) {
     try {
         await ElMessageBox.confirm(
@@ -237,12 +224,7 @@ async function removeComment(id: string, withReplies: boolean) {
     await load();
 }
 
-/**
- * 点赞（只能赞、不能取消）
- *
- * 数字以后端返回为准，不做乐观 +1：后端是幂等的，前端自己加会出现「重复点击跳两次」的错乱。
- * 已赞后按钮禁用：没有取消能力，界面就不该留可点入口。
- */
+/** 点赞（只能赞、不能取消） */
 async function like() {
     if (!requireLogin('点赞')) {
         return;
@@ -260,11 +242,6 @@ async function like() {
 }
 
 onMounted(load);
-
-// 标签页标题用真实帖子名（数据异步回来，与路由 meta 的「帖子详情」占位衔接）
-//
-// 详情页是搜索引擎唯一可能收录的内容页，标题停在「帖子详情」等于没录。
-// description 取摘要兜底，没有就保持 index.html 的静态描述，不写空值。
 usePageMeta({
     title: computed(() => detail.value?.title ?? '帖子详情'),
     description: computed(() => detail.value?.summary ?? ''),
@@ -284,16 +261,16 @@ usePageMeta({
         <template v-else>
             <article class="card post">
                 <h1>{{ detail.title }}</h1>
-                <!-- 作者区：把「谁写的、什么时候、有多少互动」聚在一起，
-                     正文之前先给读者一个上下文 -->
+                <!-- 作者区：把「谁写的、什么时候、有多少互动」聚在一起，正文之前先给读者一个上下文 -->
                 <div class="meta">
                     <div class="author-box">
-                        <!-- 作者头像：有真实头像就用，没有则显示姓名首字 -->
+                        <!-- 作者头像：有真实头像就用，没有则显示统一默认头像 -->
                         <span class="author-avatar">
                             <SmartImage
                                 :src="detail.authorAvatar"
                                 :alt="detail.authorName || '工作室成员'"
                                 :seed="detail.authorId"
+                                fallback="avatar"
                             />
                         </span>
                         <span class="author">{{ detail.authorName || '工作室成员' }}</span>
@@ -301,13 +278,11 @@ usePageMeta({
                     </div>
                     <span class="spacer" />
                     <span class="stat">浏览 {{ detail.viewCount ?? 0 }}</span>
-                    <!-- 评论数做成可点击入口：看到「评论 3」想直接跳过去，
-                         不该要求读者自己往下滚找评论区 -->
+                    <!-- 评论数做成可点击入口：看到「评论 3」想直接跳过去，不该要求读者自己往下滚找评论区 -->
                     <a class="stat stat-link" href="#comments" @click.prevent="scrollToComments">
                         评论 {{ detail.commentCount ?? 0 }}
                     </a>
-                    <!-- 只能赞不能取消：已赞后禁用。尺寸与字重要比统计文字重一档，
-                         否则它和「浏览」同级，看起来只是一条统计信息 -->
+                    <!-- 只能赞不能取消：已赞后禁用。尺寸与字重要比统计文字重一档，否则它和「浏览」同级，看起来只是一条统计信息 -->
                     <el-button
                         class="like-btn"
                         :type="detail.liked ? 'primary' : 'default'"
@@ -318,14 +293,22 @@ usePageMeta({
                     >
                         {{ detail.liked ? '已赞' : '点赞' }} {{ detail.likeCount ?? 0 }}
                     </el-button>
-                    <!-- 举报入口放在 meta 行末尾：它是负向操作，不该比点赞更显眼 -->
-                    <el-button link class="report-link" @click="openReport('post', detail.id)">
+                    <!-- 举报入口放在 meta 行末尾：它是负向操作，不该比点赞更显眼；自己的文章不显示举报 -->
+                    <el-button v-if="!isMine" link class="report-link" @click="openReport('post', detail.id)">
                         举报
                     </el-button>
                 </div>
 
-                <!-- 目录：长文（标题 ≥3）才出现。href 保留原生锚点语义
-                     （链接可复制、可中键新窗口），click 接平滑滚动 -->
+                <!-- 作者操作条：只对自己可见，改稿前先说明会重新送审 -->
+                <div v-if="isMine" class="author-bar">
+                    <span class="author-bar-title">这是你发布的文章</span>
+                    <span class="author-bar-hint">修改后需重新审核，审核通过前不会公开显示。</span>
+                    <span class="spacer" />
+                    <el-button link type="primary" @click="router.push('/posts/my')">我的文章</el-button>
+                    <el-button size="small" type="primary" plain @click="editMyPost">编辑文章</el-button>
+                </div>
+
+                <!-- 目录：长文（标题 ≥3）才出现。href 保留原生锚点语义 （链接可复制、可中键新窗口），click 接平滑滚动 -->
                 <nav v-if="showToc" class="toc">
                     <div class="toc-title">目录</div>
                     <a
@@ -369,15 +352,17 @@ usePageMeta({
                 <div v-else class="comment-list">
                     <div v-for="comment in comments" :key="comment.id" class="comment">
                         <div class="comment-head">
-                            <!-- 评论人头像：与作者区同一套兜底（无头像时显示姓名首字） -->
+                            <!-- 评论人头像：与作者区同一套兜底（无头像时显示统一默认头像）-->
                             <span class="comment-avatar">
                                 <SmartImage
                                     :src="comment.authorAvatar"
                                     :alt="comment.authorName || '用户'"
                                     :seed="comment.authorId"
+                                    fallback="avatar"
                                 />
                             </span>
                             <span class="author">{{ comment.authorName || '用户' }}</span>
+                            <span v-if="user.userId && comment.authorId === user.userId" class="self-tag">我</span>
                             <span v-if="comment.floor" class="floor">{{ comment.floor }} 楼</span>
                             <span class="date">{{ comment.createdAt?.slice(0, 16) }}</span>
                             <el-button link size="small" @click="replyTo = comment.id">回复</el-button>
@@ -404,9 +389,11 @@ usePageMeta({
                                         :src="reply.authorAvatar"
                                         :alt="reply.authorName || '用户'"
                                         :seed="reply.authorId"
+                                        fallback="avatar"
                                     />
                                 </span>
                                 <span class="author">{{ reply.authorName || '用户' }}</span>
+                                <span v-if="user.userId && reply.authorId === user.userId" class="self-tag">我</span>
                                 <span class="reply-text">{{ reply.content }}</span>
                                 <span class="date">{{ reply.createdAt?.slice(0, 16) }}</span>
                                 <el-button link size="small" @click="openReport('comment', reply.id)">
@@ -512,6 +499,35 @@ h1 {
 
 .report-link:hover {
     color: #dc2626;
+}
+
+/* ===== 作者操作条 ===== */
+.author-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    margin-top: 16px;
+    padding: 10px 14px;
+    border: 1px solid rgb(37 99 235 / 14%);
+    border-radius: var(--radius-sm);
+    background: var(--brand-soft);
+    font-size: 13px;
+    color: var(--brand-dark);
+}
+
+.author-bar-title {
+    font-weight: 600;
+}
+
+.author-bar-hint {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+.author-bar .spacer {
+    flex: 1;
 }
 
 .report-tip {
@@ -623,6 +639,16 @@ h1 {
 .author {
     color: #1f2937;
     font-weight: 600;
+}
+
+/* 自己的评论：在作者名后补一个很轻的「我」，不改变评论排版 */
+.self-tag {
+    padding: 0 6px;
+    border-radius: 999px;
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-size: 11px;
+    line-height: 18px;
 }
 
 .spacer {

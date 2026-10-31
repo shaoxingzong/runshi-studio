@@ -24,9 +24,6 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * 举报处置接口（管理端）
  *
- * 与用户端提交分开成两个 Controller：鉴权要求不同（管理员 vs 登录用户），
- * 放在一起最容易在某次改动里把 {@code @SaCheckRole} 挪到类上，连带放开了提交接口。
- *
  * @author shaoshing
  */
 @RestController
@@ -54,9 +51,6 @@ public class AdminReportController {
 
     /**
      * 处置举报
-     *
-     * resolve=撤下（转已驳回）/ delete=删除 / dismiss=举报不成立；
-     * 处置结果会通知举报人，并写入操作日志。
      *
      * @param request 举报 id / 动作 / 处置说明
      * @return 恒为 true，失败一律抛异常

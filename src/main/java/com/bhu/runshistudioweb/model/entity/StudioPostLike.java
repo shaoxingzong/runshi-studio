@@ -13,12 +13,6 @@ import java.time.LocalDateTime;
 /**
  * 帖子点赞实体（对应 studio_post_like，物理删除）
  *
- * 只有 DDL 里真实存在的 4 列（id / post_id / user_id / created_at），
- * 绝不能加 deletedAt / updatedAt / createdBy / updatedBy，多一个字段就是一次 Unknown column 的 500。
- *
- * 本表只能赞、不能取消，关系建立后不再更新，所以物理删除、不留逻辑删除位。
- * uk_post_user(post_id, user_id) 是「一人一赞」的根基，兜住并发下的重复插入。
- *
  * @author shaoshing
  */
 @Data

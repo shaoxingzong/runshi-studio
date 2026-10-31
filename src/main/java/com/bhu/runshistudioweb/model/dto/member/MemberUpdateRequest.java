@@ -12,14 +12,6 @@ import java.io.Serializable;
 /**
  * 管理端：更新成员档案请求
  *
- * 部分更新：只有非 null 的字段才会被更新，传 null 表示「这一项不动」。这依赖 MyBatis-Plus 的默认策略
- * （null 字段不参与 UPDATE），前端不必先查整行回传；代价是无法通过本接口清空字段，
- * 真有需求要单独设计语义明确的接口，而不是用传空串模糊表达。
- *
- * 正因为「传 null = 不修改」，userId 不动就保持原绑定；要改绑时 Service 必须校验新账号
- * 「存在且未被其他成员占用」（排除自己后校验）。gradeYear 区间与新增请求一致；
- * teamPosition / memberStatus 的合法性由 Service 用枚举校验。
- *
  * @author shaoshing
  */
 @Data
@@ -57,10 +49,7 @@ public class MemberUpdateRequest implements Serializable {
     @Size(max = 128, message = "技术方向长度不能超过 128 个字符")
     private String direction;
 
-    /**
-     * 团队职务（选填，null 表示不修改），取值见
-     * com.bhu.runshistudioweb.model.enums.TeamPositionEnum
-     */
+    /** 团队职务（选填，null 表示不修改），取值见 com.bhu.runshistudioweb.model.enums.TeamPositionEnum */
     private String teamPosition;
 
     /** 成员状态（选填，null 表示不修改）：0-在读/在队，1-毕业/离队 */

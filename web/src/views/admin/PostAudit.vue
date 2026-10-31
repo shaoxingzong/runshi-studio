@@ -6,12 +6,7 @@ import ErrorRetry from '@/components/ErrorRetry.vue';
 import { bindCodeCopy, renderMarkdown, sanitizeMarkdownHtml } from '@/utils/markdown';
 import type { PageResult, PostAdminDetail, PostAudit } from '@/api/types';
 
-/**
- * 帖子待审队列（管理员）
- *
- * 队列里绝大多数是「AI 拿不准」的：AI 判安全已自动通过、判违规已自动驳回，都不会出现在这里。
- * 管理员只需处理「灰色」和「AI 不可用」两类，这正是这套机制减负的地方。
- */
+/** 帖子待审队列（管理员） */
 const page = reactive({ current: 1, pageSize: 10 });
 const result = ref<PageResult<PostAudit> | null>(null);
 const selected = ref<string[]>([]);
@@ -96,7 +91,7 @@ async function audit(approved: boolean) {
     }
 }
 
-// ==================== 正文抽屉 ====================
+// 正文抽屉
 
 const drawerVisible = ref(false);
 const detailLoading = ref(false);
@@ -109,12 +104,7 @@ const bodyRef = ref<HTMLElement | null>(null);
 /** 解绑函数：抽屉重开 / 关闭都要摘掉旧监听，否则打开几次就叠加几层 */
 let unbindCopy: (() => void) | null = null;
 
-/**
- * 正文渲染：与门户帖子详情完全同一条链路（renderMarkdown → 白名单清洗 → v-html）
- *
- * 管理端也不能免检：待审内容恰恰是最不可信的输入。图片只放行站内 /uploads/——
- * 外链图可当追踪像素用，管理员点开一篇稿子就等于给对方报了一次「谁在看」。
- */
+/** 正文渲染：与门户帖子详情完全同一条链路（renderMarkdown → 白名单清洗 → v-html） */
 const detailHtml = computed(() => {
     const rendered = renderMarkdown(detail.value?.content ?? '');
     return sanitizeMarkdownHtml(rendered.html, { restrictImages: true });
@@ -158,12 +148,7 @@ watch(drawerVisible, (visible) => {
     }
 });
 
-/**
- * 抽屉内单篇处置
- *
- * 与批量审核共用同一个接口与同一套提示：单篇只是 ids 长度为 1。
- * 另写一套实现，必然会在「驳回理由必填」这类规则上先分叉。
- */
+/** 抽屉内单篇处置 */
 async function auditOne(approved: boolean) {
     if (!detail.value) {
         return;
@@ -271,8 +256,7 @@ onMounted(load);
                     <template #default="{ row }">{{ row.createdAt?.slice(0, 16) }}</template>
                 </el-table-column>
 
-                <!-- 审核不能盲审：列表故意不带正文（一页十条全文会撑爆响应体），
-                     点开抽屉再按需拉取，既轻量又看得到全文 -->
+                <!-- 审核不能盲审：列表故意不带正文（一页十条全文会撑爆响应体），点开抽屉再按需拉取，既轻量又看得到全文 -->
                 <el-table-column label="操作" width="110" fixed="right">
                     <template #default="{ row }">
                         <el-button link type="primary" @click="openDetail(row)">查看正文</el-button>
@@ -318,7 +302,7 @@ onMounted(load);
                         :closable="false"
                         show-icon
                     />
-                    <!-- 正文已过 DOMPurify 白名单清洗（外链图被剥 src） -->
+                    <!-- 正文已过 DOMPurify 白名单清洗（外链图被剥 src）-->
                     <div ref="bodyRef" class="markdown-body" v-html="detailHtml" />
                 </template>
             </div>

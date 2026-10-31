@@ -91,8 +91,6 @@ class PasswordUtilsTest {
         assertThrows(BusinessException.class, () -> PasswordUtils.encrypt(""));
         assertThrows(BusinessException.class, () -> PasswordUtils.encrypt("   "));
 
-        // 长度校验已按设计移出工具类（改由接口层 DTO 的 @Size 负责），
-        // 这里断言「不抛异常」，把这条职责边界钉在测试里，防止以后被重新加回来
         assertDoesNotThrow(() -> PasswordUtils.encrypt("12345"));
         assertDoesNotThrow(() -> PasswordUtils.encrypt("123456"));
     }

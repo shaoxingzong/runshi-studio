@@ -7,11 +7,6 @@ import java.io.Serializable;
 /**
  * 通知列表查询请求（C 端）
  *
- * 支持按已读/未读过滤：通知积累后的高频操作是「只看没读过的」，
- * 已读的旧通知不该占着第一屏。
- *
- * 分页字段由本类声明，非法值由 Service 兜底纠正，不报错。
- *
  * @author shaoshing
  */
 @Data

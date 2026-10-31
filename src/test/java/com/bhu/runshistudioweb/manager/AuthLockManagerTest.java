@@ -30,17 +30,6 @@ import static org.mockito.Mockito.when;
 /**
  * 账号级登录失败锁定单测（纯 Mockito，不启 Spring、不连 Redis）
  *
- * 与 IpRateLimitManagerTest 同一套理由：本类只依赖
- * StringRedisTemplate 与配置对象，mock 掉即可覆盖全部分支；
- * 能不起容器就不起（多个测试类对上下文停止顺序敏感，见 pom 里 surefire 的记载）。
- *
- * 覆盖重点：
- * - 阈值边界：达到阈值即锁（判定是 >=，与 IP 限流的 > 相反——
- * 限流是「超过上限才拒」，锁定是「失败够次数就锁」，语义不同，边界也不同）；
- * - 键与 TTL：recordFailure 必须带账号名键与锁定时长换算出的秒数；
- * - 降级：Redis 故障时全部放行——锁定是防护手段，不能变成故障源；
- * - 开关：关闭时不碰 Redis。
- *
  * @author shaoshing
  */
 @ExtendWith(MockitoExtension.class)
@@ -63,7 +52,7 @@ class AuthLockManagerTest {
         return new AuthLockManager(stringRedisTemplate, properties);
     }
 
-    // ==================== assertNotLocked：阈值与边界 ====================
+    // assertNotLocked：阈值与边界
 
     @Test
     @DisplayName("未达阈值：放行")
@@ -106,7 +95,7 @@ class AuthLockManagerTest {
         assertThrows(BusinessException.class, () -> newManager().assertNotLocked(ACCOUNT));
     }
 
-    // ==================== 降级与开关 ====================
+    // 降级与开关
 
     @Test
     @DisplayName("Redis 读取故障：放行（防护手段不能变成故障源）")
@@ -133,7 +122,7 @@ class AuthLockManagerTest {
         verifyNoInteractions(stringRedisTemplate);
     }
 
-    // ==================== recordFailure：键与 TTL ====================
+    // recordFailure：键与 TTL
 
     @Test
     @DisplayName("记录失败：按账号键自增，TTL = 锁定时长换算的秒数")
@@ -170,7 +159,7 @@ class AuthLockManagerTest {
         verifyNoInteractions(stringRedisTemplate);
     }
 
-    // ==================== clear：成功清零 ====================
+    // clear：成功清零
 
     @Test
     @DisplayName("登录成功：删除该账号的计数键")
@@ -220,8 +209,6 @@ class AuthLockManagerTest {
         newManager().recordFailure(ACCOUNT);
         newManager().recordFailure(ACCOUNT);
 
-        // 两次调用、每次都带 TTL：Lua 脚本内部判断「首次才 EXPIRE」，
-        // Java 侧无条件传参——TTL 判断放 Redis 是为了原子性
         verify(stringRedisTemplate, times(2)).execute(any(RedisScript.class), anyList(), eq("900"));
     }
 }

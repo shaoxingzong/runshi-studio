@@ -9,9 +9,6 @@ import org.springframework.stereotype.Component;
  *
  * 配置项全部给默认值、不做必填校验：刷题是附加能力，配置没写全时应用必须能正常启动。
  *
- * 注意字段不能声明成 final。@ConfigurationProperties 的绑定依赖 setter 与无参构造，
- * 字段一旦 final 就会让绑定彻底失效。
- *
  * @author shaoshing
  */
 @Data
@@ -19,27 +16,12 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "studio.quiz")
 public class QuizProperties {
 
-    /**
-     * 一轮的默认题量（前端不传 size 时用它），默认 20
-     *
-     * 一屏一题大约 15–20 分钟，是「一次坐下来能刷完」的长度；再长会让用户中途放弃，
-     * 而中途放弃的批次不会产生任何统计价值。
-     */
+    /** 一轮的默认题量（前端不传 size 时用它），默认 20 */
     private int defaultSize = 20;
 
-    /**
-     * 一轮题量的上限，默认 100
-     *
-     * 防「一次拉全库」：随机模式会把范围内所有题的 id 查出来再洗牌，不设上限时
-     * 用户可以传 100000 让服务端为一次请求做十万次洗牌。超限时收敛到上限而不是报错。
-     */
+    /** 一轮题量的上限，默认 100 */
     private int maxSize = 100;
 
-    /**
-     * 错题消解阈值：连续答对几次算「已掌握」，默认 2
-     *
-     * 不能取 1：四选一蒙对的概率是 25%，一次答对就消解会让「已消解」这个数字失去意义。
-     * 取 2 是「一次可能是蒙的、两次大概率是真会了」的折中。
-     */
+    /** 错题消解阈值：连续答对几次算「已掌握」，默认 2 */
     private int resolveStreak = 2;
 }

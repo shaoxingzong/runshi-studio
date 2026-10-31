@@ -32,11 +32,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * 证书模块验收测试
  *
- * 覆盖两条线：
- * - 越权：匿名访问后台接口 A0201、普通用户 A0301、C 端列表匿名可访问；
- * - 四个考点：级别与类型正交存储、获奖日期不得晚于今天、图片非空、
- * 默认排序 = 置顶权重倒序 + 获奖日期倒序。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -53,7 +48,7 @@ class CertificateCrudTest {
     @Resource
     private SysUserMapper sysUserMapper;
 
-    // ==================== 工具方法 ====================
+    // 工具方法
 
     private long insertAdmin(String account) {
         SysUser admin = new SysUser();
@@ -107,7 +102,7 @@ class CertificateCrudTest {
                 + (sortOrder == null ? "" : ",\"sortOrder\":" + sortOrder) + "}";
     }
 
-    // ==================== 鉴权边界 ====================
+    // 鉴权边界
 
     @Test
     @DisplayName("C 端列表匿名可访问；后台接口必须登录且是管理员")
@@ -132,7 +127,7 @@ class CertificateCrudTest {
         assertEquals("A0301", code(getBody("/certificate/list/page", token)), "普通用户不应能访问后台证书列表");
     }
 
-    // ==================== 四个考点 ====================
+    // 四个考点
 
     @Test
     @DisplayName("考点①：级别与类型是分开的两个字段，非法值一律拒绝")
@@ -202,9 +197,6 @@ class CertificateCrudTest {
         List<String> titles = list.stream().map(CertificateFrontVO::getTitle).toList();
         assertTrue(list.size() >= 2, "列表至少应有两条记录，实际：" + list.size());
 
-        // 断言这两条的相对顺序，而不是「首条必须是高权重」。
-        // 为什么：库里可能已有演示数据（它们的置顶权重可能更高），
-        // 那样 list.get(0) 就不是本用例建的那条——那是把环境当成前提，不是排序有 bug。
         int idxHigh = titles.indexOf("高权重旧日期");
         int idxLow = titles.indexOf("低权重新日期");
         assertTrue(idxHigh >= 0 && idxLow >= 0, "本用例建的两条都应出现在列表中，实际：" + titles);

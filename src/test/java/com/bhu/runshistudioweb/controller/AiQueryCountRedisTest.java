@@ -42,20 +42,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * AI 提问配额计数验收测试
  *
- * 为什么本类不加 @Transactional（改动前必读）：
- * 计数已经不走数据库事务了（Redis INCR 在事务外），加事务不但保护不了 Redis 数据，
- * 反而会让「DB 写入」与「Redis 写入」处在两套回滚语义下，断言变得没法解释。
- * 更关键的是：本类要验证的正是「DB 与 Redis 两个独立存储最终一致」，
- * 用事务把 DB 包起来就等于回避了这个真实边界。
- * 因此数据真实提交，靠 cleanUp 按账号前缀清理。
- *
- * 类名以 Ai 开头：本类通过 @DynamicPropertySource 指向自己的
- * 本地 AI Stub，会新建一个 Spring 测试上下文；排序约束详见 AiKnowledgeManageTest 类注释
- * （新建上下文的测试类必须排在 CertificateCrudTest 之前）。
- *
- * 回刷周期被调成 1 小时：否则 @Scheduled 会在用例执行途中
- * 把 Redis 里的增量清掉，让「提问后 Redis 应为 1」这种断言变成偶发失败。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -181,10 +167,6 @@ class AiQueryCountRedisTest {
     void concurrentIncrementsAreExact() throws Exception {
         long userId = createUser();
 
-        // 直接并发调用 Manager.increment，刻意绕过 HTTP 层的配额预检：
-        // 配额预检是「读合并值 + 判断」，并发下按设计允许轻微超限/拒绝，
-        // 用它来测并发会让断言取决于线程调度时机（偶发失败）。
-        // 本用例要证明的是「计数自增在并发下不丢」——那正是 Manager.increment 的职责。
         int threads = 20;
         List<Throwable> errors = new CopyOnWriteArrayList<>();
         ExecutorService pool = Executors.newFixedThreadPool(threads);
@@ -250,7 +232,7 @@ class AiQueryCountRedisTest {
         assertEquals(0, redisDelta(dirtyUser), "脏值 key 已被 GETDEL 删除，不会下轮反复处理");
     }
 
-    // ==================== 工具 ====================
+    // 工具
 
     private long createUser() {
         String account = ACCOUNT_PREFIX + (System.nanoTime() % 100000000);
@@ -299,12 +281,7 @@ class AiQueryCountRedisTest {
         return value == null ? 0 : value;
     }
 
-    /**
-     * 清理本类创建的数据（真实提交，必须自己收尾）
-     *
-     * 只按「记录下来的 userId」精确删除，绝不按前缀批量删 Redis——
-     * 后者会清掉其它用户在测试期间产生的计数。
-     */
+    /** 清理本类创建的数据（真实提交，必须自己收尾） */
     private void cleanUp() {
         for (Long userId : createdUserIds) {
             stringRedisTemplate.delete(AiQueryCountConstant.keyOf(userId));

@@ -8,12 +8,6 @@ import java.util.List;
 /**
  * 批量导入结果（管理端）
  *
- * dryRun 与真实导入共用本 VO：前者只填 parsed 与 errors，imported 恒为 0，
- * 前端因此可以用同一套渲染逻辑做「预览」与「结果」。
- *
- * errors 里带行号是刻意的：粘贴一大段文本时，「第 12 行多选题只标了 1 个正确项」能让人立刻定位，
- * 只说「有 3 个错误」等于没说。
- *
  * @author shaoshing
  */
 @Data
@@ -33,12 +27,7 @@ public class QuizImportResultVO implements Serializable {
     /** 错误列表；为空表示整批合法 */
     private List<ImportError> errors;
 
-    /**
-     * 单条错误：行号 + 可读原因
-     *
-     * 做成静态内部类而不是独立 VO：它只在本 VO 里出现，
-     * 单独一个文件会让 model/vo/quiz 下多出一个永远只有一处引用的类。
-     */
+    /** 单条错误：行号 + 可读原因 */
     @Data
     public static class ImportError implements Serializable {
 

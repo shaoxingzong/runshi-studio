@@ -12,16 +12,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 选项标签工具验收测试（纯单测：不启 Spring、不连数据库）
  *
- * 本类最关键的一条是「大小写与顺序不影响判分」：
- * 用户点的是选项、传上来的却是字符串，"AC" / "ca" / "C,A"
- * 都是同一个选择。如果规范化没做对，选对了也会被判错，
- * 而且这种错误极难复现——用户说他选的是 A 和 C，日志里存的是 "C,A"。
- *
  * @author shaoshing
  */
 class QuizLabelUtilsTest {
 
-    // ==================== normalize ====================
+    // normalize
 
     @Test
     @DisplayName("规范化：大写 + 去重 + 升序 + 去分隔符")
@@ -45,8 +40,6 @@ class QuizLabelUtilsTest {
     @Test
     @DisplayName("规范化：非法字符被静默丢弃（合法性由 findInvalidLabel 判定）")
     void normalizeDropsInvalidCharacters() {
-        // 这里只负责「整理」，不负责「报错」：调用方要先调 findInvalidLabel
-        // 拿到非法字符，才能给出「Z 不是有效选项」这种精确提示
         assertEquals("AC", QuizLabelUtils.normalize("AZC"));
         assertEquals("", QuizLabelUtils.normalize("XYZ"));
         assertEquals("", QuizLabelUtils.normalize("123"));
@@ -61,7 +54,7 @@ class QuizLabelUtilsTest {
         assertEquals("", QuizLabelUtils.normalize(",，、"));
     }
 
-    // ==================== findInvalidLabel ====================
+    // findInvalidLabel
 
     @Test
     @DisplayName("非法字符检测：超出 A–F 的字符")
@@ -69,16 +62,12 @@ class QuizLabelUtilsTest {
         assertEquals('Z', QuizLabelUtils.findInvalidLabel("AZ"));
         assertEquals('1', QuizLabelUtils.findInvalidLabel("A1"));
         assertEquals('G', QuizLabelUtils.findInvalidLabel("G"));
-        // 小写输入会先被转成大写再判定，因此返回的是大写字母——
-        // 这是刻意的：提示文案里给 "Z" 比给 "z" 更符合「选项标签都是大写」的直觉
         assertEquals('Z', QuizLabelUtils.findInvalidLabel("az"));
     }
 
     @Test
     @DisplayName("非法字符检测：重复标签要被拦下（否则会被静默折叠成单个）")
     void findInvalidDuplicate() {
-        // "AA" 会被 normalize 折叠成 "A"，用户以为选了两个、实际只选了一个——
-        // 这种「输入被悄悄改写」比直接报错更难排查
         assertEquals('A', QuizLabelUtils.findInvalidLabel("AA"));
         assertEquals('C', QuizLabelUtils.findInvalidLabel("ACC"));
     }
@@ -94,7 +83,7 @@ class QuizLabelUtilsTest {
         assertNull(QuizLabelUtils.findInvalidLabel(""));
     }
 
-    // ==================== 转换 ====================
+    // 转换
 
     @Test
     @DisplayName("转列表：升序、保持顺序")

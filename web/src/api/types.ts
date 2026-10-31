@@ -1,17 +1,7 @@
-// 与后端 VO 一一对应的类型定义
-//
-// 两点约定（与后端 JsonConfig 的全局序列化有关）：
-// 1. ID 是字符串：雪花 ID 超出 JS 安全整数范围；
-// 2. 分页元数据（total / current / size / pages）也是字符串，而计数字段是数字——
-//    两者的类型不一致是设计使然，不要「顺手统一」。
+
 
 /** 统一响应体 */
 export interface ApiResponse<T> {
-    // 业务状态码（5 位字符串，遵循阿里开发手册）
-    // - "00000" = 成功
-    // - "Axxxx" = 用户端错误（参数/登录/权限/限流）
-    // - "Bxxxx" = 当前系统错误
-    // - "Cxxxx" = 第三方服务错误（如 AI 服务不可用）
     code: string;
     data: T;
     message: string;
@@ -26,24 +16,14 @@ export interface PageResult<T> {
     pages: string;
 }
 
-/**
- * 首页大盘
- *
- * 只剩证书维度：业务规则「团队成员不对外展示」，接口里没有 memberTotal 这类 key，
- * 不要渲染团队人数。
- */
+/** 首页大盘 */
 export interface Overview {
     certificateTotal: number;
     certificateByLevel: Record<string, number>;
     certificateByType: Record<string, number>;
 }
 
-/**
- * 成员（脱敏）
- *
- * 只出现在项目详情的「参与成员」里：官网没有成员列表页 / 详情页，
- * 后端也没有 `/member/list`、`/member/detail`，调用会 404。
- */
+/** 成员（脱敏） */
 export interface Member {
     id: string;
     name: string;
@@ -67,11 +47,7 @@ export interface Certificate {
     imageUrl?: string | null;
 }
 
-/**
- * 后台证书视图（后端 CertificateVO）
- *
- * 比 C 端多出 sortOrder / 审计时间，只在 admin 面前出现，不要与脱敏的 C 端类型混用。
- */
+/** 后台证书视图（后端 CertificateVO） */
 export interface AdminCertificate extends Certificate {
     sortOrder?: number | null;
     createdAt?: string;
@@ -96,20 +72,12 @@ export interface ProjectDetail extends Project {
     members: Member[];
 }
 
-/**
- * 后台项目：比 C 端多出 leaderId 等内部字段
- *
- * 与 ProjectDetail 是两种视图——后台要能编辑队长，C 端刻意不暴露，不要共用一个类型。
- */
+/** 后台项目：比 C 端多出 leaderId 等内部字段 */
 export interface AdminProject extends Project {
     leaderId: string;
     content?: string | null;
     // 置顶权重（后台内部字段，仅 admin 接口返回；`sort_order` 倒序）
     sortOrder?: number | null;
-    // 首页轮播排名（仅 admin 接口返回）：1-6 表示排官网首页第 N 位，null 表示不进首页
-    //
-    // 排名按全局口径计算（sortOrder 倒序 → 创建时间倒序 → id 倒序的前 6 条），
-    // 不受后台筛选影响——所以按标题筛选时看到的「首页 N」仍然是全局名次
     homeRank?: number | null;
     // 审计时间：列表页用来展示「最近维护」
     createdAt?: string;
@@ -171,11 +139,7 @@ export interface ChatMessage {
     createdAt?: string;
 }
 
-/**
- * 登录结果 / 当前用户（后端 LoginUserVO）
- *
- * 只有 `/user/login` 返回 token，`/user/current` 返回同一结构但不含 token。
- */
+/** 登录结果 / 当前用户（后端 LoginUserVO） */
 export interface LoginResult {
     id: string;
     userAccount: string;
@@ -191,12 +155,7 @@ export interface LoginResult {
     createdAt?: string;
 }
 
-/**
- * 站内通知（后端 NotificationVO）
- *
- * `bizType` + `bizId` 是跳转指针，允许悬空（来源被删后不可点，通知本身仍可读）。
- * COMMENT_REPLIED 的 biz 指向帖子而非评论——同一帖子下的多次回复按话题聚合成一条。
- */
+/** 站内通知（后端 NotificationVO） */
 export interface Notification {
     id: string;
     type: string;
@@ -211,11 +170,7 @@ export interface Notification {
     createdAt?: string;
 }
 
-/**
- * 后台用户（后端 UserVO，脱敏、无 token）
- *
- * 「成员」身份就是在这里给的：管理员把 userRole 从 `user` 改成 `member`。
- */
+/** 后台用户（后端 UserVO，脱敏、无 token） */
 export interface AdminUser {
     id: string;
     userAccount: string;
@@ -228,7 +183,7 @@ export interface AdminUser {
     updatedAt?: string;
 }
 
-// ==================== 帖子 / 评论模块 ====================
+// 帖子 / 评论模块
 
 /** C 端帖子列表项（后端 PostFrontVO；不含正文——正文只在详情接口返回） */
 export interface Post {
@@ -254,20 +209,10 @@ export interface Post {
 
 /** C 端帖子详情（后端 PostFrontDetailVO：比列表多一个 Markdown 正文） */
 export interface PostDetail extends Post {
-    // 正文（Markdown，图片内嵌其中）
-    //
-    // 它是成员提交的内容，比管理员录入的项目正文更不可信，
-    // 渲染前必须走「marked → DOMPurify 白名单清洗 → v-html」，
-    // 且要额外限制 img 的 src 只能是站内路径（见 PostDetail.vue）
     content?: string | null;
 }
 
-/**
- * 带审核状态的帖子（后端 PostVO）
- *
- * 「我的发帖」「待审队列」「帖子管理」三处共用同一个 VO：管理员本就要看到作者看得到的全部信息，
- * 另起一套只会造成类型漂移。
- */
+/** 带审核状态的帖子（后端 PostVO） */
 export interface PostAudit {
     id: string;
     title: string;
@@ -275,19 +220,12 @@ export interface PostAudit {
     coverImage?: string | null;
     // 作者 ID（管理端用来定位到人；作者本人视角下就是自己）
     authorId?: string | null;
-    // 作者展示名（后端批量填充）
-    //
-    // 在队成员取成员姓名（与门户口径一致），查不到档案时兜底账号昵称——
-    // 帖子不会因成员离队而消失，老帖子的作者也不能显示成空白
     authorName?: string | null;
     // 审核状态：0-待审, 1-已通过, 2-已驳回
     status?: number | null;
     // 驳回理由（仅已驳回时有意义）
     rejectReason?: string | null;
     auditAt?: string | null;
-    // AI 审核结论：0-未判, 1-安全(自动通过), 2-违规(自动驳回), 3-灰色(转人工), 4-判定失败(转人工)
-    //
-    // 「未判」与「判定失败」是两回事：前者只是还没轮到，后者说明 AI 出故障了
     aiAuditStatus?: number | null;
     // AI 给出的理由（给管理端参考；作者也能看到针对自己内容的说明）
     aiReason?: string | null;
@@ -300,21 +238,13 @@ export interface PostAudit {
     createdAt?: string;
 }
 
-/**
- * 管理端帖子详情（后端 PostAdminDetailVO = PostVO + 正文）
- *
- * 编辑弹窗回填正文专用：列表 VO 不带 content，公开详情只返回已通过的帖子且会自增浏览量。
- */
+/** 管理端帖子详情（后端 PostAdminDetailVO = PostVO + 正文） */
 export interface PostAdminDetail extends PostAudit {
     // 正文（Markdown，图片内嵌其中；成员提交的内容，按需做清洗处理）
     content?: string | null;
 }
 
-/**
- * 作者看自己「未公开」帖子的详情（后端 PostSelfDetailVO = PostVO + 正文）
- *
- * 改驳回稿的前置步骤：公开详情只返回已通过的帖子。仅本人 + 仅待审/已驳回，不累加浏览量。
- */
+/** 作者看自己「未公开」帖子的详情（后端 PostSelfDetailVO = PostVO + 正文） */
 export interface PostSelfDetail extends PostAudit {
     content?: string | null;
 }
@@ -335,11 +265,7 @@ export interface PageTraffic {
     uv: number;
 }
 
-/**
- * 流量总览（管理端「流量分析」页）
- *
- * UV 按前端 localStorage 的随机 uuid 去重，换设备 / 清缓存 / 无痕浏览都会算成新 UV，页面需注明。
- */
+/** 流量总览（管理端「流量分析」页） */
 export interface TrafficOverview {
     totalPv: number;
     totalUv: number;
@@ -363,9 +289,6 @@ export interface PostComment {
     // 楼层号（回复某条评论时为 null）
     floor?: number | null;
     createdAt?: string;
-    // 回复列表（只两层，由后端挂好树）
-    //
-    // 前端直接渲染这一层即可，不要自行二次组装
     children: PostComment[];
 }
 
@@ -387,29 +310,16 @@ export interface PostCommentAudit {
     createdAt?: string;
 }
 
-// ==================== 考勤模块 ====================
+// 考勤模块
 
-/**
- * 签到结果（后端 AttendanceCheckInVO）
- *
- * 刻意不返回 ip / userAgent，网络信息只以 inLan 布尔出现，前端也不要展示网段或位置。
- */
+/** 签到结果（后端 AttendanceCheckInVO） */
 export interface AttendanceCheckIn {
     userId: string;
-    // 本次签到时刻（东八区，精确到秒）
     checkInAt?: string;
-    // 本次是否判为内网（命中工作室网段）
-    inLan?: boolean | null;
-    // 本月累计签到次数（含本次）
     monthCount?: number | null;
 }
 
-/**
- * 今日出勤看板项（后端 AttendanceBoardVO；仅工作室成员可见）
- *
- * 未打卡的成员同样在列表里（checkedIn=false + checkInAt=null），
- * 前端才能区分「今天还没来」而不是直接消失。
- */
+/** 今日出勤看板项（后端 AttendanceBoardVO；仅工作室成员可见） */
 export interface AttendanceBoardItem {
     userId: string;
     // 展示名：来自 studio_member.name，不取登录账号
@@ -418,15 +328,9 @@ export interface AttendanceBoardItem {
     checkInAt?: string | null;
     // 今日是否已打卡
     checkedIn?: boolean | null;
-    // 下次可签到时刻（东八区）；null 表示当前不受防抖限制
-    //
-    // 由后端按「当天最后一次签到 + 配置间隔」算好，前端不要自己拿 checkInAt 加 60 秒：
-    // 间隔是配置项，写死会在运维调整后与后端判断不一致
     nextCheckInAt?: string | null;
     // 本月打卡次数（自然月内的签到条数）
     monthCount?: number | null;
-    // 今日是否内网签到
-    inLan?: boolean | null;
 }
 
 /** 我的签到历史项（后端 AttendanceMeVO，只能查自己的） */
@@ -436,17 +340,11 @@ export interface AttendanceRecord {
     attendanceDate?: string | null;
     // 签到时刻（东八区，精确到秒）
     checkInAt?: string | null;
-    // 是否内网签到
-    inLan?: boolean | null;
 }
 
-// ==================== 后台与 AI 的补充类型 ====================
+// 后台与 AI 的补充类型
 
-/**
- * 后台成员视图（后端 MemberVO）
- *
- * 比 C 端多出 userId / sortOrder 等内部字段，只在 admin 面前出现，不要共用 C 端类型。
- */
+/** 后台成员视图（后端 MemberVO） */
 export interface AdminMember extends Member {
     // 绑定的登录账号 ID；未绑定为 null
     userId?: string | null;
@@ -465,20 +363,12 @@ export interface AiSession {
     messageCount?: number | null;
 }
 
-// ==================== 刷题模块 ====================
+// 刷题模块
 
-/**
- * 刷题模式：0-顺序，1-错题重刷，2-随机
- *
- * 三者职责不重叠：顺序负责「覆盖」（排除已作答），错题负责「消灭」（只出待复习），随机负责「抽查」。
- */
+/** 刷题模式：0-顺序，1-错题重刷，2-随机 */
 export type QuizMode = 0 | 1 | 2;
 
-/**
- * 题型：0-单选（点击即提交），1-多选（需点提交，全对才得分）
- *
- * 没有「判断」：判断题就是选项为「正确 / 错误」的单选。
- */
+/** 题型：0-单选（点击即提交），1-多选（需点提交，全对才得分） */
 export type QuizQuestionType = 0 | 1;
 
 /** 选项（不含正确性：正确答案由 QuizVerdict 单独给出） */
@@ -487,12 +377,7 @@ export interface QuizOption {
     content: string;
 }
 
-/**
- * 题目（答题前）
- *
- * 结构上没有 correctLabels / analysis，答案与解析只在提交后的 QuizVerdict 里。
- * 不要为了「前端先判一下」往这里加字段——那等于把答案发给了客户端。
- */
+/** 题目（答题前） */
 export interface QuizQuestion {
     id: string;
     type: QuizQuestionType;
@@ -535,8 +420,6 @@ export interface QuizVerdict {
     chosenLabels: string;
     correctLabels: string;
     analysis?: string | null;
-    // 本题对错题本的影响：
-    // added-首次入本 / reopened-消解后再错 / progress-连对进度 / resolved-已消解 / none-无副作用
     wrongBookAction: 'added' | 'reopened' | 'progress' | 'resolved' | 'none';
     // 还差几次消解（仅 progress 时有值）
     remainingStreak?: number | null;
@@ -626,12 +509,7 @@ export interface QuizImportResult {
     errors: QuizImportError[];
 }
 
-/**
- * 管理端操作日志（后端 OperationLogVO）
- *
- * 账号 / 昵称 / 对象标题都是写入时的**快照**：账号被删、帖子被删之后，
- * 这条记录仍然是可读证据，因此前端不要拿它去关联查询真实用户。
- */
+/** 管理端操作日志（后端 OperationLogVO） */
 export interface OperationLog {
     id: string;
     operatorId: string;
@@ -659,12 +537,27 @@ export interface OperationActionOption {
     targetTypeLabel: string;
 }
 
-/**
- * 管理端举报记录（后端 ReportVO）
- *
- * targetTitle 是读取时从业务表取的展示标题（帖子标题 / 评论摘要），内容被删后为 null，
- * 前端要兜底成「内容已删除」，不能因为标题为空就整行不显示。
- */
+/** 管理端：成员某月签到汇总（后端 AttendanceMonthStatVO） */
+export interface AttendanceMonthStat {
+    userId: string;
+    userName?: string | null;
+    // 0-在读/在队，1-毕业/离队（历史月份可能是在队、现已离队）
+    memberStatus?: number | null;
+    // 当月签到天数（按日期去重）
+    days: number;
+    // 当月签到次数（原始记录数）
+    times: number;
+    firstAt?: string | null;
+    lastAt?: string | null;
+}
+
+/** 管理端：某成员某月的一次签到（后端 AttendanceRecordVO） */
+export interface AttendanceCheckInRecord {
+    checkInAt: string;
+    ip?: string | null;
+}
+
+/** 管理端举报记录（后端 ReportVO） */
 export interface ReportTicket {
     id: string;
     // post / comment

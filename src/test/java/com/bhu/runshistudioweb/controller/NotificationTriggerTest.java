@@ -25,16 +25,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 站内通知 · 触发点测试（走真实接口全流程）
  *
- * 契约正确不代表「该发的时候会发」——这组用例盯三个接线点：
- * 帖子审核结论（通过 / 驳回）、评论回复通过、成员身份授予。
- * 全部走 HTTP 接口（建帖 → 审核 → 查通知），不直接调 Service：
- * 要验证的正是「接口链路走完，通知有没有产生」。
- *
- * 评论为什么走人工审核而不是等 AI：评论先审后发，测试环境未配 AI
- * （判定失败转人工），异步回调与人工审核的先后顺序两种都安全——
- * 人工先审（状态已离开发审），AI 后到（eq 待审更新 0 行），互不干扰。
- * 这也顺带验证了「通知挂在评论真正可见的那一刻」而非提交那一刻。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -74,7 +64,7 @@ class NotificationTriggerTest {
         replierToken = support.tokenOf(replierId);
     }
 
-    // ==================== 工具 ====================
+    // 工具
 
     /** 建一篇待审帖子，返回帖子 ID */
     private long createPendingPost(String token, String title) {
@@ -93,16 +83,7 @@ class NotificationTriggerTest {
         assertEquals("00000", support.code(body), "审核失败：" + body);
     }
 
-    /**
-     * 直接给账号建一条在队成员档案（绕过接口，只做测试前置）
-     *
-     * <p>为什么用 Mapper 直插而不走 {@code /member/add}：本类的关注点是
-     * 「通知有没有发」，不是「建档接口好不好使」——建档另有
-     * {@code StudioMemberCrudTest} 与 {@code MemberIdentityConsistencyTest} 覆盖。
-     * 前置条件越薄，用例的失败原因越集中在被测行为上。
-     *
-     * <p>用固定 ID 段 + 先删后插，保证重复执行不膨胀。
-     */
+    /** 直接给账号建一条在队成员档案（绕过接口，只做测试前置） */
     private void createMemberProfile(long userId, String name) {
         jdbcTemplate.update("DELETE FROM studio_member WHERE user_id = ? AND deleted_at = 0", userId);
         StudioMember member = new StudioMember();
@@ -126,7 +107,7 @@ class NotificationTriggerTest {
         return null;
     }
 
-    // ==================== 帖子审核 ====================
+    // 帖子审核
 
     @Test
     @DisplayName("帖子审核通过：作者收到 POST_APPROVED")
@@ -195,7 +176,7 @@ class NotificationTriggerTest {
         assertEquals(1, support.data(page).get("records").size(), "重复审核不能产生重复通知：" + page);
     }
 
-    // ==================== 评论回复 ====================
+    // 评论回复
 
     @Test
     @DisplayName("评论回复通过审核：父评论作者收到 COMMENT_REPLIED")
@@ -248,18 +229,11 @@ class NotificationTriggerTest {
         assertEquals(null, selfReplyNotification, "不能给自己发通知");
     }
 
-    // ==================== 成员授予 ====================
+    // 成员授予
 
     @Test
     @DisplayName("授予成员身份：用户收到 MEMBER_GRANTED；改资料不重复发")
     void memberGrantNotifiesOnce() {
-        // setUp 里 replier 是普通 user；把他提为 member。
-        //
-        // 必须先建成员档案再改角色（这是后端新增的守卫）：
-        // 授予 member/admin 角色时，后端会校验「该账号必须有档案」，
-        // 否则拒绝并提示先去建档——这正是修掉「有角色没档案 → 功能不显示/报错」的措施。
-        // 真实流程也是如此：后台要么走「转为成员」（一步建档案 + 改角色），
-        // 要么先在「成员管理」建档绑定，再回来改角色。
         long replierId = Long.parseLong(
                 support.data(support.getBody("/user/current", replierToken)).get("id").asText());
         createMemberProfile(replierId, "通知测试成员");

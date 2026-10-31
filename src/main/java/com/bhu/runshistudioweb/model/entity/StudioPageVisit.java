@@ -13,11 +13,6 @@ import java.time.LocalDateTime;
 /**
  * 门户页面访问记录实体（对应 studio_page_visit）
  *
- * 没有逻辑删除与审计列：访问记录只增不改不删，加了只会让每个查询多带条件。
- *
- * 隐私口径：只记 visitorId（前端随机 uuid）而不记 IP / UA，UV 去重不需要个人数据；
- * referrerHost 与 pagePath 都不含 query，避免 token 随埋点外泄。
- *
  * @author shaoshing
  */
 @Data

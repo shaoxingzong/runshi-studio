@@ -43,15 +43,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * 向量强制重建（观察项 e /）验收测试
  *
- * 验证的核心场景：向量库是进程内内存，应用重启后 chunk 行还在但向量全没了。
- * 此时 sync-all 会因为内容哈希未变而全部 skipped，
- * 检索一直 0 命中——只有 reindex-all 能恢复，而且它对手工录入（manual）
- * 的文档同样有效（那些文档没有业务源可读，sync 救不了它们）。
- *
- * 这里用「清空向量库」来等价模拟重启：重启的本质就是向量消失、chunk 行保留。
- *
- * 类名以 Ai 开头：新建 Spring 测试上下文，排序约束见 AiKnowledgeManageTest 类注释。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -152,7 +143,7 @@ class AiReindexTest {
         String token = adminToken();
         long projectId = createProject();
 
-        // ① 入库：一个 source 类（项目）+ 一个 manual 类（手工录入）
+        // 入库：一个 source 类（项目）+ 一个 manual 类（手工录入）
         assertEquals("00000", code(postJson("/knowledge/doc/sync",
                 "{\"sourceType\":\"project\",\"sourceId\":" + projectId + "}", token)), "同步项目应成功");
         assertEquals("00000", code(postJson("/knowledge/doc/manual",
@@ -165,17 +156,17 @@ class AiReindexTest {
         assertTrue(hitCount(PROJECT_CONTENT) >= 1, "入库后项目块应能检索到");
         assertTrue(hitCount(MANUAL_CONTENT) >= 1, "入库后手工文档块应能检索到");
 
-        // ② 模拟重启：清空向量库（chunk 行仍在）
+        // 模拟重启：清空向量库（chunk 行仍在）
         knowledgeBaseManager.getEmbeddingStore().removeAll(ids);
         assertEquals(0, hitCount(PROJECT_CONTENT), "向量被清空后应 0 命中");
 
-        // ③ sync-all 会因为「内容哈希未变」全部跳过，检索仍然救不回来
+        // sync-all 会因为「内容哈希未变」全部跳过，检索仍然救不回来
         String syncAll = postJson("/knowledge/doc/sync-all", "{}", token);
         assertEquals("00000", code(syncAll), "sync-all 应成功：" + syncAll);
         assertTrue(data(syncAll).get("skipped").asInt() >= 1, "内容未变应被跳过：" + syncAll);
         assertEquals(0, hitCount(PROJECT_CONTENT), "sync-all 跳过后检索仍未恢复");
 
-        // ④ reindex-all：直接用 chunk 文本重新嵌入，恢复检索
+        // reindex-all：直接用 chunk 文本重新嵌入，恢复检索
         String reindex = postJson("/knowledge/doc/reindex-all", "{}", token);
         assertEquals("00000", code(reindex), "reindex-all 应成功：" + reindex);
         JsonNode result = data(reindex);
@@ -198,7 +189,7 @@ class AiReindexTest {
                 "匿名应 A0201");
     }
 
-    // ==================== 工具 ====================
+    // 工具
 
     private long createProject() {
         StudioProject project = new StudioProject();

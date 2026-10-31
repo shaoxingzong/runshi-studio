@@ -1,14 +1,7 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
 
-/**
- * 403 页
- *
- * 触发场景：已登录但不是管理员的人访问 /admin/*（路由守卫拦下送来这里）。
- * 不能跳后台登录页——对已登录的人说「请先登录」，信息是错的。
- *
- * 这只是体验层：真正的权限判定在后端 `@SaCheckRole("admin")`。
- */
+/** 403 页 */
 const router = useRouter();
 </script>
 

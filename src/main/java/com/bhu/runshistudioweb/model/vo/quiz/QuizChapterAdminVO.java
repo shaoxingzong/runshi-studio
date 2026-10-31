@@ -8,12 +8,6 @@ import java.util.List;
 /**
  * 管理端「章节」视图（含停用题，与 C 端 QuizChapterVO 口径不同）
  *
- * 不复用 C 端的 QuizChapterVO：两端的 questionCount 口径不一样——C 端只数启用题
- * （用户看到的是「能刷多少」），管理端要数全部题（管理员看到的是「这一章有多少存量」）。
- * 共用一个 VO 必然有一端拿到的数字是错的，而这种错不会报错、只会让人困惑。
- *
- * enabledCount 单独给一个字段，管理端就能显示「共 50 题（启用 48）」。
- *
  * @author shaoshing
  */
 @Data

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
 import type { Directive } from 'vue';
 import { use } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
@@ -8,14 +8,10 @@ import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/compon
 import VChart from 'vue-echarts';
 import type { EChartsOption } from 'echarts';
 import { portalApi } from '@/api/portal';
-import { postApi } from '@/api/post';
-import type { Overview, Post } from '@/api/types';
+import type { Overview } from '@/api/types';
 import ErrorRetry from '@/components/ErrorRetry.vue';
+import PostSpotlight from '@/components/PostSpotlight.vue';
 import ProjectSpotlight from '@/components/ProjectSpotlight.vue';
-import SmartImage from '@/components/SmartImage.vue';
-
-// ECharts 按需注册：只引入真正用到的图表（柱状 / 饼图）与组件，
-// 避免把近 1MB 的整包 ECharts 打进首屏。
 use([CanvasRenderer, BarChart, PieChart, GridComponent, TooltipComponent, LegendComponent]);
 
 const overview = ref<Overview | null>(null);
@@ -29,59 +25,49 @@ const TYPE_TEXT: Record<string, string> = {
     patent: '专利',
     paper: '论文',
 };
+/** 技术滚动条：把工作室实际在用的 Java 全栈技术都列上（后端 → 前端 → 部署运维） */
+const TECH = [
+    'Java 21',
+    'Spring Boot',
+    'Spring MVC',
+    'Spring Validation',
+    'Sa-Token',
+    'MyBatis-Plus',
+    'MySQL',
+    'Redis',
+    'LangChain4j',
+    'Maven',
+    'Lombok',
+    'Knife4j',
+    'Vue 3',
+    'TypeScript',
+    'Vite',
+    'Pinia',
+    'Vue Router',
+    'Element Plus',
+    'ECharts',
+    'Axios',
+    'Docker',
+    'Nginx',
+    'Linux',
+    'Git',
+];
 
-// 首页技术滚动条的内容：纯文案，不增加任何接口请求。
-// 只放团队真实在用的技术，避免为了好看堆一串与项目无关的关键词。
-const TECH = ['Spring Boot', 'Vue 3', 'MyBatis-Plus', 'MySQL', 'Redis', 'LangChain4j', 'Docker', 'Nginx'];
 
-
-// ==================== 社区精选 ====================
-
-/**
- * 首页只展示 3 篇（1 头条 + 2 榜单），再多会把首页拉得比项目区还长。
- * 拉 9 篇是因为公开列表只有「置顶优先 + 时间倒序」，要在客户端按热度重排，样本太小排序就没意义。
- */
-const EXCELLENT_COUNT = 3;
-const EXCELLENT_FETCH = 9;
-
-const posts = ref<Post[]>([]);
-/** 文章总数（分页元数据里的 total，字符串，比较/展示前要转数字） */
+/** 社区文章总数：由「社区精选」轮播组件加载后回传，首页只用来填数据条 */
 const postsTotal = ref<number | null>(null);
-const postsLoading = ref(false);
-const postsError = ref('');
 /** 项目总数：hero 数据条用；失败时保持 null（显示占位符，不打扰首屏） */
 const projectTotal = ref<number | null>(null);
 
-/**
- * 热度评分：点赞权重最高（主动表达认可的成本比浏览高得多），评论次之，浏览最低。
- * 这是产品口径而非算法——后端没有热度字段，此排序只影响首页展示，不参与任何业务判断。
- */
-const HOT_WEIGHT = { like: 6, comment: 4, view: 1 };
+/** 首页可跳转的分区：宽屏侧边快捷栏的锚点与滚动高亮共用这套 key */
+type SectionKey = 'posts' | 'projects' | 'stats';
 
-function hotScore(post: Post): number {
-    return (
-        (post.likeCount ?? 0) * HOT_WEIGHT.like +
-        (post.commentCount ?? 0) * HOT_WEIGHT.comment +
-        (post.viewCount ?? 0) * HOT_WEIGHT.view
-    );
-}
+const postsRef = ref<HTMLElement | null>(null);
+const projectsRef = ref<HTMLElement | null>(null);
+const statsRef = ref<HTMLElement | null>(null);
+const activeSection = ref<SectionKey | ''>('');
 
-/** 精选：置顶优先（运营的显式意志），其次按热度分倒序 */
-const excellentPosts = computed(() =>
-    [...posts.value]
-        .sort((a, b) => (b.pinned ?? 0) - (a.pinned ?? 0) || hotScore(b) - hotScore(a))
-        .slice(0, EXCELLENT_COUNT),
-);
-
-/** 头条文章：精选里的第一篇，用大封面呈现 */
-const featuredPost = computed(() => excellentPosts.value[0] ?? null);
-/** 榜单文章：其余精选，用横向小卡片 */
-const sidePosts = computed(() => excellentPosts.value.slice(1));
-
-/**
- * 首页数据条：三个数字分别来自证书 / 文章 / 项目三个模块。
- * 刻意不新增聚合接口——它们只在首页出现，为三个数字建一个后端接口不值得。
- */
+/** 首页数据条：三个数字分别来自证书 / 文章 / 项目三个模块。刻意不新增聚合接口——它们只在首页出现，为三个数字建一个后端接口不值得。 */
 const metrics = computed(() => [
     {
         key: 'award',
@@ -91,7 +77,7 @@ const metrics = computed(() => [
         icon: ICON_PATHS.award,
     },
     { key: 'article', label: '社区文章', value: postsTotal.value, unit: '篇', icon: ICON_PATHS.article },
-    { key: 'project', label: '项目案例', value: projectTotal.value, unit: '个', icon: ICON_PATHS.project },
+    { key: 'project', label: '项目', value: projectTotal.value, unit: '个', icon: ICON_PATHS.project },
 ]);
 
 /** 分布数据转成有序数组：图表数据与「是否有数据」的判断共用同一份 */
@@ -161,11 +147,7 @@ const typeOption = computed<EChartsOption>(() => ({
     ],
 }));
 
-/**
- * 首页大盘（证书维度）
- *
- * 与帖子加载是两套独立错误态：大盘挂了不影响社区精选，反之亦然，所以拆成两个请求。
- */
+/** 首页大盘（证书维度） */
 async function load() {
     loading.value = true;
     error.value = '';
@@ -175,28 +157,12 @@ async function load() {
         error.value = (e as Error).message;
     } finally {
         loading.value = false;
+        // 荣誉分区随 overview 挂载/卸载：等 DOM 更新后重算一次高亮，避免侧边栏状态落后于页面
+        void nextTick(updateActiveSection);
     }
 }
 
-/** 拉取社区文章并按热度挑出精选；失败时给出可重试的页内提示，不弹全局消息 */
-async function loadPosts() {
-    postsLoading.value = true;
-    postsError.value = '';
-    try {
-        const page = await postApi.list({ current: 1, pageSize: EXCELLENT_FETCH });
-        posts.value = page.records ?? [];
-        postsTotal.value = Number(page.total ?? 0);
-    } catch (e) {
-        postsError.value = (e as Error).message || '社区文章加载失败';
-    } finally {
-        postsLoading.value = false;
-    }
-}
-
-/**
- * 项目总数：只发一次 pageSize=1 的请求，拿分页元数据里的 total。
- * 失败静默——数据条属于装饰性信息，为它弹错误提示反而打断首屏阅读。
- */
+/** 项目总数：只发一次 pageSize=1 的请求，拿分页元数据里的 total。失败静默——数据条属于装饰性信息，为它弹错误提示反而打断首屏阅读。 */
 async function loadProjectTotal() {
     try {
         const page = await portalApi.projectList({ current: 1, pageSize: 1 });
@@ -208,9 +174,23 @@ async function loadProjectTotal() {
 
 onMounted(() => {
     void load();
-    void loadPosts();
     void loadProjectTotal();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    updateActiveSection();
 });
+
+onBeforeUnmount(() => {
+    window.removeEventListener('scroll', onScroll);
+    if (spyFrame) {
+        window.cancelAnimationFrame(spyFrame);
+        spyFrame = 0;
+    }
+});
+
+/** 轮播组件加载完成后回传文章总数：数据条用它显示「社区文章 N 篇」 */
+function onPostsTotal(total: number) {
+    postsTotal.value = total;
+}
 
 /** 数字格式化：过万转「万」，避免数据条被长数字撑开 */
 function formatCount(value?: number | null): string {
@@ -224,28 +204,6 @@ function formatCount(value?: number | null): string {
     return String(num);
 }
 
-/** 日期只取到天：首页的时间信息是「大概什么时候发的」，精确到秒没有意义 */
-function formatDate(value?: string | null): string {
-    return value ? value.slice(0, 10) : '';
-}
-
-/** 封面占位用的首字（与项目轮播同一套策略：没图也不出现空白块） */
-function initialOf(text?: string | null): string {
-    return text?.trim().charAt(0).toUpperCase() || '润';
-}
-
-/** 无封面时的渐变底：按序号轮换，避免几篇文章的占位长得一模一样 */
-const COVER_GRADIENTS = [
-    'linear-gradient(135deg, #1d4ed8 0%, #38bdf8 100%)',
-    'linear-gradient(135deg, #6d28d9 0%, #a78bfa 100%)',
-    'linear-gradient(135deg, #0e7490 0%, #2dd4bf 100%)',
-    'linear-gradient(135deg, #be123c 0%, #fb7185 100%)',
-];
-
-function coverGradient(index: number): string {
-    return COVER_GRADIENTS[index % COVER_GRADIENTS.length];
-}
-
 /** 数据条图标：单 path 的线性图标，不引图标库（首页只有三个图标，不值得增加依赖） */
 const ICON_PATHS = {
     award: 'M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0V4Zm10 1h3v1.6a3.4 3.4 0 0 1-3.2 3.4M7 5H4v1.6a3.4 3.4 0 0 0 3.2 3.4',
@@ -253,12 +211,66 @@ const ICON_PATHS = {
     project: 'M12 3 20 7.4v9.2L12 21l-8-4.4V7.4L12 3Zm0 0v9m8-4.6-8 4.6-8-4.6',
 } as const;
 
+/** 分区顺序与页面实际顺序一致：社区 → 项目 → 荣誉 */
+const SECTIONS: { key: SectionKey; label: string; icon: string }[] = [
+    { key: 'posts', label: '社区', icon: ICON_PATHS.article },
+    { key: 'projects', label: '项目', icon: ICON_PATHS.project },
+    { key: 'stats', label: '荣誉', icon: ICON_PATHS.award },
+];
+
+/** 荣誉锚点只在有数据（分区真实存在）时展示，避免点了没反应 */
+const railSections = computed(() => SECTIONS.filter((item) => item.key !== 'stats' || overview.value !== null));
+
+/** 锚点滚动要留出吸顶导航的高度，否则分区标题会被导航条盖住 */
+const ANCHOR_OFFSET = 74;
+
+function sectionEl(key: SectionKey): HTMLElement | null {
+    return { posts: postsRef.value, projects: projectsRef.value, stats: statsRef.value }[key];
+}
+
+function prefersReducedMotion(): boolean {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function scrollToSection(key: SectionKey) {
+    const el = sectionEl(key);
+    if (!el) {
+        return;
+    }
+    const top = el.getBoundingClientRect().top + window.scrollY - ANCHOR_OFFSET;
+    window.scrollTo({ top: Math.max(top, 0), behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+}
+
+function scrollToTop() {
+    window.scrollTo({ top: 0, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+}
+
 /**
- * 滚动入场指令 v-reveal
- *
- * 不用动画库：只需要「进入视口淡入上移」一种效果，IntersectionObserver 十几行就够。
- * 减少动态效果时不注册观察者（元素保持可见）；类名由 JS 添加，脚本异常时页面依然可读。
+ * 滚动高亮：分区顶边越过判定线即为当前分区。
+ * 不用 IntersectionObserver——分区高度差异大，按「进入视口比例」判断容易跳，按顶边位置更贴近阅读位置。
  */
+let spyFrame = 0;
+
+function updateActiveSection() {
+    spyFrame = 0;
+    const line = ANCHOR_OFFSET + 66;
+    let current: SectionKey | '' = '';
+    for (const item of SECTIONS) {
+        const el = sectionEl(item.key);
+        if (el && el.getBoundingClientRect().top <= line) {
+            current = item.key;
+        }
+    }
+    activeSection.value = current;
+}
+
+function onScroll() {
+    if (!spyFrame) {
+        spyFrame = window.requestAnimationFrame(updateActiveSection);
+    }
+}
+
+/** 滚动入场指令 v-reveal */
 const vReveal: Directive<HTMLElement, number | undefined> = {
     mounted(el, binding) {
         if (!('IntersectionObserver' in window)) {
@@ -294,297 +306,411 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
 </script>
 
 <template>
-    <div class="page home">
-        <section class="hero">
-            <span class="hero-orb orb-a" aria-hidden="true"></span>
-            <span class="hero-orb orb-b" aria-hidden="true"></span>
-            <!-- 极光层：大半径 conic 渐变 + 模糊，只做旋转（合成层动画），不参与布局 -->
-            <span class="hero-aurora" aria-hidden="true"></span>
+    <div class="home-view">
+        <!-- 全幅氛围层：.page 只有 1180px 宽，光晕挂在这里才能覆盖宽屏两侧的留白 -->
+        <div class="home-atmosphere" aria-hidden="true"></div>
+        <!-- 超宽屏两侧竖向刻度：贴近视口边缘，只做氛围，不参与内容布局 -->
+        <span class="edge-mark edge-mark--left" aria-hidden="true">
+            <span class="edge-line"></span>
+            <span class="edge-text">RUNSHI STUDIO</span>
+        </span>
+        <span class="edge-mark edge-mark--right" aria-hidden="true">
+            <span class="edge-line"></span>
+            <span class="edge-text">社区 · 项目 · 荣誉</span>
+        </span>
 
-            <div class="hero-card">
-                <div class="hero-visual">
-                    <div class="hero-cover-frame">
-                        <img src="/logo.jpg" alt="润石工作室" class="hero-cover" />
-                    </div>
-                    <span class="hero-badge">RUNSHI STUDIO</span>
-                </div>
+        <div class="page home">
+            <section class="hero">
+                <span class="hero-orb orb-a" aria-hidden="true"></span>
+                <span class="hero-orb orb-b" aria-hidden="true"></span>
+                <!-- 极光层：大半径 conic 渐变 + 模糊，只做旋转（合成层动画），不参与布局 -->
+                <span class="hero-aurora" aria-hidden="true"></span>
 
-                <div class="hero-copy">
-                    <h1>润石工作室</h1>
-                    <p class="hero-tagline">把课堂上的知识，做成真正能用的产品</p>
-                    <p class="lead">
-                        我们是一支由在校学生组成的软件开发团队，做项目、拿奖项、写技术文章，
-                        也用 AI 把工作室的经验沉淀成随时可问的知识库。
-                    </p>
-                    <div class="actions">
-                        <router-link to="/projects" class="btn primary">看看我们做过什么 <span class="arrow">→</span></router-link>
-                        <router-link to="/ai" class="btn ghost">问问 AI 助手</router-link>
-                    </div>
-                    <!-- 能力标签：给第一次来的人一个「他们能做什么」的快速印象 -->
-                    <div class="hero-meta">
-                        <span>网站与小程序开发</span>
-                        <span>AI 应用落地</span>
-                        <span>数据分析与可视化</span>
-                        <span>系统设计与实现</span>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 数据条：悬浮在首屏卡片下沿，用「半透明玻璃」卡片把三个模块的数字并排展示 -->
-            <div class="hero-metrics">
-                <div v-for="item in metrics" :key="item.key" class="metric">
-                    <span class="metric-icon">
-                        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <path
-                                :d="item.icon"
-                                stroke="currentColor"
-                                stroke-width="1.6"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            />
-                        </svg>
-                    </span>
-                    <div class="metric-body">
-                        <div class="metric-value">
-                            <template v-if="item.value === null">—</template>
-                            <template v-else>{{ formatCount(item.value) }}<span class="metric-unit">{{ item.unit }}</span></template>
+                <div class="hero-card">
+                    <div class="hero-visual">
+                        <div class="hero-cover-frame">
+                            <img src="/logo.jpg" alt="润石工作室" class="hero-cover" />
                         </div>
-                        <div class="metric-label">{{ item.label }}</div>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <section v-reveal class="section">
-            <div class="section-head">
-                <div>
-                    <h2>项目精选</h2>
-                </div>
-                <router-link to="/projects" class="more">全部项目 <span class="more-arrow">→</span></router-link>
-            </div>
-            <div class="spotlight-wrap">
-                <ProjectSpotlight />
-            </div>
-        </section>
-
-        <!-- 技术滚动条：纯 CSS transform 动画，列表只复制一份用于无缝循环，不增加接口与图片 -->
-        <div class="tech-strip" aria-hidden="true">
-            <div class="tech-track">
-                <div v-for="copy in 2" :key="copy" class="tech-group">
-                    <span v-for="tech in TECH" :key="`${copy}-${tech}`">{{ tech }}</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- ==================== 社区精选 ==================== -->
-        <section v-reveal class="section">
-            <div class="section-head">
-                <div>
-                    <h2>社区精选</h2>
-                </div>
-                <router-link to="/posts" class="more">逛逛社区 <span class="more-arrow">→</span></router-link>
-            </div>
-
-            <!-- 帖子接口失败：独立错误条 + 重试，不影响下方荣誉数据 -->
-            <div v-if="postsError" class="posts-error">
-                <span>{{ postsError }}</span>
-                <el-button link type="primary" @click="loadPosts">重试</el-button>
-            </div>
-
-            <!-- 加载中给容器一个最小高度：空容器高度为 0，v-loading 的遮罩会无处附着，
-                 用户只看到一块空白，分不清「正在加载」和「加载坏了」 -->
-            <div
-                v-else
-                v-loading="postsLoading"
-                class="picks-wrap"
-                :class="{ 'picks-wrap--loading': postsLoading }"
-            >
-                <!-- 没有文章：给出下一步动作，而不是留一块空白 -->
-                <div v-if="!postsLoading && !featuredPost" class="picks-empty">
-                    <p class="picks-empty-title">社区还没有文章</p>
-                    <p class="picks-empty-sub">第一篇技术分享，往往是从解决一个小问题开始的。</p>
-                    <router-link to="/posts" class="btn primary">去社区看看</router-link>
-                </div>
-
-                <div v-else class="picks" :class="{ single: sidePosts.length === 0 }">
-                    <!-- 头条：大封面 + 完整摘要 -->
-                    <router-link v-if="featuredPost" :to="`/posts/${featuredPost.id}`" class="pick-feature">
-                        <div class="pick-cover" :style="{ background: coverGradient(0) }">
-                            <img
-                                v-if="featuredPost.coverImage"
-                                :src="featuredPost.coverImage"
-                                :alt="featuredPost.title"
-                                loading="lazy"
-                            />
-                            <span v-else class="pick-initial">{{ initialOf(featuredPost.title) }}</span>
-                            <div class="pick-badges">
-                                <span class="pick-rank">头条</span>
-                                <span v-if="featuredPost.pinned === 1" class="pick-pin">置顶</span>
-                            </div>
-                        </div>
-
-                        <div class="pick-body">
-                            <div class="pick-author">
-                                <!-- 作者头像：有真实头像就用，没有则用姓名首字（SmartImage 统一兜底） -->
-                                <span class="avatar">
-                                    <SmartImage
-                                        :src="featuredPost.authorAvatar"
-                                        :alt="featuredPost.authorName || '工作室成员'"
-                                        :seed="featuredPost.authorId"
-                                    />
-                                </span>
-                                <span class="author-name">{{ featuredPost.authorName || '工作室成员' }}</span>
-                                <span class="sep">·</span>
-                                <span>{{ formatDate(featuredPost.createdAt) }}</span>
-                            </div>
-                            <h3 class="pick-title">{{ featuredPost.title }}</h3>
-                            <p class="pick-summary">
-                                {{ featuredPost.summary || '点击阅读全文，看看成员在这篇里写了什么。' }}
-                            </p>
-                            <div class="pick-stats">
-                                <span>浏览 {{ formatCount(featuredPost.viewCount) }}</span>
-                                <span>赞 {{ formatCount(featuredPost.likeCount) }}</span>
-                                <span>评论 {{ formatCount(featuredPost.commentCount) }}</span>
-                                <span class="pick-read">阅读全文 <i class="arrow">→</i></span>
-                            </div>
-                        </div>
-                    </router-link>
-
-                    <!-- 榜单：横向小卡片，名次用编号强化「精选」语义 -->
-                    <div v-if="sidePosts.length" class="pick-list">
-                        <router-link
-                            v-for="(post, index) in sidePosts"
-                            :key="post.id"
-                            :to="`/posts/${post.id}`"
-                            class="pick-item"
-                        >
-                            <div class="pick-thumb" :style="{ background: coverGradient(index + 1) }">
-                                <img
-                                    v-if="post.coverImage"
-                                    :src="post.coverImage"
-                                    :alt="post.title"
-                                    loading="lazy"
-                                />
-                                <span v-else class="thumb-initial">{{ initialOf(post.title) }}</span>
-                            </div>
-                            <div class="pick-item-body">
-                                <div class="rank-row">
-                                    <span class="rank-no">NO.0{{ index + 2 }}</span>
-                                    <span v-if="post.pinned === 1" class="mini-pin">置顶</span>
-                                </div>
-                                <h3>{{ post.title }}</h3>
-                                <p class="sum">{{ post.summary || '暂无摘要' }}</p>
-                                <div class="mini-meta">
-                                    <span class="mini-avatar">
-                                        <SmartImage
-                                            :src="post.authorAvatar"
-                                            :alt="post.authorName || '工作室成员'"
-                                            :seed="post.authorId"
-                                        />
-                                    </span>
-                                    <span class="author-name">{{ post.authorName || '工作室成员' }}</span>
-                                    <span>浏览 {{ formatCount(post.viewCount) }}</span>
-                                    <span>赞 {{ formatCount(post.likeCount) }}</span>
-                                </div>
-                            </div>
-                        </router-link>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- 大盘数据加载失败：用带重试按钮的统一组件，裸 alert 没有恢复手段，用户只能刷新整页 -->
-        <ErrorRetry v-if="error" :message="error" @retry="load" />
-
-        <div v-loading="loading">
-            <template v-if="overview">
-                <section v-reveal class="section stats-section">
-                    <div class="section-head">
-                        <div>
-                            <h2>荣誉数据</h2>
-                        </div>
-                        <router-link to="/certificates" class="more">进入荣誉墙 <span class="more-arrow">→</span></router-link>
+                        <span class="hero-badge">RUNSHI STUDIO</span>
                     </div>
 
-                    <!-- 大盘只有证书维度：对外暴露团队人数属于展示成员信息，与「成员不对外展示」冲突 -->
-                    <div class="stat-card">
-                        <div class="stat-icon-wrap">
-                            <svg class="stat-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                                <circle cx="12" cy="9" r="5.5" stroke="currentColor" stroke-width="1.6" />
+                    <div class="hero-copy">
+                        <h1>润石工作室</h1>
+                        <p class="hero-tagline">让知识走出课堂，把想法变成真正落地的产品</p>
+                        <p class="lead">我们是一支由北华大学与润石软件共建的团队——深耕真实项目、冲击竞赛奖项、输出技术干货，在实战中全面提升综合素质，为学院人才培养提供有效支撑。</p>
+                        <div class="actions">
+                            <router-link to="/projects" class="btn primary">看看我们做过什么 <span class="arrow">→</span></router-link>
+                            <router-link to="/ai" class="btn ghost">问问 AI 助手</router-link>
+                        </div>
+                        <!-- 能力标签：给第一次来的人一个「他们能做什么」的快速印象 -->
+                        <div class="hero-meta">
+                            <span>网站与小程序开发</span>
+                            <span>AI 应用落地</span>
+                            <span>数据分析与可视化</span>
+                            <span>系统设计与实现</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 数据条：悬浮在首屏卡片下沿，用「半透明玻璃」卡片把三个模块的数字并排展示 -->
+                <div class="hero-metrics">
+                    <div v-for="item in metrics" :key="item.key" class="metric">
+                        <span class="metric-icon">
+                            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                                 <path
-                                    d="M8.6 13.4 7 21.5l5-2.8 5 2.8-1.6-8.1"
+                                    :d="item.icon"
                                     stroke="currentColor"
                                     stroke-width="1.6"
                                     stroke-linecap="round"
                                     stroke-linejoin="round"
                                 />
                             </svg>
-                        </div>
-
-                        <div class="stat-body">
-                            <div class="stat-top">
-                                <div class="num">{{ overview.certificateTotal }}</div>
-                                <div class="label">荣誉证书总数</div>
+                        </span>
+                        <div class="metric-body">
+                            <div class="metric-value">
+                                <template v-if="item.value === null">—</template>
+                                <template v-else>{{ formatCount(item.value) }}<span class="metric-unit">{{ item.unit }}</span></template>
                             </div>
-                            <div v-if="levelEntries.length" class="level-chips">
-                                <span v-for="([key, value]) in levelEntries" :key="key" class="level-chip" :class="key">
-                                    <i class="dot"></i>{{ LEVEL_TEXT[key] || key }} {{ value }}
-                                </span>
-                            </div>
-                        </div>
-
-                        <svg class="stat-watermark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <circle cx="12" cy="9" r="5.5" stroke="currentColor" stroke-width="1.2" />
-                            <path
-                                d="M8.6 13.4 7 21.5l5-2.8 5 2.8-1.6-8.1"
-                                stroke="currentColor"
-                                stroke-width="1.2"
-                                stroke-linecap="round"
-                                stroke-linejoin="round"
-                            />
-                        </svg>
-                    </div>
-
-                    <div class="charts">
-                        <div class="card chart-card">
-                            <h2>荣誉按级别</h2>
-                            <p class="chart-sub">国家级 / 省级 / 市级与校级</p>
-                            <v-chart v-if="levelEntries.length" :option="levelOption" autoresize class="chart" />
-                            <el-empty v-else description="暂无数据" :image-size="60" />
-                        </div>
-                        <div class="card chart-card">
-                            <h2>荣誉按类型</h2>
-                            <p class="chart-sub">竞赛 / 软著 / 专利 / 论文</p>
-                            <v-chart v-if="typeEntries.length" :option="typeOption" autoresize class="chart" />
-                            <el-empty v-else description="暂无数据" :image-size="60" />
+                            <div class="metric-label">{{ item.label }}</div>
                         </div>
                     </div>
-                </section>
-            </template>
+                </div>
+            </section>
+
+            <!-- 社区精选：轮播区块保留，按需求去掉上方标题行 -->
+            <section ref="postsRef" v-reveal class="section">
+                <div class="spotlight-wrap">
+                    <PostSpotlight @total="onPostsTotal" />
+                </div>
+            </section>
+
+            <!-- 技术滚动条：纯 CSS transform 动画，列表只复制一份用于无缝循环，不增加接口与图片 -->
+            <div class="tech-strip" aria-hidden="true">
+                <div class="tech-track">
+                    <div v-for="copy in 2" :key="copy" class="tech-group">
+                        <span v-for="tech in TECH" :key="`${copy}-${tech}`">{{ tech }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 项目精选：静态卡片，固定展示排序最靠前的三个项目 -->
+            <section ref="projectsRef" v-reveal class="section">
+                <div class="section-head">
+                    <div>
+                        <h2>项目精选</h2>
+                    </div>
+                    <router-link to="/projects" class="more">全部项目 <span class="more-arrow">→</span></router-link>
+                </div>
+                <ProjectSpotlight />
+            </section>
+
+            <!-- 大盘数据加载失败：用带重试按钮的统一组件，裸 alert 没有恢复手段，用户只能刷新整页 -->
+            <ErrorRetry v-if="error" :message="error" @retry="load" />
+
+            <div v-loading="loading">
+                <template v-if="overview">
+                    <section ref="statsRef" v-reveal class="section stats-section">
+                        <div class="section-head">
+                            <div>
+                                <h2>荣誉数据</h2>
+                                <p class="section-sub">统计自 2024 年起</p>
+                            </div>
+                            <router-link to="/certificates" class="more">进入荣誉墙 <span class="more-arrow">→</span></router-link>
+                        </div>
+
+                        <!-- 大盘只有证书维度：对外暴露团队人数属于展示成员信息，与「成员不对外展示」冲突 -->
+                        <div class="stat-card">
+                            <div class="stat-icon-wrap">
+                                <svg class="stat-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                    <circle cx="12" cy="9" r="5.5" stroke="currentColor" stroke-width="1.6" />
+                                    <path
+                                        d="M8.6 13.4 7 21.5l5-2.8 5 2.8-1.6-8.1"
+                                        stroke="currentColor"
+                                        stroke-width="1.6"
+                                        stroke-linecap="round"
+                                        stroke-linejoin="round"
+                                    />
+                                </svg>
+                            </div>
+
+                            <div class="stat-body">
+                                <div class="stat-top">
+                                    <div class="num">{{ overview.certificateTotal }}</div>
+                                    <div class="label">荣誉证书总数</div>
+                                </div>
+                                <div v-if="levelEntries.length" class="level-chips">
+                                    <span v-for="([key, value]) in levelEntries" :key="key" class="level-chip" :class="key">
+                                        <i class="dot"></i>{{ LEVEL_TEXT[key] || key }} {{ value }}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <svg class="stat-watermark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <circle cx="12" cy="9" r="5.5" stroke="currentColor" stroke-width="1.2" />
+                                <path
+                                    d="M8.6 13.4 7 21.5l5-2.8 5 2.8-1.6-8.1"
+                                    stroke="currentColor"
+                                    stroke-width="1.2"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
+                        </div>
+
+                        <div class="charts">
+                            <div class="card chart-card">
+                                <h2>荣誉按级别</h2>
+                                <p class="chart-sub">国家级 / 省级 / 市级与校级</p>
+                                <v-chart v-if="levelEntries.length" :option="levelOption" autoresize class="chart" />
+                                <el-empty v-else description="暂无数据" :image-size="60" />
+                            </div>
+                            <div class="card chart-card">
+                                <h2>荣誉按类型</h2>
+                                <p class="chart-sub">竞赛 / 软著 / 专利 / 论文</p>
+                                <v-chart v-if="typeEntries.length" :option="typeOption" autoresize class="chart" />
+                                <el-empty v-else description="暂无数据" :image-size="60" />
+                            </div>
+                        </div>
+                    </section>
+                </template>
+            </div>
+
+            <section v-reveal class="cta-band">
+                <div class="cta-copy">
+                    <h2>把想法做成作品</h2>
+                    <p>从一行代码到上线项目，和一群认真做事的人一起成长。</p>
+                </div>
+                <div class="cta-actions">
+                    <router-link to="/posts" class="btn light">逛逛社区</router-link>
+                    <router-link to="/ai" class="btn outline-light">问问 AI 助手</router-link>
+                </div>
+            </section>
         </div>
 
-        <section v-reveal class="cta-band">
-            <div class="cta-copy">
-                <h2>把想法做成作品</h2>
-                <p>从一行代码到上线项目，和一群认真做事的人一起成长。</p>
-            </div>
-            <div class="cta-actions">
-                <router-link to="/posts" class="btn light">逛逛社区</router-link>
-                <router-link to="/ai" class="btn outline-light">问问 AI 助手</router-link>
-            </div>
-        </section>
+        <!-- 宽屏右侧快捷栏：只在两侧留白足够时出现，窄屏完全隐藏，不占用内容宽度 -->
+        <aside class="side-rail" aria-label="快捷导航">
+            <button
+                v-for="item in railSections"
+                :key="item.key"
+                type="button"
+                class="rail-item"
+                :class="{ active: activeSection === item.key }"
+                :aria-current="activeSection === item.key ? 'true' : undefined"
+                :title="item.label"
+                @click="scrollToSection(item.key)"
+            >
+                <svg class="rail-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                        :d="item.icon"
+                        stroke="currentColor"
+                        stroke-width="1.6"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    />
+                </svg>
+                <span class="rail-label">{{ item.label }}</span>
+            </button>
+
+            <span class="rail-divider" aria-hidden="true"></span>
+
+            <router-link to="/ai" class="rail-item" title="AI 助手">
+                <svg class="rail-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                        d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z"
+                        stroke="currentColor"
+                        stroke-width="1.6"
+                        stroke-linejoin="round"
+                    />
+                    <path
+                        d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15Z"
+                        fill="currentColor"
+                        opacity=".75"
+                    />
+                </svg>
+                <span class="rail-label">AI</span>
+            </router-link>
+
+            <span class="rail-divider" aria-hidden="true"></span>
+
+            <button type="button" class="rail-item" title="回到顶部" @click="scrollToTop">
+                <svg class="rail-icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path
+                        d="M12 19V5M6 11l6-6 6 6"
+                        stroke="currentColor"
+                        stroke-width="1.6"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                    />
+                </svg>
+                <span class="rail-label">顶部</span>
+            </button>
+        </aside>
     </div>
 </template>
 
 <style scoped>
-.home {
+/* 外层不限宽：全幅氛围层与两侧装饰都以整个页面为参照，而不是 1180px 的内容盒 */
+.home-view {
     position: relative;
-    /* 多层径向光晕：蓝主色 + 青色补光 + 一点紫，让首屏与纯白背景分开；
-       纯渐变绘制，不加载任何背景图 */
+    isolation: isolate;
+}
+
+/* 全幅氛围层：光晕原先挂在 .page 上，会停在 1180px 的内容边界；
+   放到外层后，宽屏两侧的留白也能被同一套光晕覆盖。纯渐变绘制，不加载背景图 */
+.home-atmosphere {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
     background:
         radial-gradient(1100px 520px at 50% -180px, rgb(37 99 235 / 14%), transparent 70%),
         radial-gradient(760px 420px at 92% 4%, rgb(14 165 233 / 10%), transparent 72%),
-        radial-gradient(620px 380px at 6% 16%, rgb(139 92 246 / 8%), transparent 70%);
+        radial-gradient(620px 380px at 6% 16%, rgb(139 92 246 / 8%), transparent 70%),
+        radial-gradient(720px 420px at 0% 46%, rgb(14 165 233 / 7%), transparent 72%),
+        radial-gradient(720px 420px at 100% 58%, rgb(37 99 235 / 7%), transparent 72%);
+    pointer-events: none;
+}
+
+/* 极淡的点阵只铺在页面上半段，并由 mask 向下淡出：两侧留白不再是纯白，又不会干扰下半段阅读 */
+.home-atmosphere::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(rgb(37 99 235 / 9%) 1px, transparent 1px);
+    background-size: 28px 28px;
+    opacity: 0.5;
+    -webkit-mask-image: linear-gradient(180deg, #000 0%, rgb(0 0 0 / 35%) 42%, transparent 72%);
+    mask-image: linear-gradient(180deg, #000 0%, rgb(0 0 0 / 35%) 42%, transparent 72%);
+    pointer-events: none;
+}
+
+.home {
+    position: relative;
+}
+
+/* ===== 宽屏右侧快捷栏 ===== */
+.side-rail {
+    display: none;
+}
+
+@media (min-width: 1440px) {
+    .side-rail {
+        position: fixed;
+        z-index: 80;
+        top: 50%;
+        /* 右沿停在 .page 外沿右侧 4px，与卡片之间留 24px；用 calc 跟随内容中线，宽屏不会越拉越远 */
+        right: calc((100vw - 1180px) / 2 - 62px);
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        width: 58px;
+        padding: 6px;
+        border: 1px solid rgb(37 99 235 / 12%);
+        border-radius: var(--radius-lg);
+        background: rgb(255 255 255 / 88%);
+        backdrop-filter: blur(12px);
+        box-shadow: var(--shadow-md);
+        transform: translateY(-50%);
+    }
+}
+
+.rail-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    height: 46px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 10px;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.rail-item:hover {
+    background: var(--brand-soft);
+    color: var(--brand);
+    text-decoration: none;
+}
+
+.rail-item.active {
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-weight: 600;
+}
+
+.rail-icon {
+    width: 18px;
+    height: 18px;
+}
+
+.rail-label {
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.rail-divider {
+    height: 1px;
+    margin: 4px 5px;
+    background: linear-gradient(90deg, transparent, var(--border), transparent);
+}
+
+/* ===== 超宽屏两侧竖向刻度 ===== */
+.edge-mark {
+    display: none;
+}
+
+@media (min-width: 1536px) {
+    .edge-mark {
+        position: fixed;
+        z-index: 40;
+        top: 50%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 14px;
+        width: 16px;
+        color: #94a3b8;
+        pointer-events: none;
+        user-select: none;
+        transform: translateY(-50%);
+    }
+
+    .edge-mark--left {
+        left: 26px;
+    }
+
+    .edge-mark--right {
+        right: 26px;
+    }
+
+    .edge-line {
+        width: 1px;
+        height: 86px;
+        background: linear-gradient(180deg, transparent, rgb(148 163 184 / 55%));
+    }
+
+    .edge-mark--right .edge-line {
+        background: linear-gradient(0deg, transparent, rgb(148 163 184 / 55%));
+    }
+
+    .edge-text {
+        writing-mode: vertical-rl;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.26em;
+        opacity: 0.7;
+    }
+
+    /* 左侧文字旋转 180° 后自下而上阅读，与右侧形成方向上的对照 */
+    .edge-mark--left .edge-text {
+        transform: rotate(180deg);
+    }
 }
 
 .hero {
@@ -655,11 +781,11 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
     align-items: center;
     padding: 30px 36px;
     border: 1px solid rgb(37 99 235 / 14%);
-    border-radius: 28px;
+    border-radius: var(--radius-xl);
     background:
         radial-gradient(620px 280px at 100% 0%, rgb(14 165 233 / 10%), transparent 70%),
         linear-gradient(135deg, #eff6ff 0%, #ffffff 55%, #f8fafc 100%);
-    box-shadow: 0 24px 60px rgb(15 23 42 / 8%), 0 4px 14px rgb(15 23 42 / 4%);
+    box-shadow: var(--shadow-lg);
     overflow: hidden;
 }
 
@@ -702,10 +828,10 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
 .hero-cover-frame {
     width: 100%;
     padding: 10px;
-    border-radius: 24px;
+    border-radius: var(--radius-xl);
     background: rgb(255 255 255 / 72%);
     border: 1px solid rgb(37 99 235 / 14%);
-    box-shadow: 0 18px 40px rgb(37 99 235 / 14%);
+    box-shadow: var(--shadow-md);
     animation: floaty 7s ease-in-out infinite;
 }
 
@@ -714,7 +840,7 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
     width: 100%;
     aspect-ratio: 1 / 1;
     object-fit: contain;
-    border-radius: 16px;
+    border-radius: var(--radius-lg);
     background: #fff;
 }
 
@@ -786,7 +912,7 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
     justify-content: center;
     gap: 8px;
     padding: 11px 22px;
-    border-radius: 10px;
+    border-radius: var(--radius-sm);
     font-size: 15px;
     font-weight: 600;
     transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
@@ -795,12 +921,12 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
 .btn.primary {
     background: linear-gradient(135deg, var(--brand) 0%, #0ea5e9 100%);
     color: #fff;
-    box-shadow: 0 10px 24px rgb(37 99 235 / 28%);
+    box-shadow: 0 8px 20px rgb(37 99 235 / 22%);
 }
 
 .btn.primary:hover {
     transform: translateY(-2px);
-    box-shadow: 0 14px 30px rgb(37 99 235 / 34%);
+    box-shadow: 0 10px 26px rgb(37 99 235 / 26%);
     text-decoration: none;
 }
 
@@ -872,17 +998,17 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
     gap: 12px;
     padding: 14px 18px;
     border: 1px solid rgb(37 99 235 / 12%);
-    border-radius: 16px;
+    border-radius: var(--radius-lg);
     /* 半透明玻璃：压在首屏与下一版块的交界处，靠模糊把两层内容区分开 */
     background: rgb(255 255 255 / 86%);
     backdrop-filter: blur(10px);
-    box-shadow: 0 14px 30px rgb(15 23 42 / 6%);
+    box-shadow: var(--shadow);
     transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
 
 .metric:hover {
     transform: translateY(-3px);
-    box-shadow: 0 18px 38px rgb(37 99 235 / 12%);
+    box-shadow: var(--shadow-md);
 }
 
 .metric-icon {
@@ -891,10 +1017,10 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
     place-items: center;
     width: 38px;
     height: 38px;
-    border-radius: 12px;
+    border-radius: var(--radius);
     background: linear-gradient(135deg, #2563eb, #0ea5e9);
     color: #fff;
-    box-shadow: 0 8px 18px rgb(37 99 235 / 24%);
+    box-shadow: 0 6px 16px rgb(37 99 235 / 18%);
 }
 
 .metric-icon svg {
@@ -965,11 +1091,19 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
     color: var(--text);
 }
 
+/* 分区副标题：用于补充统计口径等说明，字号比正文更轻 */
+.section-sub {
+    margin: 4px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
 /* 荣誉区块：用极淡的蓝底把它从上下两段白底内容里区分出来，
    让长页面有「章节感」而不是一条平铺直叙的白带 */
 .stats-section {
     padding: 32px 26px;
-    border-radius: 26px;
+    border-radius: var(--radius-xl);
     background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
     border: 1px solid rgb(37 99 235 / 8%);
 }
@@ -998,20 +1132,6 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
     transform: translateX(2px);
 }
 
-/* 轮播外层的 1px 渐变描边：比整块重做轮播样式更容易维护 */
-.spotlight-wrap {
-    padding: 1px;
-    border-radius: 16px;
-    background: linear-gradient(135deg, rgb(37 99 235 / 35%), rgb(14 165 233 / 10%), rgb(37 99 235 / 5%));
-    box-shadow: 0 22px 50px rgb(37 99 235 / 10%);
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-
-.spotlight-wrap:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 28px 60px rgb(37 99 235 / 16%);
-}
-
 .tech-strip {
     overflow: hidden;
     margin-top: 28px;
@@ -1026,7 +1146,8 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
 .tech-track {
     display: flex;
     width: max-content;
-    animation: marquee 30s linear infinite;
+    /* 条目变多后按比例放慢：速度保持原来看得清的水平，而不是越滚越快 */
+    animation: marquee 60s linear infinite;
 }
 
 .tech-group {
@@ -1061,356 +1182,6 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
     animation-play-state: paused;
 }
 
-/* ===== 社区精选 ===== */
-.picks-wrap--loading {
-    position: relative;
-    min-height: 240px;
-}
-
-.posts-error {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 12px 16px;
-    border: 1px solid rgb(220 38 38 / 22%);
-    border-radius: 12px;
-    background: #fef2f2;
-    color: #b91c1c;
-    font-size: 13px;
-}
-
-.picks {
-    display: grid;
-    grid-template-columns: 1.1fr 1fr;
-    gap: 18px;
-    align-items: stretch;
-}
-
-/* 只有一篇精选时让头条铺满整行，不要在右侧留一个空洞的列 */
-.picks.single {
-    grid-template-columns: 1fr;
-}
-
-.picks-empty {
-    padding: 44px 24px;
-    border: 1px dashed rgb(37 99 235 / 22%);
-    border-radius: 20px;
-    background: linear-gradient(120deg, #fff, #f0f7ff);
-    text-align: center;
-}
-
-.picks-empty-title {
-    margin: 0 0 6px;
-    font-size: 17px;
-    font-weight: 700;
-    color: var(--text);
-}
-
-.picks-empty-sub {
-    margin: 0 0 18px;
-    color: var(--muted);
-    font-size: 13px;
-}
-
-.pick-feature {
-    display: flex;
-    flex-direction: column;
-    border: 1px solid var(--border);
-    border-radius: 20px;
-    background: var(--surface);
-    box-shadow: var(--shadow);
-    overflow: hidden;
-    color: var(--text);
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
-}
-
-.pick-feature:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 26px 55px rgb(37 99 235 / 14%);
-    text-decoration: none;
-}
-
-.pick-cover {
-    position: relative;
-    aspect-ratio: 16 / 9;
-    overflow: hidden;
-}
-
-.pick-cover img {
-    display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    /* 图片缓慢放大：hover 时给一点「叙述感」，只改 transform，不触发布局 */
-    transition: transform 0.5s ease;
-}
-
-.pick-feature:hover .pick-cover img {
-    transform: scale(1.05);
-}
-
-.pick-initial {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    color: rgb(255 255 255 / 92%);
-    font-size: 72px;
-    font-weight: 800;
-    text-shadow: 0 4px 18px rgb(0 0 0 / 18%);
-    user-select: none;
-}
-
-.pick-badges {
-    position: absolute;
-    top: 12px;
-    left: 12px;
-    display: flex;
-    gap: 8px;
-}
-
-.pick-rank,
-.pick-pin {
-    padding: 3px 10px;
-    border-radius: 999px;
-    color: #fff;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-}
-
-.pick-rank {
-    background: rgb(15 23 42 / 78%);
-    backdrop-filter: blur(6px);
-}
-
-.pick-pin {
-    background: var(--brand);
-    box-shadow: 0 6px 16px rgb(37 99 235 / 35%);
-}
-
-.pick-body {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    gap: 10px;
-    padding: 18px 22px 20px;
-}
-
-.pick-author {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--muted);
-    font-size: 12px;
-}
-
-.avatar {
-    display: grid;
-    place-items: center;
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    overflow: hidden;
-    flex-shrink: 0;
-    background: linear-gradient(135deg, #2563eb, #0ea5e9);
-    color: #fff;
-    font-size: 12px;
-    font-weight: 700;
-}
-
-.author-name {
-    color: var(--text-secondary);
-    font-weight: 600;
-}
-
-.sep {
-    color: var(--border);
-}
-
-.pick-title {
-    margin: 0;
-    font-size: 21px;
-    line-height: 1.4;
-    letter-spacing: -0.01em;
-    /* 标题最多两行，避免长标题把摘要与数据挤出卡片 */
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-
-.pick-summary {
-    margin: 0;
-    color: var(--muted);
-    font-size: 14px;
-    line-height: 1.75;
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-
-.pick-stats {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 14px;
-    margin-top: auto;
-    padding-top: 10px;
-    border-top: 1px dashed var(--border);
-    color: var(--muted);
-    font-size: 12px;
-}
-
-.pick-read {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    margin-left: auto;
-    color: var(--brand);
-    font-weight: 600;
-}
-
-.pick-feature:hover .pick-read .arrow {
-    transform: translateX(3px);
-}
-
-.pick-list {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-}
-
-/* 两张榜单卡片均分右列高度，与左侧头条底边对齐 */
-.pick-item {
-    position: relative;
-    display: flex;
-    flex: 1;
-    gap: 14px;
-    min-width: 0;
-    padding: 14px;
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    background: var(--surface);
-    box-shadow: var(--shadow);
-    color: var(--text);
-    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
-}
-
-.pick-item:hover {
-    transform: translateY(-3px);
-    border-color: rgb(37 99 235 / 26%);
-    box-shadow: 0 18px 36px rgb(37 99 235 / 12%);
-    text-decoration: none;
-}
-
-.pick-thumb {
-    position: relative;
-    flex: 0 0 124px;
-    width: 124px;
-    aspect-ratio: 4 / 3;
-    border-radius: 12px;
-    overflow: hidden;
-}
-
-.pick-thumb img {
-    display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-
-.thumb-initial {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    color: rgb(255 255 255 / 92%);
-    font-size: 30px;
-    font-weight: 800;
-    text-shadow: 0 2px 12px rgb(0 0 0 / 18%);
-    user-select: none;
-}
-
-.pick-item-body {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    min-width: 0;
-}
-
-.rank-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.rank-no {
-    color: var(--brand);
-    font-size: 11px;
-    font-weight: 800;
-    letter-spacing: 0.1em;
-}
-
-.mini-pin {
-    padding: 1px 8px;
-    border-radius: 999px;
-    background: var(--brand-soft);
-    color: var(--brand);
-    font-size: 10px;
-    font-weight: 600;
-}
-
-.pick-item h3 {
-    margin: 0;
-    font-size: 15px;
-    line-height: 1.45;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-
-.pick-item .sum {
-    margin: 0;
-    color: var(--muted);
-    font-size: 12.5px;
-    line-height: 1.6;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-}
-
-.mini-meta {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 10px;
-    margin-top: auto;
-    color: var(--muted);
-    font-size: 12px;
-}
-
-/* 榜单条里的小头像：比头条小一号，不抢标题的注意力 */
-.mini-avatar {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    overflow: hidden;
-    flex-shrink: 0;
-    display: inline-flex;
-}
-
-.mini-avatar :deep(.img-fallback__box) {
-    font-size: 10px;
-}
-
 /* ===== 荣誉数据 ===== */
 .stat-card {
     position: relative;
@@ -1419,9 +1190,9 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
     gap: 22px;
     padding: 26px 30px;
     border: 1px solid rgb(37 99 235 / 14%);
-    border-radius: 20px;
+    border-radius: var(--radius-xl);
     background: linear-gradient(120deg, #fff 0%, #f0f7ff 100%);
-    box-shadow: 0 18px 40px rgb(37 99 235 / 8%);
+    box-shadow: var(--shadow-md);
     overflow: hidden;
 }
 
@@ -1433,10 +1204,10 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
     place-items: center;
     width: 64px;
     height: 64px;
-    border-radius: 18px;
+    border-radius: var(--radius-lg);
     background: linear-gradient(135deg, #2563eb, #0ea5e9);
     color: #fff;
-    box-shadow: 0 12px 26px rgb(37 99 235 / 28%);
+    box-shadow: 0 8px 20px rgb(37 99 235 / 20%);
 }
 
 .stat-icon {
@@ -1580,10 +1351,10 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
     gap: 28px;
     margin-top: 38px;
     padding: 30px 34px;
-    border-radius: 24px;
+    border-radius: var(--radius-xl);
     overflow: hidden;
     background: linear-gradient(120deg, #0f172a 0%, #1e3a8a 58%, #0369a1 100%);
-    box-shadow: 0 24px 55px rgb(15 23 42 / 18%);
+    box-shadow: var(--shadow-lg);
 }
 
 .cta-band::before,
@@ -1739,16 +1510,6 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
     .stat-card {
         padding: 22px;
     }
-
-    /* 914px 以下两列太挤：头条与榜单改成上下排布 */
-    .picks {
-        grid-template-columns: 1fr;
-    }
-
-    .pick-thumb {
-        flex-basis: 160px;
-        width: 160px;
-    }
 }
 
 @media (max-width: 760px) {
@@ -1812,7 +1573,7 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
     .stat-icon-wrap {
         width: 52px;
         height: 52px;
-        border-radius: 15px;
+        border-radius: var(--radius-lg);
     }
 
     .stat-icon {
@@ -1840,30 +1601,6 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
     }
 }
 
-@media (max-width: 560px) {
-    /* 榜单卡片的缩略图在窄屏让位给文字：124px 宽图 + 两行摘要已经放不下 */
-    .pick-item {
-        padding: 12px;
-    }
-
-    .pick-thumb {
-        flex-basis: 92px;
-        width: 92px;
-    }
-
-    .thumb-initial {
-        font-size: 24px;
-    }
-
-    .pick-title {
-        font-size: 19px;
-    }
-
-    .pick-body {
-        padding: 16px 16px 18px;
-    }
-}
-
 /* 尊重系统「减少动态效果」设置：所有装饰动画与过渡都关闭，内容依然完整可读 */
 @media (prefers-reduced-motion: reduce) {
     .hero-cover-frame,
@@ -1876,12 +1613,8 @@ const vReveal: Directive<HTMLElement, number | undefined> = {
 
     .btn,
     .more,
-    .spotlight-wrap,
     .chart-card,
     .metric,
-    .pick-feature,
-    .pick-item,
-    .pick-cover img,
     .reveal {
         transition: none;
     }

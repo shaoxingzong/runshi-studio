@@ -7,14 +7,7 @@ import ImageUploader from '@/components/ImageUploader.vue';
 import SmartImage from '@/components/SmartImage.vue';
 import type { AdminUser, PageResult } from '@/api/types';
 
-/**
- * 用户管理：「给注册用户授予成员身份」的地方
- *
- * 注册只能产生普通用户（`user`），管理员在这里改成 `member` / `admin`，或封禁（`userStatus=1`）。
- *
- * 角色取值必须是后端 `UserRoleEnum` 的原始值（user / member / admin），中文只用于显示——
- * 写错了 `@SaCheckRole` 会判不出来，而界面看起来一切正常。
- */
+/** 用户管理：「给注册用户授予成员身份」的地方 */
 const ROLES = [
     { value: 'user', label: '普通用户' },
     { value: 'member', label: '成员' },
@@ -30,7 +23,7 @@ const error = ref('');
 const records = computed(() => result.value?.records ?? []);
 const total = computed(() => Number(result.value?.total || 0));
 
-// ===== 重置密码 =====
+// 重置密码
 const pwdVisible = ref(false);
 const pwdTarget = ref<AdminUser | null>(null);
 const newPassword = ref('');
@@ -62,12 +55,7 @@ async function changeRole(row: AdminUser, value: unknown) {
     if (role === row.userRole) {
         return;
     }
-    /**
-     * 授予成员 / 管理员角色前，先确认该账号已有成员档案
-     *
-     * 准入判据是「studio_member 档案的 userId 命中当前账号」，userRole 只是权限标签；只改角色
-     * 不建档案时成员入口不会出现，硬进页面后端也返回 A0301。
-     */
+    /** 授予成员 / 管理员角色前，先确认该账号已有成员档案 */
     if (role === 'member' || role === 'admin') {
         try {
             await ElMessageBox.confirm(
@@ -111,12 +99,7 @@ async function toggleStatus(row: AdminUser) {
         await load();
     }
 }
-
-// =
-/**
- * 背景：注册只能产生普通用户，而成员档案在 studio_member 里，两者通过 user_id 可选绑定。
- * 分开做要建档案、再回来改角色，两步且容易漏掉绑定。这里合成一步。
- */
+/** 背景：注册只能产生普通用户，而成员档案在 studio_member 里，两者通过 user_id 可选绑定。 */
 const promoteVisible = ref(false);
 const promoteTarget = ref<AdminUser | null>(null);
 const promoteForm = reactive({
@@ -140,10 +123,7 @@ function openPromote(row: AdminUser) {
     promoteVisible.value = true;
 }
 
-/**
- * 提交顺序是刻意的：先建档案（绑定账号），成功后再改角色。
- * 反过来会留下「角色已是成员、却没有档案」的脏数据——界面看不出异常，只是成员管理里查不到人。
- */
+/** 提交顺序是刻意的：先建档案（绑定账号），成功后再改角色。反过来会留下「角色已是成员、却没有档案」的脏数据——界面看不出异常，只是成员管理里查不到人。 */
 async function submitPromote() {
     const target = promoteTarget.value;
     if (!target) {
@@ -164,8 +144,6 @@ async function submitPromote() {
             direction: promoteForm.direction || undefined,
             teamPosition: promoteForm.teamPosition,
             summary: promoteForm.summary || undefined,
-            // 关键：把这条档案绑到该登录账号（后端校验账号存在且未被其它成员绑定，
-            // 唯一索引 uk_userid_deleted 兜底并发）
             userId: target.id,
         });
         await adminApi.userUpdate({ id: target.id, userRole: 'member' });
@@ -202,7 +180,7 @@ async function submitPassword() {
     }
 }
 
-// ===== 新增账号 =====
+// 新增账号
 const createVisible = ref(false);
 const createForm = reactive({
     userAccount: '',
@@ -212,12 +190,7 @@ const createForm = reactive({
     userRole: 'member',
 });
 
-/**
- * 初始密码结果框（创建成功后弹出）
- *
- * 管理员没填密码时后端生成随机口令，只随创建响应返回这一次——后端不存明文、也查不回来。
- * 不展示就等于管理员本人也不知道密码，账号等于白建。
- */
+/** 初始密码结果框（创建成功后弹出） */
 const passwordResultVisible = ref(false);
 /** 待展示给管理员的初始密码明文（展示后即弃，不落任何持久化存储） */
 const initialPassword = ref('');
@@ -232,11 +205,7 @@ function openCreate() {
     createVisible.value = true;
 }
 
-/**
- * 新增账号
- *
- * 密码留空时不下发 userPassword 字段：后端会生成随机初始密码，下发空串会撞上 DTO 的 @Size(min=8)。
- */
+/** 新增账号 */
 async function submitCreate() {
     // 与注册、后端 normalizeAccount 同口径：账号一律 trim + 小写入库
     createForm.userAccount = createForm.userAccount.trim().toLowerCase();
@@ -298,12 +267,7 @@ async function removeUser(row: AdminUser) {
     }
 }
 
-/**
- * 重置某个用户的 AI 提问次数
- *
- * 用户额度用完会来找管理员，点这里把已用次数清零即可。
- * 加二次确认是因为它紧挨着「重置密码」——两个按钮都是「重置」，误点代价虽小但很困惑。
- */
+/** 重置某个用户的 AI 提问次数 */
 async function resetAiQuota(row: AdminUser) {
     const used = row.aiQueryCount ?? 0;
     try {
@@ -325,12 +289,7 @@ async function resetAiQuota(row: AdminUser) {
         await load();
     }
 }
-
-// =
-/**
- * 后端 /user/update 是「部分更新」：传 null 的字段不改，空串会写入。
- * 所以弹窗预填现有值、提交什么就改什么。两项都清空也允许（昵称为空时，列表与门户兜底显示账号名）。
- */
+/** 后端 /user/update 是「部分更新」：传 null 的字段不改，空串会写入。 */
 const editVisible = ref(false);
 const editTarget = ref<AdminUser | null>(null);
 const editForm = reactive({
@@ -362,8 +321,6 @@ async function submitEdit() {
         editVisible.value = false;
         await load();
     } catch (e) {
-        // 失败也刷新：与 changeRole / toggleStatus 一致，
-        // 让弹窗里的输入回到服务端的真实值，而不是停在「已保存」的假象
         console.warn('更新用户资料失败', e);
         await load();
     }
@@ -397,12 +354,13 @@ onMounted(load);
             <el-table-column prop="userAccount" label="账号" min-width="140" />
             <el-table-column label="头像" width="80">
                 <template #default="{ row }">
-                    <!-- 与门户同一套兜底：头像失效时显示姓名首字，不留裂图 -->
+                    <!-- 与门户同一套兜底：头像失效时显示统一默认头像，不留裂图 -->
                     <span class="avatar">
                         <SmartImage
                             :src="row.userAvatar"
                             :alt="row.userName || row.userAccount || '?'"
                             :seed="row.id"
+                            fallback="avatar"
                         />
                     </span>
                 </template>
@@ -499,8 +457,7 @@ onMounted(load);
             </template>
         </el-dialog>
 
-        <!-- 初始密码结果框：随机口令只随创建响应返回这一次（后端不存明文、查不回来），
-             关掉这个框就再也看不到——所以「复制」按钮是主操作，关闭是次操作 -->
+        <!-- 初始密码结果框：随机口令只随创建响应返回这一次（后端不存明文、查不回来），关掉这个框就再也看不到——所以「复制」按钮是主操作，关闭是次操作 -->
         <el-dialog v-model="passwordResultVisible" title="账号已创建" width="420px">
             <p class="muted">初始密码仅此一次展示，请立即复制并通过安全渠道转交本人，并督促其登录后自行修改。</p>
             <div class="init-password">

@@ -9,9 +9,6 @@ import java.io.Serializable;
 /**
  * 手动「标记已掌握」请求（C 端）
  *
- * 与「答对自动消解」是两条路径，靠 resolve_type（1-自动 / 2-手动）区分，两者可信度不同。
- * 幂等：已是已消解时直接返回 true 且不更新 resolved_at，重复点击不该改掉掌握时间。
- *
  * @author shaoshing
  */
 @Data

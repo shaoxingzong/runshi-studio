@@ -5,12 +5,7 @@ import { ElMessage } from 'element-plus';
 import { userApi } from '@/api/user';
 import { useUserStore } from '@/stores/user';
 
-/**
- * 门户登录（C 端）
- *
- * 与后台登录是同一个接口 `/user/login`，区别在页面与后续去向：这里成功后回门户，
- * 管理员账号登录后导航会多出「后台管理」入口。后台刻意没有注册入口。
- */
+/** 门户登录（C 端） */
 const route = useRoute();
 const router = useRouter();
 const user = useUserStore();
@@ -27,7 +22,14 @@ async function submit() {
     try {
         const data = await userApi.login(form.account, form.password);
         // 必须带上 userRole：导航据此显示「后台管理」，后台路由守卫也靠它放行管理员
-        user.setLogin(data.token || '', form.account, data.userRole);
+        user.setLogin(
+            data.token || '',
+            form.account,
+            data.userRole,
+            data.userName || '',
+            data.userAvatar || '',
+            data.id || '',
+        );
         ElMessage.success('登录成功');
         const redirect = (route.query.redirect as string) || '/';
         await router.push(redirect);
@@ -71,7 +73,7 @@ async function submit() {
             </el-form>
 
             <div class="tip muted">
-                注册出来是普通用户，可使用 AI 助手；「成员」身份由管理员在后台授予。
+                注册后默认为普通用户，可使用 AI 助手；如需成为工作室成员，请联系管理员开通成员身份。
             </div>
         </div>
     </div>

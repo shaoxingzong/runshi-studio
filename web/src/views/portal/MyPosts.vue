@@ -3,14 +3,10 @@ import { onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { postApi } from '@/api/post';
 import ErrorRetry from '@/components/ErrorRetry.vue';
+import SmartImage from '@/components/SmartImage.vue';
 import type { PageResult, PostAudit } from '@/api/types';
 
-/**
- * 我的发帖：作者看自己的，含待审与已驳回
- *
- * 先审后发的体验关键就在这里：提交后内容不进公开列表，用户需要一个地方看到「还在审核中」，
- * 否则会以为发帖失败；驳回时还要能看到理由，才知道怎么改。
- */
+/** 我的文章：作者看自己的，含待审与已驳回；三种状态都可进入编辑器改稿 */
 const router = useRouter();
 
 const page = reactive({ current: 1, pageSize: 10 });
@@ -50,11 +46,7 @@ function turn(delta: number) {
 
 onMounted(load);
 
-/**
- * 整行可点：表格里只有「查看」一个按钮时，用户习惯点标题行，点不动会以为页面卡了。
- *
- * 只对「已通过」的行生效：待审与驳回的内容对外不存在（详情页 404），点进去比不可点更糟。
- */
+/** 整行可点：表格里只有「查看」一个按钮时，用户习惯点标题行，点不动会以为页面卡了。 */
 function onRowClick(row: PostAudit) {
     if (row.status === 1) {
         router.push(`/posts/${row.id}`);
@@ -71,16 +63,25 @@ function rowClassName({ row }: { row: PostAudit }) {
     <div class="page">
         <div class="page-head">
             <div>
-                <h1>我的发帖</h1>
-                <p>这里可以看到尚未通过审核、以及被驳回的帖子。</p>
+                <h1>我的文章</h1>
+                <p>待审、已通过、已驳回的文章都在这里；修改后会重新送审。</p>
             </div>
-            <el-button type="primary" @click="router.push('/posts/new')">写文章</el-button>
+            <div class="head-actions">
+                <el-button @click="router.push('/posts')">返回社区</el-button>
+                <el-button type="primary" @click="router.push('/posts/new')">写文章</el-button>
+            </div>
         </div>
 
         <ErrorRetry v-if="error" :message="error" @retry="load" />
 
         <div class="card" v-loading="loading">
-            <el-empty v-if="result && result.records.length === 0" description="还没有发过帖子" />
+            <el-empty v-if="result && result.records.length === 0" description="">
+                <template #description>
+                    <p class="empty-title">还没有发过文章</p>
+                    <p class="empty-sub">把第一篇技术分享写下来，审核状态会在这里更新。</p>
+                </template>
+                <el-button type="primary" @click="router.push('/posts/new')">写第一篇</el-button>
+            </el-empty>
 
             <template v-else>
                 <el-table
@@ -91,7 +92,9 @@ function rowClassName({ row }: { row: PostAudit }) {
                     <el-table-column label="标题" min-width="280">
                         <template #default="{ row }">
                             <div class="title-cell">
-                                <img v-if="row.coverImage" :src="row.coverImage" :alt="row.title" class="thumb" />
+                                <span class="thumb">
+                                    <SmartImage :src="row.coverImage" :alt="row.title" :seed="row.id" />
+                                </span>
                                 <div class="title-main">
                                     <div class="title">
                                         <el-tag v-if="row.pinned === 1" size="small" type="warning" effect="plain">
@@ -105,22 +108,22 @@ function rowClassName({ row }: { row: PostAudit }) {
                         </template>
                     </el-table-column>
 
-                    <el-table-column label="状态" width="110">
+                    <el-table-column label="状态" width="120">
                         <template #default="{ row }">
                             <el-tag :type="STATUS_TEXT[row.status ?? 0]?.type ?? 'info'" size="small">
                                 {{ STATUS_TEXT[row.status ?? 0]?.text ?? '未知' }}
                             </el-tag>
-                            <!-- 驳回理由直接跟在状态下：作者只关心「为什么不通过、怎么改」，
-                                 审核链路内部状态（AI 初判/判定时间）不对外暴露 -->
+                            <!-- 驳回理由直接跟在状态下：作者只关心「为什么不通过、怎么改」，审核链路内部状态（AI 初判/判定时间）不对外暴露 -->
                             <div v-if="row.status === 2 && row.rejectReason" class="reject">
                                 理由：{{ row.rejectReason }}
                             </div>
                         </template>
                     </el-table-column>
 
-                    <el-table-column label="数据" width="130">
+                    <el-table-column label="数据" width="150">
                         <template #default="{ row }">
                             <span class="stat">浏览 {{ row.viewCount ?? 0 }}</span>
+                            <span class="stat">赞 {{ row.likeCount ?? 0 }}</span>
                             <span class="stat">评论 {{ row.commentCount ?? 0 }}</span>
                         </template>
                     </el-table-column>
@@ -131,29 +134,25 @@ function rowClassName({ row }: { row: PostAudit }) {
                         </template>
                     </el-table-column>
 
-                    <el-table-column label="操作" width="110">
+                    <el-table-column label="操作" width="150">
                         <template #default="{ row }">
-                            <!--
-                              只有已通过的能进详情：待审与驳回的内容对外不存在。驳回稿额外给「修改重投」。
-                              .stop 必须加：按钮在行内，不加的话行点击会先跳详情再跳编辑，两个都执行
-                            -->
+                            <!-- 三种状态都能改：已通过的改完会退回待审，审核通过前不再公开显示。.stop 必须加：按钮在行内，不加的话行点击会先跳详情 -->
+                            <template v-if="row.status === 1">
+                                <el-button link type="primary" @click.stop="router.push(`/posts/${row.id}`)">
+                                    查看
+                                </el-button>
+                                <el-button link @click.stop="router.push(`/posts/new?edit=${row.id}`)">
+                                    编辑
+                                </el-button>
+                            </template>
                             <el-button
-                                v-if="row.status === 1"
-                                link
-                                type="primary"
-                                @click.stop="router.push(`/posts/${row.id}`)"
-                            >
-                                查看
-                            </el-button>
-                            <el-button
-                                v-else-if="row.status === 2"
+                                v-else
                                 link
                                 type="primary"
                                 @click.stop="router.push(`/posts/new?edit=${row.id}`)"
                             >
-                                修改重投
+                                {{ row.status === 2 ? '修改重投' : '修改' }}
                             </el-button>
-                            <span v-else class="muted">—</span>
                         </template>
                     </el-table-column>
                 </el-table>
@@ -184,18 +183,38 @@ function rowClassName({ row }: { row: PostAudit }) {
     margin-bottom: 20px;
 }
 
+.head-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 10px;
+}
+
 .title-cell {
     display: flex;
     align-items: center;
     gap: 10px;
 }
 
+/* 缩略图容器：封面缺失时 SmartImage 用品牌蓝兜底，不再出现空白列 */
 .thumb {
+    display: inline-flex;
+    flex-shrink: 0;
     width: 56px;
     height: 40px;
-    border-radius: 6px;
-    object-fit: cover;
-    flex-shrink: 0;
+    overflow: hidden;
+    border-radius: var(--radius-xs);
+    background: var(--brand-soft);
+}
+
+.thumb :deep(.img-fallback__img),
+.thumb :deep(.img-fallback__box) {
+    width: 100%;
+    height: 100%;
+}
+
+.thumb :deep(.img-fallback__box) {
+    font-size: 14px;
+    font-weight: 700;
 }
 
 .title-main {
@@ -230,6 +249,19 @@ function rowClassName({ row }: { row: PostAudit }) {
     color: #dc2626;
 }
 
+.empty-title {
+    margin: 0 0 4px;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+}
+
+.empty-sub {
+    margin: 0;
+    font-size: 13px;
+    color: var(--muted);
+}
+
 .pager {
     display: flex;
     align-items: center;
@@ -238,12 +270,7 @@ function rowClassName({ row }: { row: PostAudit }) {
     margin-top: 18px;
 }
 
-/**
- * 可点击行的视觉反馈
- *
- * 必须用 :deep()：行是 el-table 内部渲染的 <tr>，不带本组件的 scope 属性。
- * 背景色用 Element Plus 自己的 hover 变量，保证与主题一致，也不盖掉斑马纹。
- */
+/** 可点击行的视觉反馈 */
 :deep(.row-clickable) {
     cursor: pointer;
 }

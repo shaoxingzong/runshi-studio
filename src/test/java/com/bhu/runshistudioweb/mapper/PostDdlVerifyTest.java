@@ -18,21 +18,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * 验收：帖子 / 评论 / 举报三张表的建库脚本结构 + 四条高频 SQL 命中预期索引
  *
- * 验证两件事：
- * - 建表语句连续执行两次不报错：用例把从 db/user.sql 抽出的
- * CREATE TABLE 改写成 CREATE TABLE IF NOT EXISTS 后连跑两次，第二次静默跳过。
- * MySQL 没有 CREATE INDEX IF NOT EXISTS，
- * 所以「索引写在建表语句内」是幂等的前提，不要把它们拆成独立的 CREATE INDEX；
- * - 四条高频 SQL 命中预期索引：分别覆盖三张表最典型的查询。
- *
- * 为什么按分号拆成多条执行：目标表有三张（三条 CREATE TABLE），
- * 而连接串没有开 allowMultiQueries，JdbcTemplate 一次只能发一条语句，
- * 把三条一起提交会解析失败。这与 AttendanceDdlVerifyTest 不同——那个只抽一条建表语句。
- *
- * 为什么不用 @Transactional 回滚：MySQL 的 DDL 会隐式提交，
- * 且本用例的目的正是「把表建出来供后续业务代码使用」，所以刻意不回滚。
- * 造的数据控制在固定 ID 段内，重复跑不会无限增长。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -63,45 +48,31 @@ class PostDdlVerifyTest {
 
         seedIfNeeded();
 
-        // ① 公开列表：已通过 + 置顶优先 + 时间倒序
+        // 公开列表：已通过 + 置顶优先 + 时间倒序
         assertIndexCandidate(
                 "EXPLAIN SELECT * FROM studio_post "
                         + "WHERE status = 1 AND deleted_at = 0 ORDER BY pinned DESC, created_at DESC LIMIT 10",
                 "idx_status_pinned_time", "公开列表（已通过 + 置顶优先）");
 
-        // ② 审核队列：待审先进先出。这条不能靠 ① 的索引凑合——
-        //    它的第二列是 pinned，优化器无法跳过中间列直接按 created_at 排序
         assertIndexCandidate(
                 "EXPLAIN SELECT * FROM studio_post "
                         + "WHERE status = 0 AND deleted_at = 0 ORDER BY created_at LIMIT 10",
                 "idx_status_time", "帖子审核队列（先进先出）");
 
-        // ③ 某帖的全部评论：一次查完再在内存挂树（避免按父评论逐条查的 N+1）
+        // 某帖的全部评论：一次查完再在内存挂树（避免按父评论逐条查的 N+1）
         assertIndexCandidate(
                 "EXPLAIN SELECT * FROM studio_post_comment "
                         + "WHERE post_id = " + SEED_ID_BASE + " AND status = 1 AND deleted_at = 0 ORDER BY id",
                 "idx_post_status_id", "某帖的全部已通过评论");
 
-        // ④ 举报待处理列表
+        // 举报待处理列表
         assertIndexCandidate(
                 "EXPLAIN SELECT * FROM studio_post_report "
                         + "WHERE status = 0 AND deleted_at = 0 ORDER BY created_at LIMIT 10",
                 "idx_status_time", "举报待处理列表");
     }
 
-    /**
-     * 从全量建库脚本里取出目标表的建表语句
-     *
-     * db/migration/ 下的增量脚本已合并进 db/user.sql（唯一 DDL 源头），
-     * 因此这里改为从全量脚本中按表名抽取，并统一改写成
-     * CREATE TABLE IF NOT EXISTS。
-     *
-     * 为什么必须改写：全量脚本靠「先 DROP 再 CREATE」保证可重跑，
-     * 而本用例只想「表不在就建、在就跳过」——直接执行原句会在第二次跑时撞「表已存在」，
-     * 更不能真去 DROP（那会清空开发库的数据）。
-     *
-     * 为什么必须去注释：注释里含有行内说明文字，按分号拆分时可能被误切。
-     */
+    /** 从全量建库脚本里取出目标表的建表语句 */
     private List<String> readCreateTableStatements(String... tableNames) throws Exception {
         String raw = Files.readString(Path.of("db/user.sql"));
         StringBuilder builder = new StringBuilder();
@@ -126,13 +97,7 @@ class PostDdlVerifyTest {
         return statements;
     }
 
-    /**
-     * 造数：让优化器有统计依据
-     *
-     * 12 个帖子（三种审核状态各若干）+ 每帖 2 条评论（其中一半是回复）+ 6 条举报。
-     * 用固定 ID 段 + 先删后插，保证重复执行不膨胀。
-     * 三张表都要清：评论与举报通过 post_id 引用帖子，帖子一删它们就成悬空数据。
-     */
+    /** 造数：让优化器有统计依据 */
     private void seedIfNeeded() {
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM studio_post WHERE id >= " + SEED_ID_BASE, Integer.class);
@@ -186,7 +151,6 @@ class PostDdlVerifyTest {
                     SEED_ID_BASE + i, 1 + (i % 2), "验收造数举报理由 " + i, i % 3);
         }
 
-        // 刷新统计信息，否则优化器可能用上一次的旧统计决定执行计划
         jdbcTemplate.execute("ANALYZE TABLE studio_post");
         jdbcTemplate.execute("ANALYZE TABLE studio_post_comment");
         jdbcTemplate.execute("ANALYZE TABLE studio_post_report");

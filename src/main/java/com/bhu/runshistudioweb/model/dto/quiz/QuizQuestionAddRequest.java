@@ -11,14 +11,6 @@ import java.util.List;
 /**
  * 新增题目请求（管理端）
  *
- * options 用 List<QuizOptionItem> 而不是 JSON 字符串：让前端拼 JSON 等于把序列化责任推给调用方，
- * 且后端无法用 @Valid 逐项校验（选项正文长度、标签非空）。收成列表后字段级校验自动生效，
- * 序列化由 Service 用容器里的 JsonMapper 完成。
- *
- * type 与 correctLabels 没有 @Pattern 之类的注解：它们的约束是跨字段的（单选恰好 1 个正确项、
- * 多选至少 2 个、正确项必须是已有选项、标签必须连续），注解表达不了。这类校验统一放在
- * QuizQuestionServiceImpl#validateQuestion，让新增 / 修改 / 导入三条入口共用同一套规则。
- *
  * @author shaoshing
  */
 @Data
@@ -42,12 +34,7 @@ public class QuizQuestionAddRequest implements Serializable {
     /** 章节在教材内的顺序（数值越小越靠前）；不传按 0 处理 */
     private Integer chapterSeq;
 
-    /**
-     * 题型：0-单选，1-多选（必填）
-     *
-     * 合法性由 Service 用 QuizQuestionTypeEnum 校验，
-     * 非法值返回 A0401（闭集，不能静默当成单选）。
-     */
+    /** 题型：0-单选，1-多选（必填） */
     @NotNull(message = "题型不能为空")
     private Integer type;
 
@@ -61,12 +48,7 @@ public class QuizQuestionAddRequest implements Serializable {
     @Size(min = 2, max = 6, message = "选项数量需在 2 ~ 6 个之间")
     private List<QuizOptionItem> options;
 
-    /**
-     * 正确选项标签（必填，升序无分隔，如 "B" / "ABD"）
-     *
-     * 不做格式注解："ca"、"C,A" 都会被 QuizLabelUtils.normalize 归一化，归一化后不合法才报错；
-     * 在注解里写死正则会把「大小写、顺序不同」这种无害输入也拒掉。
-     */
+    /** 正确选项标签（必填，升序无分隔，如 "B" / "ABD"） */
     @NotBlank(message = "正确答案不能为空")
     @Size(max = 8, message = "正确答案最多 6 个标签")
     private String correctLabels;

@@ -22,36 +22,19 @@ const loading = ref(false);
 /** 加载失败（含 id 不存在）：只判断 detail 的话，失败时整页空白 */
 const error = ref('');
 
-/**
- * 封面与头像的兜底统一交给 SmartImage
- *
- * 不要自己维护默认图 / 坏 URL 集合：前者依赖一个「站内默认图」文件，文件缺失就是连环 404；
- * 「首字 + 渐变块」不依赖任何图片文件，永远不会裂图。
- */
+/** 封面与头像的兜底统一交给 SmartImage */
 
 const STATUS_TEXT: Record<string, string> = { 0: '研发中', 1: '已上线', 2: '已结题' };
 
-/**
- * 参与成员（永远返回数组）
- *
- * 后端 members 声明成 List 却没加 @NotNull，历史数据可能返回 null；在 null 上取 .length 会抛
- * TypeError 并中断整个组件渲染，表现为「页面显示到一半就没了」。
- */
+/** 参与成员（永远返回数组） */
 const members = computed(() => detail.value?.members ?? []);
 
 /** 正文容器：代码块复制与目录高亮都要在真实 DOM 上接线（v-html 的内容 Vue 管不着） */
 const bodyRef = ref<HTMLElement | null>(null);
 
-/**
- * 正文渲染：renderMarkdown → 白名单清洗 → v-html
- *
- * 必须清洗：marked v15 起移除了内置 sanitize，而 v-html 直接写 DOM；「管理员录入」也不能免检
- * ——账号被盗、越权都可能让正文不可信。白名单须放行 renderer 的增强输出，否则会被静默洗掉。
- */
+/** 正文渲染：renderMarkdown → 白名单清洗 → v-html */
 const rendered = computed(() => {
     const result = renderMarkdown(detail.value?.content ?? '');
-    // 项目正文由管理员录入，可信度高于成员帖子：不限制图片外链。
-    // 清洗仍不可省——账号被盗、越权写入都会让正文变成不可信来源
     result.html = sanitizeMarkdownHtml(result.html);
     return result;
 });
@@ -104,10 +87,6 @@ async function load() {
 }
 
 onMounted(load);
-
-// 标签页标题用真实项目名（与 PostDetail 同一理由：详情页是收录与分享的主体）
-//
-// description 取项目摘要，比 index.html 里那句全站通用描述准确得多。
 usePageMeta({
     title: computed(() => detail.value?.title ?? '项目详情'),
     description: computed(() => detail.value?.description ?? ''),
@@ -128,7 +107,8 @@ usePageMeta({
             <div class="card">
                 <!-- 封面失败时不再留裂图：SmartImage 会退成「项目名首字 + 渐变块」 -->
                 <div v-if="detail.coverImage" class="cover-wrap">
-                    <SmartImage :src="detail.coverImage" :alt="detail.title" :seed="detail.id" />
+                    <!-- contain 而不是 cover：封面图（尤其是截图/竖图）必须完整展示，cover 会按 320px 高度裁掉两侧/上下，表现为「图片显示不全」 -->
+                    <SmartImage :src="detail.coverImage" :alt="detail.title" :seed="detail.id" fit="contain" />
                 </div>
                 <h1>{{ detail.title }}</h1>
                 <span class="tag" :class="detail.status === 1 ? 'green' : 'gray'">
@@ -150,8 +130,7 @@ usePageMeta({
 
             <div class="card block">
                 <h2>项目详情</h2>
-                <!-- 目录：长文（标题 ≥3）才出现。href 保留原生锚点语义
-                     （链接可复制、可中键新窗口），click 接平滑滚动 -->
+                <!-- 目录：长文（标题 ≥3）才出现。href 保留原生锚点语义 （链接可复制、可中键新窗口），click 接平滑滚动 -->
                 <nav v-if="showToc" class="toc">
                     <div class="toc-title">目录</div>
                     <a
@@ -172,19 +151,21 @@ usePageMeta({
             </div>
 
             <div class="card block">
-                <!-- 成员列表可能为 null（历史数据 / 字段未装配）：用 ?? [] 兜底，
-                     直接写 detail.members.length 会在 null 上抛错，整个详情区渲染中断 -->
+                <!-- 成员列表可能为 null（历史数据 / 字段未装配）：用 ?? [] 兜底，直接写 detail.members.length 会在 null 上抛错，整个详情区渲染中断 -->
                 <h2>参与成员（{{ members.length }}）</h2>
                 <el-empty v-if="members.length === 0" description="暂无成员" />
                 <div v-else class="grid cards-3">
-                    <!-- 成员信息「不对外展示」（业务规则）：这里只作为项目参与者的信息卡，**不做跳转**——
-                         官网没有成员详情路由，跳转会命中兜底路由静默回到首页 -->
+                    <!-- 成员信息「不对外展示」（业务规则）：这里只作为项目参与者的信息卡，**不做跳转**—— 官网没有成员详情路由，跳转会命中兜底路由静默回到首页 -->
                     <div v-for="member in members" :key="member.id" class="member">
                         <div class="member-head">
-                            <!-- 头像地址可能是外部图床（会失效）或已被清理的文件：
-                                 交给 SmartImage 兜底成「姓名首字 + 渐变块」，不留裂图 -->
+                            <!-- 头像地址可能是外部图床（会失效）或已被清理的文件：交给 SmartImage 显示统一默认头像，不留裂图 -->
                             <span class="avatar">
-                                <SmartImage :src="member.avatar" :alt="member.name" :seed="member.id" />
+                                <SmartImage
+                                    :src="member.avatar"
+                                    :alt="member.name"
+                                    :seed="member.id"
+                                    fallback="avatar"
+                                />
                             </span>
                             <div class="who">
                                 <div class="name">{{ member.name }}</div>
@@ -215,14 +196,24 @@ usePageMeta({
 </template>
 
 <style scoped>
-/* 封面容器：给出确定高度，让 SmartImage 的图片与兜底色块都能填满 */
+/* 封面容器：不再写死高度。固定 320px + object-fit:cover 会把竖图/截图裁掉一部分
+   （表现为「封面显示不全」）；这里让图片按原比例完整展开，仅给兜底色块留最小高度。 */
 .cover-wrap {
     width: 100%;
-    height: 320px;
+    min-height: 200px;
     border-radius: var(--radius-sm);
     margin-bottom: 16px;
     overflow: hidden;
     display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f8fafc;
+}
+
+/* 覆盖 SmartImage 默认的 100% 高度：宽度撑满、高度按原图比例自动 */
+.cover-wrap :deep(.img-fallback__img) {
+    width: 100%;
+    height: auto;
 }
 
 h1 {

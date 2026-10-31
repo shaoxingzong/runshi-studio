@@ -22,21 +22,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * 账号级登录失败锁定 · 端到端验收
  *
- * 为什么需要端到端而不仅是纯单测：锁定逻辑的正确性一半在 AuthLockManager，
- * 另一半在 UserServiceImpl.userLogin 的接线——assertNotLocked 有没有在查库前调用、
- * recordFailure 有没有只在「账号存在」时触发、clear 有没有在成功时调用。
- * 这些纯单测覆盖不到，必须走真实登录链路。
- *
- * 类名必须是 Auth 开头（排序约束，见 AiKnowledgeIngestTest 类注释）：
- * 本类用 @DynamicPropertySource 开锁，会新建 Spring 上下文；
- * 而 Sa-Token 用静态 SaManager 持有 Redis DAO，永远绑定「最后创建的上下文」。
- * 新建上下文的类必须全部排在 CertificateCrudTest（第一个用默认上下文的类）之前，
- * 否则后续登录类测试会集体 B0001 / A0201。Auth < Certificate，排位正确。
- *
- * 为什么关掉 IP 限流：本类每个用例要连续登录 6 次以上，
- * 不关的话会先撞 IP 限流（10 次/分钟），锁定的断言就失去意义了。
- * 限流本身由 IpRateLimitManagerTest 覆盖，两者不互相干扰。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -151,7 +136,6 @@ class AuthLoginLockTest {
         for (int i = 0; i < 4; i++) {
             login(account, "Wrong" + i + "Pass");
         }
-        // 第 5 次用正确密码：成功，且应清零此前的 4 次失败
         assertEquals("00000", code(login(account, PASSWORD)), "未达阈值时应能正常登录");
 
         // 验证清零真的生效：再错 4 次仍不应被锁（若没清零，4+4 已超阈值）

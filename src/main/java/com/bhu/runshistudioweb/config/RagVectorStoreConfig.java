@@ -15,16 +15,6 @@ import redis.clients.jedis.UnifiedJedis;
 /**
  * 向量库装配：按 studio.ai.vector-store-type 选择 memory 或 redis
  *
- * <p>为什么把选择放在配置类而不是 KnowledgeBaseManager：
- * 向量库是「基础设施」而不是「业务逻辑」。让 Manager 里出现 if (redis) ...
- * 会把部署形态的判断扩散到业务代码；放在这里，Manager 只注入一个
- * {@link RagVectorStore}，两个实现可替换、可测试。
- *
- * <p>为什么生产用 redis 而本地默认 memory：
- * Redis 向量索引需要 Redis 8.4+ 的 Query Engine + JSON 模块，本地开发者
- * 不应为了跑通项目被迫升级 Redis；测试也不应该依赖外部索引。生产 prod profile
- * 显式切到 redis，保证重启与多实例不丢向量。
- *
  * @author shaoshing
  */
 @Slf4j
@@ -35,10 +25,10 @@ public class RagVectorStoreConfig {
      * 向量库 Bean
      *
      * @param aiProperties AI 配置（向量库类型、向量模型名）
-     * @param host         Redis 主机，沿用 spring.data.redis.host
-     * @param port         Redis 端口
-     * @param password     Redis 口令，空表示无口令
-     * @param database     Redis 库号
+     * @param host Redis 主机，沿用 spring.data.redis.host
+     * @param port Redis 端口
+     * @param password Redis 口令，空表示无口令
+     * @param database Redis 库号
      * @return memory 或 redis 实现；配置非法/Redis 模块缺失时抛 IllegalStateException
      */
     @Bean
@@ -62,16 +52,7 @@ public class RagVectorStoreConfig {
         return createRedisStore(aiProperties, host, port, password, database);
     }
 
-    /**
-     * 创建 Redis 向量库
-     *
-     * <p>连接参数直接复用 spring.data.redis 的配置，避免再维护一份 Redis 地址/口令；
-     * 这里会额外建一个 Jedis 连接（Spring Data Redis 用的是 Lettuce），两者可以共存。
-     *
-     * <p>初始化失败必须是启动失败：RAG 是生产功能，带着「向量库不可用」上线，
-     * 表现会是 AI 永远说「没有资料」而不报错，比直接启动失败更难排查。
-     * 错误信息要写清升级路径，半夜排障的人不需要再翻代码。
-     */
+    /** 创建 Redis 向量库 */
     private RagVectorStore createRedisStore(AiProperties aiProperties, String host, int port,
                                             String password, int database) {
         DefaultJedisClientConfig.Builder builder = DefaultJedisClientConfig.builder()

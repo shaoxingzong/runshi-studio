@@ -44,27 +44,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * RAG 检索接入问答验收测试
  *
- * 覆盖八条线：
- * - 命中注入 + 溯源：资料拼进本次 user 消息、响应 sources 字段完整（docId 字符串、manual 来源无 sourceId）；
- * - 无命中：消息原样、sources 空数组（字段恒存在）；
- * - 阈值与顺序：低于 min-score 的命中被过滤、命中按相似度降序；
- * - topK 配置化：条数上限跟随 studio.ai.rag-top-k；
- * - 悬挂容忍：块/文档被逻辑删除的命中静默跳过；
- * - SSE：事件序列 meta → sources → delta → done，sources 恒发（含无命中空数组）且流式链路同样注入；
- * - 检索失败降级：Embedding 故障 → 照常回答、sources 空、配额正常 +1（不新增错误码）；
- * - 位置纪律：配额超限请求在检索之前被拦下（不产生多余的 Embedding 调用）。
- *
- * 本类刻意不加 @Transactional（同 AiChatStreamTest 的理由）：
- * 流式接口运行在虚拟线程上、写入是独立事务，测试事务里未提交的数据它看不到
- * （流式写入在独立事务里，测试事务看不到）；因此本类数据真实提交、@AfterEach 按 T26 前缀清理。
- *
- * 向量隔离技巧：Stub 按文本里的记号 V{n}-{EXACT|NEAR|FAR} 把向量放进第 n 个
- * 二维平面：EXACT 与问题同向（余弦 1.0）、NEAR 夹角余弦 0.6、FAR 余弦 0.4（低于 0.5 阈值）；
- * 不同平面互相正交。各用例使用不同平面，因此互不干扰、也不依赖执行顺序。
- *
- * 类名以 Ai 开头沿用排序约束（新建上下文的测试类必须排在 CertificateCrudTest 之前），
- * 详见 AiKnowledgeIngestTest 类注释。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -87,12 +66,7 @@ class AiKnowledgeRetrievalTest {
     @Resource
     private AiQueryCountManager aiQueryCountManager;
 
-    /**
-     * AI 熔断器：每个用例前重置。
-     *
-     * 本类同时打 Embedding 与 Chat 两个端点，任一端失败都会累计进熔断器；
-     * 而它是进程内单例，不重置会把失败传染给后跑的测试类。
-     */
+    /** AI 熔断器：每个用例前重置。 */
     @Resource
     private AiCircuitBreaker circuitBreaker;
 
@@ -101,7 +75,7 @@ class AiKnowledgeRetrievalTest {
         circuitBreaker.reset();
     }
 
-    // ==================== 本地 Stub（Embedding + Chat 双端点）====================
+    // 本地 Stub（Embedding + Chat 双端点）
 
     private static HttpServer stub;
 
@@ -194,11 +168,7 @@ class AiKnowledgeRetrievalTest {
                 + content + "\"},\"finish_reason\":" + (last ? "\"stop\"" : "null") + "}]}\n\n";
     }
 
-    /**
-     * 平面向量：V{n}-EXACT 与问题同向（relevance 1.0）；NEAR 余弦 0.6（relevance 0.8）；
-     * FAR 余弦 0.4（relevance 0.7，低于 0.75 阈值被过滤）；
-     * 无记号则落在保留维上（与所有平面正交，relevance 0.5，同样被过滤）
-     */
+    /** 平面向量：V{n}-EXACT 与问题同向（relevance 1.0）； */
     private static float[] vec(String text) {
         float[] vector = new float[DIM];
         Matcher matcher = PLANE_MARKER.matcher(text);
@@ -232,10 +202,6 @@ class AiKnowledgeRetrievalTest {
         registry.add("studio.ai.query-limit", () -> 3);
         // 刻意用非默认值（默认 5）：同时证明 topK 真的来自配置
         registry.add("studio.ai.rag-top-k", () -> 2);
-        // LangChain4j 的 minScore 语义是「相关度 relevance」而非裸余弦：relevance = (1 + cos) / 2
-        // （正交向量 = 0.5、EXACT(cos 1.0) = 1.0、NEAR(cos 0.6) = 0.8、FAR(cos 0.4) = 0.7）。
-        // 因此这里配 0.75：恰好卡在「过滤正交与弱相关、保留接近及以上」的位置
-        // （线上默认 0.5 等于不过滤——正交命中也会以 0.5 通过）
         registry.add("studio.ai.rag-min-score", () -> 0.75);
     }
 
@@ -264,7 +230,7 @@ class AiKnowledgeRetrievalTest {
         jdbcTemplate.update("DELETE FROM sys_user WHERE user_account LIKE 'T26%'");
     }
 
-    // ==================== 工具方法 ====================
+    // 工具方法
 
     private String adminToken() throws Exception {
         String account = "T26adm_" + (System.nanoTime() % 100000);
@@ -302,13 +268,7 @@ class AiKnowledgeRetrievalTest {
         return body.substring(start, body.indexOf('"', start));
     }
 
-    /**
-     * 注册一个成员用户并登录
-     *
-     * 成员不受提问次数限制：本类把 query-limit 配成 3 是为了配额用例，
-     * 而检索类用例需要多次提问，用成员账号可避免撞上普通用户的 3 次上限
-     * （AI 服务对游客关闭，因此也不能再用匿名）。
-     */
+    /** 注册一个成员用户并登录 */
     private String loginMember() throws Exception {
         String account = "T26mem_" + (System.nanoTime() % 100000);
         SysUser user = new SysUser();
@@ -328,8 +288,6 @@ class AiKnowledgeRetrievalTest {
     private int queryCountOf(String account) {
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT ai_query_count FROM sys_user WHERE user_account=?", Integer.class, account);
-        // 起计数先进 Redis、由定时任务回刷 DB：
-        // 「用户实际用量」= DB 基准 + Redis 未落库增量，只读 DB 会读到回刷前的旧值
         Long userId = jdbcTemplate.queryForObject(
                 "SELECT id FROM sys_user WHERE user_account=?", Long.class, account);
         return aiQueryCountManager.merge(userId, count);
@@ -352,7 +310,7 @@ class AiKnowledgeRetrievalTest {
         return jsonMapper.readTree(body).get("data");
     }
 
-    /** 手工录入一篇文档（管理端接口，与 同一入口） */
+    /** 手工录入一篇文档（走管理端接口） */
     private long ingest(String title, String content) throws Exception {
         String body = postJson("/knowledge/doc/manual",
                 "{\"title\":\"" + title + "\",\"content\":\"" + content + "\"}", adminToken());
@@ -403,7 +361,7 @@ class AiKnowledgeRetrievalTest {
         return m.group(1);
     }
 
-    // ==================== ① 命中注入 + 溯源 ====================
+    // ① 命中注入 + 溯源
 
     @Test
     @DisplayName("命中注入与溯源：资料拼进本次 user 消息；响应 sources 字段完整；历史里仍是用户原话")
@@ -438,7 +396,7 @@ class AiKnowledgeRetrievalTest {
                 Integer.class, sessionId, question), "历史里应保留用户原话（不含参考资料）");
     }
 
-    // ==================== ② 无命中 ====================
+    // ② 无命中
 
     @Test
     @DisplayName("无相关命中：消息原样、sources 为空数组（字段恒存在，不是 null）")
@@ -456,7 +414,7 @@ class AiKnowledgeRetrievalTest {
         assertEquals(0, sources.size(), "无命中时应为空数组：" + body);
     }
 
-    // ==================== ③ 阈值与顺序 ====================
+    // ③ 阈值与顺序
 
     @Test
     @DisplayName("阈值与顺序：低于 min-score 的命中被过滤；结果按相似度降序（EXACT → NEAR）")
@@ -478,7 +436,7 @@ class AiKnowledgeRetrievalTest {
         assertFalse(body.contains("T26-V2远离文档"), "被过滤的命中不应出现在响应里：" + body);
     }
 
-    // ==================== ④ topK 配置化 ====================
+    // ④ topK 配置化
 
     @Test
     @DisplayName("topK 配置化：条数上限跟随 studio.ai.rag-top-k（本类配为 2）")
@@ -494,7 +452,7 @@ class AiKnowledgeRetrievalTest {
         assertEquals(2, sources.size(), "应被 rag-top-k=2 截断（默认值是 5）：" + body);
     }
 
-    // ==================== ⑤ 悬挂容忍 ====================
+    // ⑤ 悬挂容忍
 
     @Test
     @DisplayName("悬挂容忍：块/文档被逻辑删除的命中静默跳过，提问照常成功（R2 收口）")
@@ -514,7 +472,7 @@ class AiKnowledgeRetrievalTest {
         assertEquals(question, lastUserMessageOfChatRequest(), "全部跳过等价于无命中，不应注入");
     }
 
-    // ==================== ⑥ SSE 事件序列 ====================
+    // ⑥ SSE 事件序列
 
     @Test
     @DisplayName("SSE：meta → sources → delta → done；命中注入且载荷带标题；无命中恒发空数组")
@@ -544,7 +502,7 @@ class AiKnowledgeRetrievalTest {
         assertEquals("T26 V7-EXACT 流式无命中", lastUserMessageOfChatRequest(), "无命中时消息原样");
     }
 
-    // ==================== ⑦ 检索失败降级 ====================
+    // ⑦ 检索失败降级
 
     @Test
     @DisplayName("检索失败降级：Embedding 故障 → 照常回答、sources 空、配额正常 +1（不新增错误码）")
@@ -560,7 +518,7 @@ class AiKnowledgeRetrievalTest {
         assertEquals(1, queryCountOf(lastAccount), "回答成功应正常计数（检索失败≠回答失败）");
     }
 
-    // ==================== ⑧ 位置纪律 ====================
+    // ⑧ 位置纪律
 
     @Test
     @DisplayName("位置纪律：配额超限请求在检索之前被拦下（不产生多余的 Embedding 调用）")

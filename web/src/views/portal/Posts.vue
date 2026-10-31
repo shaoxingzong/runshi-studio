@@ -17,12 +17,7 @@ const loading = ref(false);
 /** 加载失败：非空时展示错误条 + 重试 */
 const error = ref('');
 
-/**
- * 搜索关键词
- *
- * 后端只匹配标题与摘要：社区搜索定位的是「哪篇文章」，正文的深度检索交给 AI 助手。
- * 空串不下发——传空串等于给后端一个「查空关键词」的歧义。
- */
+/** 搜索关键词 */
 const keyword = ref('');
 
 async function load() {
@@ -73,9 +68,10 @@ onMounted(load);
                 <p>工作室成员的技术分享与日常记录。</p>
             </div>
             <!-- 只有成员看得到入口：后端同样只准成员发帖，这里是同一规则的界面表达 -->
-            <el-button v-if="user.isMember" type="primary" @click="router.push('/posts/new')">
-                写文章
-            </el-button>
+            <div v-if="user.isMember" class="head-actions">
+                <el-button plain @click="router.push('/posts/my')">我的文章</el-button>
+                <el-button type="primary" @click="router.push('/posts/new')">写文章</el-button>
+            </div>
         </div>
 
         <div class="search-bar">
@@ -95,8 +91,7 @@ onMounted(load);
         <ErrorRetry v-if="error" :message="error" @retry="load" />
 
         <div v-loading="loading">
-            <!-- 空状态要有引导：干巴巴一句「没有数据」等于把人劝退，
-                 成员此时正适合被引导去发第一篇文章 -->
+            <!-- 空状态要有引导：干巴巴一句「没有数据」等于把人劝退，成员此时正适合被引导去发第一篇文章 -->
             <el-empty v-if="result && result.records.length === 0" description="">
                 <template #description>
                     <!-- 搜索无结果与「还没有帖子」是两回事，提示不能复用 -->
@@ -127,22 +122,29 @@ onMounted(load);
                     class="post-card"
                 >
                     <div class="cover">
-                        <!-- 封面可能是外部图床链接（会失效）或已被清理的上传文件，
-                             交给 SmartImage 兜底成「标题首字 + 渐变块」，不留裂图 -->
+                        <!-- 封面可能是外部图床链接（会失效）或已被清理的上传文件，交给 SmartImage 兜底成「标题首字 + 渐变块」，不留裂图 -->
                         <SmartImage :src="post.coverImage" :alt="post.title" :seed="post.id" />
                         <span v-if="post.pinned === 1" class="pin">置顶</span>
+                        <!-- 作者视角：在公开列表里也能一眼认出自己的文章 -->
+                        <span
+                            v-if="user.userId && post.authorId === user.userId"
+                            class="mine"
+                        >
+                            我的
+                        </span>
                     </div>
 
                     <div class="body">
                         <h3>{{ post.title }}</h3>
                         <p class="summary">{{ post.summary || '暂无摘要' }}</p>
                         <div class="meta">
-                            <!-- 作者头像：成员档案里有就用真实头像，没有则用姓名首字 -->
+                            <!-- 作者头像：成员档案里有就用真实头像，没有则用统一默认头像 -->
                             <span class="author-avatar">
                                 <SmartImage
                                     :src="post.authorAvatar"
                                     :alt="post.authorName || '工作室成员'"
                                     :seed="post.authorId"
+                                    fallback="avatar"
                                 />
                             </span>
                             <span class="author">{{ post.authorName || '工作室成员' }}</span>
@@ -187,6 +189,12 @@ onMounted(load);
     justify-content: space-between;
     gap: 16px;
     margin-bottom: 20px;
+}
+
+.head-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 10px;
 }
 
 .post-card {
@@ -234,7 +242,22 @@ onMounted(load);
     font-size: 12px;
 }
 
-/* 作者头像：卡片底部最显眼的身份标识，28px 才看得出是头像（20px 只剩一个小色点） */
+/* 「我的」标记：白底蓝字，压在封面上但比置顶更安静 */
+.mine {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 92%);
+    color: var(--brand);
+    font-size: 12px;
+    font-weight: 600;
+    box-shadow: var(--shadow-xs);
+    backdrop-filter: blur(6px);
+}
+
+/* 作者头像：卡片底部最显眼的身份标识，28px 才看得出是头像（20px 只剩一个小色点）*/
 .author-avatar {
     width: 28px;
     height: 28px;

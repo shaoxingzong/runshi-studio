@@ -37,19 +37,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * AI 访问门槛验收测试
  *
- * 验收的规则：
- * - 游客（未登录）不能使用 AI 服务，提问返回 A0201；
- * - 普通用户：可提问 studio.ai.query-limit 次（本类配为 5），超出返回 A0501；
- * - 成员与管理员：不限额，且不计数。
- *
- * AI 调用用本地 Stub（JDK HttpServer）代替真实服务商，
- * 通过 @DynamicPropertySource 把 studio.ai.base-url 指过来。
- *
- * 类名以 Ai 开头：本类新建 Spring 测试上下文，排序约束见 AiKnowledgeManageTest 类注释。
- *
- * 本类不加 @Transactional：配额计数走 Redis INCR（外部系统），
- * 数据库事务回滚对它无效，因此数据真实提交、由 cleanUp 按记录的用户 id 清理。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -121,7 +108,7 @@ class AiAccessGateTest {
         cleanUp();
     }
 
-    // ==================== 访问门槛 ====================
+    // 访问门槛
 
     @Test
     @DisplayName("游客不可用：匿名提问一律 A0201")
@@ -160,7 +147,7 @@ class AiAccessGateTest {
         }
     }
 
-    // ==================== 工具 ====================
+    // 工具
 
     private String ask(String token, String message) throws Exception {
         var request = post("/ai/chat").contentType(MediaType.APPLICATION_JSON)

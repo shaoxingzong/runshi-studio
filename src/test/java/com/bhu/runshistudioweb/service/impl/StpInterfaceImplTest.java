@@ -17,12 +17,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * StpInterface 角色数据源验收测试
  *
- * 插入临时用户验证角色读取，@Transactional 让每个用例结束后自动回滚，
- * 不污染开发库（角色相关的用例尤其要注意：残留数据会影响其他测试里「账号唯一」的断言）。
- *
- * 覆盖的核心是「什么情况下必须拿不到角色」：封禁、已逻辑删除、ID 非法。
- * 这些分支一旦漏判，就等于封禁用户仍然能访问管理员接口。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -35,18 +29,10 @@ class StpInterfaceImplTest {
     @Resource
     private SysUserMapper sysUserMapper;
 
-    /**
-     * 造一个测试用户并直接插入（不经过 Service，避免把注册的校验规则耦合进本测试）
-     *
-     * @param account 账号，调用方负责加随机后缀保证唯一
-     * @param role 角色，直接决定断言结果
-     * @param status 用户状态：0-正常，1-封禁
-     */
+    /** 造一个测试用户并直接插入（不经过 Service，避免把注册的校验规则耦合进本测试） */
     private SysUser newUser(String account, String role, Integer status) {
         SysUser user = new SysUser();
         user.setUserAccount(account);
-        // 写死一个合法格式的 BCrypt 哈希串即可：本测试与密码无关，
-        // 调 BCrypt 加密一次要几十毫秒，没必要为此拖慢用例
         user.setUserPassword("$2a$10$VYOi4TBr/3q5opBEopv8C.0tTyk/9.AnSlFXx8.MjZvdy5TSBza.K");
         user.setUserName("角色测试");
         user.setUserRole(role);

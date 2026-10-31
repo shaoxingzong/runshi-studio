@@ -4,29 +4,24 @@ import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { userApi } from '@/api/user';
 
-/**
- * 门户注册（C 端）
- *
- * 注册只能得到普通用户（user），「成员」由管理员在后台「用户管理」里授予。
- * 后台不提供注册：自助注册的账号进不了 /admin/*（路由守卫 + 后端 @SaCheckRole 双重拦）。
- */
+/** 门户注册（C 端） */
 const router = useRouter();
 
-const form = reactive({ account: '', password: '', checkPassword: '' });
+const form = reactive({ account: '', name: '', password: '', checkPassword: '' });
 const loading = ref(false);
 
-/**
- * 前端先按后端同一套规则挡一遍（省一次往返、提示更及时）
- *
- * 权威校验永远在后端（UserRegisterRequest 的注解 + Service）——前端校验是体验，不是安全边界。
- */
-// 只允许小写：后端统一按小写存储（库排序规则大小写不敏感，"Alice" 与 "alice" 是同一个账号），
-// 这里放行大写只会让用户以为「大小写不同就是不同账号」
+/** 前端先按后端同一套规则挡一遍（省一次往返、提示更及时） */
 const ACCOUNT_PATTERN = /^[a-z0-9_]+$/;
 
 function validate(): string | null {
-    if (!form.account || !form.password || !form.checkPassword) {
+    if (!form.account || !form.name || !form.password || !form.checkPassword) {
         return '请填写完整信息';
+    }
+    if (!form.name.trim()) {
+        return '请填写姓名';
+    }
+    if (form.name.length > 64) {
+        return '姓名长度不能超过 64 个字符';
     }
     if (form.account.length < 4 || form.account.length > 16) {
         return '账号长度需为 4-16 位';
@@ -46,6 +41,8 @@ function validate(): string | null {
 async function submit() {
     // 与后端 normalizeAccount 同口径：先 trim + 小写，再校验长度与字符集
     form.account = form.account.trim().toLowerCase();
+    // 姓名同样先 trim：只输空格不算填了姓名，也避免把首尾空格带进库
+    form.name = form.name.trim();
     const error = validate();
     if (error) {
         ElMessage.warning(error);
@@ -53,7 +50,7 @@ async function submit() {
     }
     loading.value = true;
     try {
-        await userApi.register(form.account, form.password, form.checkPassword);
+        await userApi.register(form.account, form.name, form.password, form.checkPassword);
         ElMessage.success('注册成功，请登录');
         // 不自动登录：登录动作让用户明确做一次，避免「注册即登录」带来的账号误用
         await router.push({ name: 'login' });
@@ -83,6 +80,14 @@ async function submit() {
                         placeholder="4-16 位小写字母、数字或下划线"
                     />
                 </el-form-item>
+                <el-form-item label="姓名">
+                    <el-input
+                        v-model="form.name"
+                        maxlength="64"
+                        autocomplete="name"
+                        placeholder="请输入真实姓名，用于站内展示"
+                    />
+                </el-form-item>
                 <el-form-item label="密码">
                     <el-input
                         v-model="form.password"
@@ -106,7 +111,7 @@ async function submit() {
             </el-form>
 
             <div class="tip muted">
-                注册后是普通用户，可使用 AI 助手；如需成为工作室成员，请联系管理员在后台授予。
+                注册后默认为普通用户，可使用 AI 助手；如需成为工作室成员，请联系管理员开通成员身份。
             </div>
         </div>
     </div>

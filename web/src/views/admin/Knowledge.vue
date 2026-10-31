@@ -5,22 +5,10 @@ import { adminApi } from '@/api/admin';
 import ErrorRetry from '@/components/ErrorRetry.vue';
 import type { KnowledgeDoc, PageResult } from '@/api/types';
 
-/**
- * 知识库（RAG）管理
- *
- * 两个批量按钮的分工要让人一眼看懂：全量同步把业务数据灌进知识库（内容没变就跳过）；
- * 重建向量只重新嵌入已有 chunk，不读业务源、不重新切分。
- *
- * 坑：应用重启后向量全部丢失，此时 sync-all 会因为内容哈希未变而全部跳过，只有重建向量能恢复。
- */
+/** 知识库（RAG）管理 */
 const page = reactive({ current: 1, pageSize: 10 });
 
-/**
- * 筛选条件：空串表示不限
- *
- * 知识库文档一多，「哪篇同步失败了、哪些是手工录入的」只能靠翻页找；
- * 后端 KnowledgeDocQueryRequest 的 title / sourceType / status 一直支持，只是界面没接。
- */
+/** 筛选条件：空串表示不限 */
 const filters = reactive<{ title: string; sourceType: string; status: '' | 0 | 1 | 2 }>({
     title: '',
     sourceType: '',
@@ -34,7 +22,7 @@ const error = ref('');
 const syncForm = reactive({ sourceType: 'project', sourceId: '' });
 const lastResult = ref('');
 
-// ==================== 手工录入 ====================
+// 手工录入
 
 const manualVisible = ref(false);
 const manualSaving = ref(false);
@@ -79,12 +67,7 @@ async function syncOne() {
     await runBatch('同步单条', () => adminApi.docSync(syncForm.sourceType, syncForm.sourceId));
 }
 
-/**
- * 手工录入一篇文档
- *
- * 与「同步」的区别：这里由管理员直接写标题与正文，补充不在业务表里的资料。每次调用都新建一篇。
- * 后端会真实调用 Embedding，长文可能超过请求层 30 秒的超时，界面上必须说明「请勿关闭」。
- */
+/** 手工录入一篇文档 */
 async function submitManual() {
     if (!manualForm.title.trim() || !manualForm.content.trim()) {
         ElMessage.warning('标题与正文必填');

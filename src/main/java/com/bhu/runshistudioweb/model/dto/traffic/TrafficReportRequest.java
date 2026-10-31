@@ -10,12 +10,6 @@ import java.io.Serializable;
 /**
  * 流量埋点上报请求（前端路由变化时调用，匿名可访问）
  *
- * 不收 userId：用户身份由后端从登录态取（未登录为 NULL），前端传什么就信什么等于开一个
- * 「伪造他人访问记录」的口子。
- *
- * 不收完整 URL / query：pagePath 只要路径部分。query 里可能带 token（分享链接、营销参数），
- * 原样存进埋点表等于把凭证写进一张匿名可写的表。
- *
  * @author shaoshing
  */
 @Data
@@ -23,13 +17,7 @@ public class TrafficReportRequest implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    /**
-     * 页面路径（必填，≤256）：如 /posts、/projects/123
-     *
-     * 由前端剥掉 query 与 hash，后端仍会再规范化一次（见 TrafficServiceImpl#normalizePath），
-     * 因为前端代码可能还是旧缓存。必须以 / 开头：本接口匿名可写，不收紧格式任意字符串都能进库，
-     * 会把「热门页面」聚合搞乱。
-     */
+    /** 页面路径（必填，≤256）：如 /posts、/projects/123 */
     @NotBlank(message = "页面路径不能为空")
     @Size(max = 256, message = "页面路径过长")
     @Pattern(regexp = "^/.*", message = "页面路径必须以 / 开头")

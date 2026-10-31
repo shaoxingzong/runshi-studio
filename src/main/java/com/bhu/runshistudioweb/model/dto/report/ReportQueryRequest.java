@@ -8,9 +8,6 @@ import java.io.Serializable;
 /**
  * 管理端：举报列表查询请求
  *
- * 默认只看待处理（status 不传时由 Service 兜成 0）：举报页的首要任务是清空队列，
- * 一进来先看到一堆已关闭记录只会让人以为积压很多。
- *
  * @author shaoshing
  */
 @Data

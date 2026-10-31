@@ -10,13 +10,6 @@ import java.time.LocalDateTime;
 /**
  * 帖子视图对象（作者看自己的，含待审与驳回）
  *
- * 与 PostFrontVO 的分工：那个给所有人看的公开列表，只有已通过的内容；本类给作者本人看的「我的发帖」，
- * 三种状态都要能看到——尤其是已驳回要带上驳回理由，否则用户不知道为什么发不出去、也不知道该怎么改。
- * 先审后发的体验关键就在本类：待审内容只有作者自己能看到，「发出去了但没显示」必须有明确的去处，就是 status。
- *
- * 不含 content：作者看列表是为了管理自己的发帖（看状态、看数据），不是重新读一遍正文；
- * 正文走详情接口即可，这样即使一个人发了几百篇，列表也不会膨胀。
- *
  * authorId / authorName 只服务管理端：管理员要能定位到「这是谁发的」，否则筛选与核实身份都无从下手。
  *
  * @author shaoshing
@@ -34,11 +27,7 @@ public class PostVO implements Serializable {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long authorId;
 
-    /**
-     * 作者昵称（管理端列表展示）
-     *
-     * 由 Service 批量查 sys_user 填充（一次查询，不逐条查）。取 user_name，为空时兜底 user_account。
-     */
+    /** 作者昵称（管理端列表展示） */
     private String authorName;
 
     /** 帖子标题 */
@@ -50,11 +39,7 @@ public class PostVO implements Serializable {
     /** 封面图 URL */
     private String coverImage;
 
-    /**
-     * 审核状态：0-待审, 1-已通过, 2-已驳回
-     *
-     * 取值定义见 com.bhu.runshistudioweb.model.enums.AuditStatusEnum。
-     */
+    /** 审核状态：0-待审, 1-已通过, 2-已驳回 */
     private Integer status;
 
     /** 驳回理由（仅"已驳回"时有意义，给用户看） */
@@ -63,15 +48,7 @@ public class PostVO implements Serializable {
     /** 审核时间（待审时为 null） */
     private LocalDateTime auditAt;
 
-    /**
-     * AI 审核结论：0-未判, 1-安全(自动通过), 2-违规(自动驳回), 3-灰色(转人工), 4-判定失败(转人工)
-     *
-     * 取值见 AiAuditStatusEnum。
-     *
-     * 本类同时服务「作者看自己的发帖」与管理端待审队列，作者因此也能看到 AI 的初判结论——这是刻意的透明度：
-     * 对作者来说，「AI 认为需要人工复核」远比只显示「待审」更有信息量，他据此知道内容在正常流转。
-     * 这些结论涉及的都是他自己的内容，不构成他人信息泄露。
-     */
+    /** AI 审核结论：0-未判, 1-安全(自动通过), 2-违规(自动驳回), 3-灰色(转人工), 4-判定失败(转人工) */
     private Integer aiAuditStatus;
 
     /** AI 给出的理由（管理端据此快速处置；作者看到的是针对自己内容的说明） */

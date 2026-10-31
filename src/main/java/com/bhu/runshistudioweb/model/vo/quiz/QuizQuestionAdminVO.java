@@ -11,12 +11,6 @@ import java.util.List;
 /**
  * 管理端题目视图（含选项与答案，仅 admin）
  *
- * 与 C 端的 QuizQuestionVO 是两个类，靠「VO 里有没有这个字段」实现脱敏：
- * 管理端要编辑题目，必须看到答案；C 端绝不能看到。
- *
- * answerCount / accuracy 是列表页要展示的两个派生列，管理员靠它们判断「这道题是不是出得太难/太怪」。
- * 它们由 Service 批量查一次 GROUP BY question_id 填充，不是逐行 count（那是 N+1）。
- *
  * @author shaoshing
  */
 @Data

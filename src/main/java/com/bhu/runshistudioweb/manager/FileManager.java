@@ -21,11 +21,6 @@ import java.util.UUID;
 /**
  * 通用文件存储管理器（Manager 层：只做技术能力，不含业务规则）
  *
- * 只依赖 MultipartFile 与本地磁盘，不认识 HTTP，因此能被 Controller 之外的入口复用，也能纯单测。
- *
- * 三重安全防线缺一不可：魔数校验（后缀完全由上传者控制）；UUID 重命名落盘（丢弃原始文件名，
- * 消除 ../ 穿越与同目录覆盖）；路径规范化校验（纵深防御，前面规则被改坏也写不出根目录）。
- *
  * 返回相对访问路径，由 WebMvcConfig 把 /uploads/** 映射到同一个根目录，两者必须是同一个配置项。
  *
  * @author shaoshing
@@ -34,86 +29,42 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class FileManager {
 
-    /**
-     * 上传文件存储根目录，对应配置项 studio.file.root-dir
-     *
-     * 必须与 WebMvcConfig 里 /uploads/** 的映射指向同一个配置项，否则文件存得进去、
-     * 却访问不到，而从上传接口的返回里看不出任何异常。
-     *
-     * final 字段也能拿到配置值，靠的是 lombok.config 里的 copyableAnnotations
-     * 把 @Value 复制到生成的构造器参数上；那条配置被删掉时症状是启动报「无法解析占位符」。
-     */
+    /** 上传文件存储根目录，对应配置项 studio.file.root-dir */
     @Value("${studio.file.root-dir}")
     private final String rootDir;
 
     /**
      * 文件上传：校验 → 落盘 → 返回相对访问路径
      *
-     * 顺序是「先把所有校验做完，再动磁盘」：反过来一旦校验失败就要回头删文件，
-     * 而删除本身可能失败，脏文件会永久留在磁盘上。
-     *
-     * 坑一：只读文件头 12 个字节，不能把整个文件读进内存再判断——那等于让调用方决定服务器分配多少内存。
-     * 坑二：只返回相对路径，域名随环境变化，写死在数据里会让迁移时全部失效。
-     *
-     * @param file 接口接收到的文件，可为 null（为 null 时抛 A0401）；只接受 PNG 与 JPEG，
-     * 真实类型由文件头字节判定，与文件名后缀无关
+     * @param file 接口接收到的文件，可为 null（为 null 时抛 A0401）；只接受 PNG 与 JPEG，真实类型由文件头字节判定，与文件名后缀无关
      * @return 相对访问路径，形如 /uploads/2026/09/{uuid}.png
-     * @throws com.bhu.runshistudioweb.exception.BusinessException 文件为空、内容不足 12 字节、
-     * 格式不在白名单内、路径不合法时抛 A0401；读失败抛 A0401，写失败抛 B0001
+     * @throws com.bhu.runshistudioweb.exception.BusinessException 文件为空、内容不足 12 字节、格式不在白名单内、路径不合法时抛 A0401；读失败抛 A0401，写失败抛 B0001
      */
     public String upload(MultipartFile file) {
-        // 步骤 1：判空
-        // 注意 isEmpty() 只能作为快速失败，它依据的是 Content-Length，可以被伪造，
-        // 因此后面还必须用「真实读出的字节数」再判断一次
         ThrowUtils.throwIf(file == null || file.isEmpty(), ErrorCode.PARAMS_ERROR, "上传文件不能为空");
 
-        // 步骤 2：读前 12 字节头部信息 (严禁将全量文件加载进内存)
-        // 用 try-with-resources 保证流被关闭；只读 12 字节意味着哪怕上传 1GB 文件，
-        // 校验阶段的内存占用也只有 12 字节——这是防止 OOM 攻击的关键
         byte[] head = new byte[12];
         int bytesRead;
         try (InputStream inputStream = file.getInputStream()) {
             bytesRead = inputStream.read(head, 0, 12);
         } catch (IOException e) {
-            // 读流失败说明上传的字节流本身有问题（连接中断、编码异常），
-            // 属于「请求方给的数据不可用」，用 A0401 而不是系统错误
             throw new BusinessException(ErrorCode.PARAMS_ERROR, "读取文件失败");
         }
-        // 不足 12 字节的文件直接拒绝：正常图片（哪怕 1x1 像素）的头部都远超 12 字节，
-        // 这里同时挡住了空文件与「只传几个字节」的探测请求。
-        // 这一句才是真正的判空——上面 isEmpty() 依据的 Content-Length 可以被伪造
         ThrowUtils.throwIf(bytesRead < 12, ErrorCode.PARAMS_ERROR, "文件内容损坏或非法");
 
-        // 步骤 3：魔数白名单校验 (此时磁盘尚未发生任何写入)
-        // 采用「白名单」而非「黑名单」：黑名单永远列不全（.jsp/.php/.svg 带脚本、大小写变形等），
-        // 白名单则天然只放行已知安全的类型
         String extension = detectImageType(head);
         ThrowUtils.throwIf(extension == null, ErrorCode.PARAMS_ERROR, "不支持的文件格式，仅允许上传 PNG 或 JPEG 图片");
 
-        // 步骤 4：生成文件名 (UUID + 校验得出的真实扩展名，绝不信任原始文件名)
-        // 两个要点：① 扩展名来自魔数识别结果，不是 getOriginalFilename()；
-        //          ② 32 位 UUID 保证文件名不可猜、不会重名（避免并发上传互相覆盖）。
-        // 去掉 UUID 里的连字符只是为了让文件名短一点、在日志里更好复制，不影响唯一性
         String fileName = UUID.randomUUID().toString().replace("-", "") + extension;
 
-        // 步骤 5：按年月生成相对子目录 (如 2026/09)
-        // 用固定格式的日期而非用户输入，避免路径里混入非法字符
         String dateSubDir = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy/MM"));
 
-        // 步骤 6：拼接路径与路径穿越 (Path Traversal) 防御
-        // toAbsolutePath() 把相对配置（如 ./data/uploads）转成绝对路径，避免依赖运行时工作目录；
-        // normalize() 消解掉路径里的 "." 与 ".."，让后续的边界判断无法被绕过
         Path baseDirPath = Paths.get(rootDir).toAbsolutePath().normalize();
         Path targetDirPath = baseDirPath.resolve(dateSubDir).normalize();
         Path targetFilePath = targetDirPath.resolve(fileName).normalize();
 
-        // 纵深防御：确认目标路径绝对在存储根目录内。
-        // startsWith 是按路径层级比较的，不是字符串前缀比较——所以 /uploads-evil 不会被误判为合法
         ThrowUtils.throwIf(!targetFilePath.startsWith(baseDirPath), ErrorCode.PARAMS_ERROR, "检测到非法路径");
 
-        // 步骤 7：创建目录并落盘存储
-        // createDirectories 会创建多级不存在的目录（本月第一次上传时 yyyy/MM 往往还不存在）；
-        // REPLACE_EXISTING 在这里只是兜底，实际文件名是 UUID，不会重名
         try {
             Files.createDirectories(targetDirPath);
             // 重新打开一次流：上面读头部时已经关闭了那个流，输入流不能复用
@@ -121,34 +72,19 @@ public class FileManager {
                 Files.copy(inputStream, targetFilePath, StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (IOException e) {
-            // 磁盘满、无写权限等问题在这里暴露。注意不要把 e.getMessage() 返回给前端
-            // （可能带出服务器绝对路径），细节交给日志
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "文件落盘失败");
         }
 
-        // 步骤 8：返回相对访问路径
-        // 只返回相对路径，不返回 http://host:port 的绝对地址：
-        // 域名会随环境（本地/测试/生产）变化，由前端拼接才不会把地址写死
         return String.format("/uploads/%s/%s", dateSubDir, fileName);
     }
 
     /**
      * 按相对访问路径删除文件
      *
-     * 入参是外部输入，同样要假设它是恶意的：前缀白名单只允许删 /uploads/ 下的文件
-     * （少了它，传绝对路径就可能删掉服务器任意文件），normalize 之后再 startsWith 确认边界。
-     *
-     * 删除失败一律返回 false 而不抛异常：删除通常发生在主流程的收尾阶段，
-     * 因删旧文件失败而让整个业务失败是本末倒置。
-     *
-     * 坑：返回值表示「文件是否被删掉了」而不是「操作是否合法」，文件本来就不存在与路径非法无法区分。
-     *
      * @param accessPath 相对访问路径（如 /uploads/2026/09/xxx.png）；为 null 或不是 /uploads/ 开头时返回 false
      * @return true 表示文件确实被删掉了；路径非法、越权、文件不存在或出错都返回 false
      */
     public boolean delete(String accessPath) {
-        // 步骤 1：前缀白名单——只允许删除本系统上传目录下的文件。
-        // 少了这一层，传入绝对路径（如 C:/Windows/win.ini）就可能删除服务器任意文件
         if (accessPath == null || !accessPath.startsWith("/uploads/")) {
             return false;
         }
@@ -158,76 +94,46 @@ public class FileManager {
             Path baseDirPath = Paths.get(rootDir).toAbsolutePath().normalize();
             Path targetFilePath = baseDirPath.resolve(relativePath).normalize();
 
-            // 步骤 3：越权与路径穿越防御——normalize 之后仍要再确认一次边界，
-            // 否则 "/uploads/../../xxx" 这类路径会指到根目录之外
             if (!targetFilePath.startsWith(baseDirPath)) {
                 return false;
             }
             // deleteIfExists：文件不存在不算错误，返回 false 即可（重复删除是常见场景）
             return Files.deleteIfExists(targetFilePath);
         } catch (Exception e) {
-            // 删除失败不向上抛异常：删除通常发生在「换头像」这类主流程的收尾阶段，
-            // 因删旧文件失败而让整个业务失败，是本末倒置；留下一条日志即可
             return false;
         }
     }
 
-    /**
-     * 魔数识别文件真实类型（比对文件头字节，不信任文件名后缀）
-     *
-     * 文件开头那几个字节由生成它的软件写入，改后缀不会改变它们。采用白名单而不是黑名单：
-     * 黑名单永远列不全。只识别图片是业务决定的，本系统的上传入口只用于头像与帖子配图。
-     *
-     * 坑：JPEG 只比对前 3 个字节（FF D8 FF），不能强行匹配到第 4 字节——
-     * 其后可能是 JFIF、EXIF 等不同段，多匹配一个字节会把一批合法 JPEG 误判成非法。
-     *
-     * @param head 文件头字节；为 null 或不足 12 字节时返回 null
-     * @return 识别出的扩展名（.png / .jpg，带点号）；无法识别时返回 null，调用方必须判空
-     */
+    /** 魔数识别文件真实类型（比对文件头字节，不信任文件名后缀） */
     private String detectImageType(byte[] head) {
-        // ① 先判长度：不足 12 字节连比对都不必做，直接判为无法识别
+        // 先判长度：不足 12 字节连比对都不必做，直接判为无法识别
         if (head == null || head.length < 12) {
             return null;
         }
 
-        // ② 比对 PNG 魔数，命中返回 .png。
-        //    PNG 魔数: 89 50 4E 47 0D 0A 1A 0A（8 字节，后面固定是 IHDR 段）
         byte[] pngMagic = new byte[]{(byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
         if (matchMagic(head, pngMagic)) {
             return ".png";
         }
 
-        // ③ 比对 JPEG 魔数，命中返回 .jpg。
-        //    JPEG/JPG 魔数: FF D8 FF
-        //    只比对 3 个字节即可：其后可能是 JFIF(E0)、EXIF(E1) 等不同段，
-        //    若强行匹配到第 4 字节，会把一批合法 JPEG（如相机直出照片）误判为非法
         byte[] jpegMagic = new byte[]{(byte) 0xFF, (byte) 0xD8, (byte) 0xFF};
         if (matchMagic(head, jpegMagic)) {
             return ".jpg";
         }
 
-        // ④ 都不命中返回 null，由调用方判成「格式不支持」
+        // 都不命中返回 null，由调用方判成「格式不支持」
         return null;
     }
 
-    /**
-     * 比对源字节数组是否以指定魔数开头
-     *
-     * 坑：本方法假定 source 长度不小于 magic。若将来有调用点传入更短的数组，
-     * 这里会抛 ArrayIndexOutOfBoundsException，最终变成 B0001，很难联想到是数组越界。
-     *
-     * @param source 待检查的文件头字节，长度必须不小于 magic
-     * @param magic 魔数
-     * @return source 以 magic 开头返回 true
-     */
+    /** 比对源字节数组是否以指定魔数开头 */
     private boolean matchMagic(byte[] source, byte[] magic) {
-        // ① 按下标逐字节比对，一旦不等立刻返回 false
+        // 按下标逐字节比对，一旦不等立刻返回 false
         for (int i = 0; i < magic.length; i++) {
             if (source[i] != magic[i]) {
                 return false;
             }
         }
-        // ② 全部相等返回 true
+        // 全部相等返回 true
         return true;
     }
 }

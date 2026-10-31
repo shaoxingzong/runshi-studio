@@ -5,16 +5,7 @@ import { logApi } from '@/api/log';
 import ErrorRetry from '@/components/ErrorRetry.vue';
 import type { OperationActionOption, OperationLog, PageResult } from '@/api/types';
 
-/**
- * 操作日志（管理员）
- *
- * 这是「内容出事故后能查到人」的落地页：每一行都是一次真实的处置动作，
- * 操作人、对象、细节、IP 全是当时的快照，账号或帖子后来被删也不影响阅读。
- *
- * 两个刻意的设计：
- *   · 动作下拉与标签文案全部来自后端字典（/admin/log/actions），前端不硬编码映射；
- *   · 时间格式固定 `YYYY-MM-DD HH:mm:ss`，与后端 @DateTimeFormat 的约定一致。
- */
+/** 操作日志（管理员） */
 const router = useRouter();
 
 const page = reactive({ current: 1, pageSize: 10 });
@@ -55,11 +46,7 @@ const groupedActions = computed(() => {
     return Array.from(groups.values());
 });
 
-/**
- * 动作标签配色：按语义分档，不逐个动作写映射
- *
- * 新增动作时不必改前端——后缀决定语义，漏配也只是回落成默认色，不会报错。
- */
+/** 动作标签配色：按语义分档，不逐个动作写映射 */
 function actionTagType(action: string): 'success' | 'danger' | 'warning' | 'primary' | 'info' {
     if (action.endsWith('_APPROVE')) {
         return 'success';
@@ -143,7 +130,7 @@ function openTarget(row: OperationLog) {
     }
 }
 
-// ==================== 细节弹窗 ====================
+// 细节弹窗
 
 const detailVisible = ref(false);
 const detailRow = ref<OperationLog | null>(null);
@@ -154,8 +141,6 @@ function showDetail(row: OperationLog) {
 }
 
 onMounted(async () => {
-    // 字典失败不该挡住日志列表：下拉为空时至少还能按时间翻记录，
-    // 因此这里只吞掉字典异常（列表自己的错误由 load 负责展示）
     try {
         actions.value = await logApi.actions();
     } catch {

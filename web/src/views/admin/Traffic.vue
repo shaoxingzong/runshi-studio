@@ -4,14 +4,7 @@ import { trafficApi } from '@/api/traffic';
 import ErrorRetry from '@/components/ErrorRetry.vue';
 import type { TrafficOverview } from '@/api/types';
 
-/**
- * 流量分析（管理端）
- *
- * 口径：UV 按前端 localStorage 的随机 uuid 去重，换设备 / 清缓存 / 无痕会算成多个 UV。
- * 这是刻意取舍——不记 IP、不记设备指纹，隐私面更小，代价是精度，所以页面顶部常驻说明。
- *
- * 不做图表：趋势数据只是「日期 + 两个数」，表格更好读；后台是工具页，快和可复制优先。
- */
+/** 流量分析（管理端） */
 const DAY_OPTIONS = [
     { value: 7, label: '近 7 天' },
     { value: 30, label: '近 30 天' },

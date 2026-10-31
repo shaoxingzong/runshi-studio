@@ -41,25 +41,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * SSE 流式提问验收测试
  *
- * 本类刻意不加 @Transactional（与其它测试类不同）：
- * 流式主流程运行在虚拟线程上（ streamExecutor），数据库写入是独立事务、真实提交的，
- * 测试事务回滚对它无效。因此本类在 @AfterEach 里按前缀手动清理，
- * 所有测试数据都用 T23 前缀命名（见 cleanup）。
- *
- * AI 流式调用用本地 Stub（JDK HttpServer）模拟 OpenAI 兼容的 SSE 响应：
- * 固定推送三段增量「流式 / - / 回答」（拼起来 = 流式-回答），
- * 请求体含 TRIGGER_FAIL 时返回 500，用于验证失败分支。
- *
- * 覆盖七条线：
- * - 事件序列：meta → delta* → done，meta 带 19 位字符串 sessionId；
- * - 增量拼接：delta 事件内容拼接 == 完整回答（多段推送，不是一次性返回）；
- * - 落库一致性：流结束后 user + assistant 两条消息入库，done 的 messageId 可在库中查到；
- * - 续聊：带 sessionId 的流式追加进同一会话；
- * - 配额：登录用户每次成功流式 +1（SQL 对齐）；
- * - 失败也是事件：参数错误 / 会话不存在或无权 / AI 失败 → error 事件，
- * HTTP 恒 200；AI 失败时保留用户消息、无 assistant、不计数；
- * - 回归：匿名流式被拒 A0201（未登录不可用）与既有接口不受影响。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -79,12 +60,7 @@ class AiChatStreamTest {
     @Resource
     private AiQueryCountManager aiQueryCountManager;
 
-    /**
-     * AI 熔断器：每个用例前重置。
-     *
-     * 本类有用例会让流式调用失败（连接断开、服务商 5xx），而熔断器是进程内单例，
-     * 不重置会把失败传染给同一 JVM 里后跑的测试类。
-     */
+    /** AI 熔断器：每个用例前重置。 */
     @Resource
     private AiCircuitBreaker circuitBreaker;
 
@@ -93,7 +69,7 @@ class AiChatStreamTest {
         circuitBreaker.reset();
     }
 
-    // ==================== 本地 AI Stub（SSE 版）====================
+    // 本地 AI Stub（SSE 版）
 
     private static HttpServer stub;
 
@@ -111,8 +87,6 @@ class AiChatStreamTest {
         stub = HttpServer.create(new InetSocketAddress(0), 0);
         stub.createContext("/chat/completions", exchange -> {
             String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
-            // LangChain4j 的请求体是带空格的美化 JSON（"stream" : true），
-            // 精确匹配 "stream":true 会失败——必须先压掉空白再判断
             String compact = body.replace(" ", "").replace("\r", "").replace("\n", "");
             if (compact.contains("TRIGGER_FAIL")) {
                 exchange.sendResponseHeaders(500, -1);
@@ -173,7 +147,7 @@ class AiChatStreamTest {
         jdbcTemplate.update("DELETE FROM sys_user WHERE user_account LIKE 'T23%'");
     }
 
-    // ==================== 工具方法 ====================
+    // 工具方法
 
     /** 发起流式提问并等待流结束，返回原始 SSE 帧文本（轮询到 done/error 帧出现为止） */
     private MvcResult streamRaw(String json, String token) throws Exception {
@@ -187,8 +161,6 @@ class AiChatStreamTest {
         for (int i = 0; i < 200; i++) {
             frames = result.getResponse().getContentAsString(StandardCharsets.UTF_8);
             if (frames.contains("event:done") || frames.contains("event:error")) {
-                // 事件帧是分多次写入的：连「event:xxx」字样出现后，data 载荷可能还没写完。
-                // 连续两次读取（间隔 60ms）内容一致，才认为这台流已收尾且写完整
                 String snapshot = frames;
                 Thread.sleep(60);
                 frames = result.getResponse().getContentAsString(StandardCharsets.UTF_8);
@@ -236,8 +208,6 @@ class AiChatStreamTest {
     private int queryCountOf(String account) {
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT ai_query_count FROM sys_user WHERE user_account=?", Integer.class, account);
-        // 起计数先进 Redis、由定时任务回刷 DB：
-        // 只读 DB 会读到回刷前的旧值，必须用「DB 基准 + Redis 增量」的合并值
         Long userId = jdbcTemplate.queryForObject(
                 "SELECT id FROM sys_user WHERE user_account=?", Long.class, account);
         return aiQueryCountManager.merge(userId, count);
@@ -267,7 +237,7 @@ class AiChatStreamTest {
         return loginUserTracked();
     }
 
-    // ==================== ① ② ③ 事件序列 / 增量拼接 / 落库 ====================
+    // ① ② ③ 事件序列 / 增量拼接 / 落库
 
     @Test
     @DisplayName("登录流式：meta → delta* → done；增量拼接=完整回答；两条消息入库且 messageId 可查")
@@ -286,8 +256,6 @@ class AiChatStreamTest {
         int iDone = frames.indexOf("event:done");
         assertTrue(iMeta >= 0 && iSources > iMeta && iDelta > iSources && iDone > iDelta,
                 "事件顺序应为 meta → sources → delta → done：" + frames);
-        // 本测试环境没有 Embedding 通路（Stub 无 /embeddings）→ 检索降级；
-        // sources 恒发、载荷为空数组（前端不必靠「等一会儿没收到」来判断有没有资料）
         assertTrue(dataOf(frames, "sources").contains("\"sources\":[]"),
                 "无命中时也应发空数组：" + frames);
 
@@ -335,7 +303,7 @@ class AiChatStreamTest {
                 Integer.class, Long.parseLong(sessionId)), "两轮应落 4 条消息");
     }
 
-    // ==================== ⑤ 配额 ====================
+    // ⑤ 配额
 
     @Test
     @DisplayName("配额：登录用户每次成功流式提问 +1（SQL 对齐）")
@@ -352,7 +320,7 @@ class AiChatStreamTest {
         assertEquals(2, queryCountOf(lastAccount), "第二次成功后计数应为 2");
     }
 
-    // ==================== ⑥ 失败也是事件（HTTP 恒 200）====================
+    // ⑥ 失败也是事件（HTTP 恒 200）
 
     @Test
     @DisplayName("参数错误以 error 事件返回：HTTP 200、无 meta、code=A0401")
@@ -407,7 +375,7 @@ class AiChatStreamTest {
         assertEquals(0, queryCountOf(lastAccount), "失败不应增加配额");
     }
 
-    // ==================== ⑦ 回归 ====================
+    // ⑦ 回归
 
     @Test
     @DisplayName("回归：匿名流式被拒 A0201；既有公开接口与管理端拦截不受影响")
@@ -422,8 +390,6 @@ class AiChatStreamTest {
                 "SELECT COUNT(*) FROM sys_user WHERE user_account LIKE 'T23%'", Integer.class),
                 "清理基准：本类不应有历史残留");
 
-        // 成员接口已按「团队成员不对外展示」整体删除，
-        // 「匿名可用」的取样改用仍公开的项目列表（成员接口的 404 断言见 StudioMemberCrudTest）
         String body = mockMvc.perform(get("/project/list")).andReturn()
                 .getResponse().getContentAsString(StandardCharsets.UTF_8);
         assertTrue(body.contains("\"code\":\"00000\""), "既有公开接口应匿名可用：" + body);

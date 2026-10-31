@@ -27,15 +27,6 @@ import static org.mockito.Mockito.when;
 /**
  * 全局异常处理器的验收测试
  *
- * 这里直接 new GlobalExceptionHandler(...) 调用方法，不启动 Spring 容器：
- * 被测逻辑是纯映射（异常 → 响应体），唯一的依赖（上传大小上限）由构造器直接传入，
- * 用普通单元测试跑得更快、更稳。
- * 容器层面的装配（@RestControllerAdvice 是否生效）由集成测试覆盖。
- *
- * Sa-Token 那 4 个用例的价值在于「防止被兜底吞掉」：
- * 它们都继承 RuntimeException，一旦处理器被误删，接口会返回 B0001，
- * 前端就无法判断该跳登录页还是该报服务器故障。
- *
  * @author shaoshing
  */
 class GlobalExceptionHandlerTest {

@@ -14,12 +14,6 @@ import java.time.LocalDateTime;
 /**
  * 刷题题目实体（对应 studio_quiz_question，题目 / 选项 / 答案 / 章节归属合一）
  *
- * 展示数据与判定数据物理分离：options 只存 label 与 content，正确项单独放 correctLabels，
- * 题目 VO 可以把 options 原样下发，脱敏靠结构而不靠「记得过滤」。
- *
- * 坑：options 在 Java 侧是 String（JSON 快照），绝不能用 BeanUtils.copyProperties 转 VO——
- * 类型不一致时它会静默跳过；三个 *_seq 是「越小越靠前」，与全站 sort_order 方向相反。
- *
  * @author shaoshing
  */
 @Data
@@ -88,7 +82,6 @@ public class StudioQuizQuestion implements Serializable {
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 
-    /** 逻辑删除毫秒时间戳（0-未删除，非0-已删除） */
     @TableLogic
     private Long deletedAt;
 }

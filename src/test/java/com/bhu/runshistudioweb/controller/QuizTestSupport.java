@@ -22,20 +22,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * 刷题测试的共用夹具（建用户 / 建成员档案 / 登录 / 发请求 / 解析响应）
  *
- * 为什么是普通类 + 构造器注入，而不是 @Component：
- * 测试源码里加 @Component 会被 @SpringBootApplication 的组件扫描
- * 扫到，于是每个测试上下文都会尝试创建它——而它依赖 MockMvc，
- * 后者只在标了 @AutoConfigureMockMvc 的测试里才存在。
- * 结果是所有不带 MockMvc 的测试（如 DDL 校验类）直接启动失败。
- * 因此由测试类自己 new，依赖从它的 @Resource 字段传进来。
- *
- * 为什么抽出来而不是每个测试类各写一份：刷题测试要同时覆盖
- * 「成员」与「非成员」两种身份、反复开关题目状态、读三种 VO 的字段。
- * 这些工具方法如果各写一份，三份之间迟早漂移（比如一处忘了设 member_status），
- * 而漂移的表现是「某个用例莫名 401」。
- *
- * 类名以 Support 结尾，不符合 surefire 的 *Test 命名，不会被当成测试类。
- *
  * @author shaoshing
  */
 public class QuizTestSupport {
@@ -56,13 +42,6 @@ public class QuizTestSupport {
 
     private final JsonMapper jsonMapper;
 
-    /**
-     * @param mockMvc MockMvc（由测试类注入）
-     * @param sysUserMapper 账号 Mapper
-     * @param studioMemberMapper 成员档案 Mapper
-     * @param jdbcTemplate 直查（登录时取账号名）
-     * @param jsonMapper 响应解析
-     */
     public QuizTestSupport(MockMvc mockMvc, SysUserMapper sysUserMapper,
                            StudioMemberMapper studioMemberMapper,
                            JdbcTemplate jdbcTemplate, JsonMapper jsonMapper) {
@@ -75,10 +54,6 @@ public class QuizTestSupport {
 
     /**
      * 建一个在队成员（账号 + 成员档案），返回账号 ID
-     *
-     * 刻意建两份数据：sys_user 负责登录，
-     * studio_member 负责准入判定。只建账号不建档案，会被 Service 判成非成员——
-     * 这正是「成员身份认表不认角色」的体现。
      *
      * @param role 账号角色（user / member / admin），不影响刷题准入
      * @return 账号 ID
@@ -133,7 +108,7 @@ public class QuizTestSupport {
         return body.substring(start, body.indexOf('"', start));
     }
 
-    // ==================== 请求 ====================
+    // 请求
 
     /** 发 POST（JSON 体），返回响应体 */
     public String postJson(String path, String json, String token) {
@@ -163,7 +138,7 @@ public class QuizTestSupport {
         }
     }
 
-    // ==================== 响应解析 ====================
+    // 响应解析
 
     /** 取业务码 */
     public String code(String body) {

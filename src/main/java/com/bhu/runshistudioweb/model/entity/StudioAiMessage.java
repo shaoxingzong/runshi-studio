@@ -14,12 +14,6 @@ import java.time.LocalDateTime;
 /**
  * AI 咨询消息实体（对应 studio_ai_message）
  *
- * 一条消息 = 用户提问或 AI 回答，通过 sessionId 归属会话。
- * role 用 varchar：要原样送给模型（OpenAI 兼容协议），数字存法反而多一层映射。
- *
- * 坑：created_at 是秒级 datetime，同秒两条消息时间相同，
- * 查询必须追加 id 作次级排序键，否则对话记录会偶尔颠倒。
- *
  * @author shaoshing
  */
 @Data
@@ -58,7 +52,6 @@ public class StudioAiMessage implements Serializable {
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 
-    /** 逻辑删除毫秒时间戳（0-未删除，非0-已删除） */
     @TableLogic
     private Long deletedAt;
 }

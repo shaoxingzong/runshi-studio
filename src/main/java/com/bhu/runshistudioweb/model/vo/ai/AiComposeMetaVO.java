@@ -7,9 +7,6 @@ import lombok.NoArgsConstructor;
 /**
  * AI 生成的标题与摘要
  *
- * <p>两个字段都不允许为 null：生成失败时上游会抛 C0200，而不是返回半份结果——
- * 只回填标题、摘要还是旧的，用户很难发现哪里没生效。
- *
  * @author shaoshing
  */
 @Data

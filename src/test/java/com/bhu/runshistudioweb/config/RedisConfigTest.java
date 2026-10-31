@@ -24,11 +24,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Redis 配置验收测试
  *
- * 这组用例专治「配置看着对、其实没生效」：序列化器是 Redis 接入里最容易被忽略的一环，
- * 配错了程序照常跑，只是 redis-cli 里全是二进制乱码、跨语言客户端读不了、重启后类型丢失。
- *
- * 注意：每个用例都自行清理写入的 key，不留垃圾数据（测试用的 Redis 往往和本地开发共用一个库）。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -85,9 +80,6 @@ class RedisConfigTest {
                 byte[] rawValue = connection.stringCommands().get(rawKey);
                 assertNotNull(rawValue, "value 未写入成功");
 
-                // JDK 序列化的字节流以 0xAC 0xED 开头，文本 JSON 则以 '{' 开头。
-                // 这里刻意读「原始字节」而不是走 RedisTemplate 反序列化：
-                // 走模板拿到的对象一定是正确的，只有看落库字节才能证明运维可见性
                 assertFalse(rawValue[0] == (byte) 0xAC && rawValue[1] == (byte) 0xED,
                         "value 是 JDK 序列化的二进制流，redis-cli 中不可读");
 

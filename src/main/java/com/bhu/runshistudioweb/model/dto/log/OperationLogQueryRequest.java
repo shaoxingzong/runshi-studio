@@ -10,12 +10,6 @@ import java.time.LocalDateTime;
 /**
  * 管理端：操作日志查询请求
  *
- * 五个条件全部「传了才生效」，不传表示不按该维度过滤——与帖子管理页的筛选口径一致。
- * 时间格式固定为 {@code yyyy-MM-dd HH:mm:ss}：GET 查询串里带 T 的 ISO 写法
- * 依赖前端做额外转换，不如直接约定一种格式，前后端都不用猜。
- *
- * 分页非法值不在这里报错（GET 传参失败会变成 B0001），由 Service 收敛到合法范围。
- *
  * @author shaoshing
  */
 @Data
@@ -31,19 +25,11 @@ public class OperationLogQueryRequest implements Serializable {
     @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss")
     private LocalDateTime endTime;
 
-    /**
-     * 动作码（精确匹配，选填），取值见 OperationTypeEnum
-     *
-     * 上限 48 与 DDL 中 action 列宽一致：传一个超长串进去只会白跑一趟数据库。
-     */
+    /** 动作码（精确匹配，选填），取值见 OperationTypeEnum */
     @Size(max = 48, message = "动作码不能超过 48 个字符")
     private String action;
 
-    /**
-     * 操作人关键词（模糊匹配，选填）
-     *
-     * 同时匹配账号与昵称：管理员未必记得对方昵称，账号名往往是更好用的线索。
-     */
+    /** 操作人关键词（模糊匹配，选填） */
     @Size(max = 64, message = "操作人关键词不能超过 64 个字符")
     private String operatorKeyword;
 

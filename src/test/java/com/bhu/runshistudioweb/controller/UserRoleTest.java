@@ -24,11 +24,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * 角色取值与默认角色验收测试
  *
- * 把「角色取值 = user / member / admin」这条约定钉在测试里：
- * 它同时存在于 db/user.sql 的列注释与默认值、Java 常量两处，
- * 任何一处改了而另一处没跟上，都会静默变成「明明给了角色却一直 A0301」。
- * 这里改一处、跑一次，就能发现不一致。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -77,7 +72,7 @@ class UserRoleTest {
         String account = "role_reg_" + (System.nanoTime() % 100000);
 
         String body = postJson("/user/register", "{\"userAccount\":\"" + account
-                + "\",\"userPassword\":\"Studio@2026\",\"checkPassword\":\"Studio@2026\"}", null);
+                + "\",\"userName\":\"注册测试\",\"userPassword\":\"Studio@2026\",\"checkPassword\":\"Studio@2026\"}", null);
         assertTrue(body.contains("\"code\":\"00000\""), "注册失败：" + body);
 
         // 直接查库断言：接口返回体里可能压根不带角色，只有查库才能证明真实落库值
@@ -85,6 +80,8 @@ class UserRoleTest {
         assertNotNull(user, "注册后查不到用户");
         assertEquals(UserRoleConstant.USER, user.getUserRole(),
                 "注册默认角色必须是 user——默认给 member/admin 等于人人可管成员档案");
+        // 展示名必须是注册时填的姓名，不能再用账号兜底
+        assertEquals("注册测试", user.getUserName(), "注册姓名没有正确落库到 user_name");
     }
 
     @Test

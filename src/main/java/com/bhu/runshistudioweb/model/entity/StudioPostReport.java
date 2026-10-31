@@ -14,13 +14,6 @@ import java.time.LocalDateTime;
 /**
  * 内容举报实体（对应 studio_post_report）
  *
- * 举报是「免审内容」的兜底：被信任用户的内容自动通过，但仍需给他人的反馈通道。
- * 用 targetType + targetId 软关联而非两张举报表：字段几乎一样，拆开只是复制逻辑，
- * 还让跨类型查询变成两次查询再合并。
- *
- * 坑：没有外键保证 targetId 指向真实内容，删除帖子或评论时必须同事务处置其举报，
- * 否则会留下悬空举报污染待处理列表；uk_target_reporter 带 deletedAt，否则误报撤销后无法再举报同一内容。
- *
  * @author shaoshing
  */
 @Data
@@ -74,7 +67,6 @@ public class StudioPostReport implements Serializable {
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
 
-    /** 逻辑删除毫秒时间戳（0-未删除，非0-已删除） */
     @TableLogic
     private Long deletedAt;
 }

@@ -13,12 +13,6 @@ import java.time.LocalDateTime;
 /**
  * 成员-项目关联实体（对应 studio_member_project，物理删除）
  *
- * 只有 DDL 里真实存在的 4 列（id / member_id / project_id / created_at），
- * 绝不能加 deletedAt / updatedAt / createdBy / updatedBy，多一个字段就是一次 500。
- *
- * 不变量：项目队长（studio_project.leader_id）必然在本表有一行，由 Service 同事务同步；
- * 解绑接口会拦住「移除当前队长」，否则该不变量被打破。
- *
  * @author shaoshing
  */
 @Data

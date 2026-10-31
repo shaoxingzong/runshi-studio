@@ -1,15 +1,6 @@
 import DOMPurify from 'dompurify';
 import { Marked, type RendererObject } from 'marked';
 
-// Markdown 渲染增强（帖子详情 / 项目详情共用）
-//
-// 两页渲染链相同（marked → DOMPurify → v-html），增强各写一份必然改一处漏一处。
-// 三样增强：代码块一键复制（v-html 里挂不了 Vue 事件，只能事件委托）、
-// 长文目录（抽取与注入 id 是同一次遍历，不会对不上）、图片懒加载。
-//
-// 页面侧责任：本工具输出的 div.code-block、button.copy-btn、标题 id、图片 loading/decoding
-// 必须在 DOMPurify 白名单里放行，否则会被洗掉且不报错。
-
 /** 目录项：只收 h2/h3（h1 是文章标题本身，收进来等于重复） */
 export interface TocItem {
     // 标题锚点 id（已去重，可直接拼进 URL hash）
@@ -19,12 +10,7 @@ export interface TocItem {
     level: 2 | 3;
 }
 
-/**
- * 渲染结果：正文 HTML + 目录
- *
- * html 是「清洗前」的产物，页面仍需过自己的 DOMPurify 白名单——
- * 这里负责 Markdown → HTML，页面负责决定哪些标签允许保留。
- */
+/** 渲染结果：正文 HTML + 目录 */
 export interface MarkdownResult {
     // 清洗前的 HTML（页面仍需过自己的 DOMPurify 白名单）
     html: string;
@@ -35,12 +21,7 @@ export interface MarkdownResult {
 /** 少于这个数就不值得展示目录——两行字的文章配个目录框很滑稽 */
 export const TOC_MIN_ITEMS = 3;
 
-/**
- * DOMPurify 白名单（帖子 / 项目详情共用，单一事实来源）
- *
- * 两页消费同一个 renderer 的输出，各写一份必然漂移。div/button/id/loading/decoding 是增强
- * 输出的载体（代码块包装、复制按钮、锚点、懒加载），少一个对应的增强就被静默洗掉。
- */
+/** DOMPurify 白名单（帖子 / 项目详情共用，单一事实来源） */
 export const MARKDOWN_ALLOWED_TAGS = [
     'p', 'br', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
     'ul', 'ol', 'li', 'blockquote', 'pre', 'code', 'strong', 'em', 'del',
@@ -57,12 +38,7 @@ export const MARKDOWN_ALLOWED_ATTR = [
 
 /** 清洗选项：唯一的策略差异是「图片能不能是外链」 */
 export interface SanitizeOptions {
-    /**
-     * 只允许站内 /uploads/ 图片（帖子正文与审核预览用）
-     *
-     * 外链图可当追踪像素用：管理员打开审核页一次，对方的服务器就拿到一次「谁在什么时候看了」。
-     * 项目正文由管理员录入，可信度更高，保留外链。
-     */
+    /** 只允许站内 /uploads/ 图片（帖子正文与审核预览用） */
     restrictImages?: boolean;
 }
 
@@ -81,10 +57,6 @@ function dropExternalImages(node: Element): void {
 /**
  * 清洗 renderMarkdown 的产物（帖子详情 / 项目详情 / 审核预览共用的唯一实现）
  *
- * 为什么必须收敛到一处：DOMPurify 的钩子是**全局**的，各页面自己 addHook/removeHook
- * 一旦漏了 finally 或漏摘钩子，就会污染下一次渲染；三份复制还会在升级清洗库时漏改。
- * 升级本身就是安全动作——旧版本存在可绕过白名单的 CRITICAL 漏洞，XSS 的最后一道防线失效。
- *
  * @param html renderMarkdown 的输出（不可信：来源可能是发帖用户）
  * @param options restrictImages=true 时只保留站内图片
  * @returns 已按白名单清洗的 HTML，可直接交给 v-html
@@ -100,7 +72,6 @@ export function sanitizeMarkdownHtml(html: string, options: SanitizeOptions = {}
             ALLOWED_ATTR: MARKDOWN_ALLOWED_ATTR,
         }) as string;
     } finally {
-        // 钩子挂在全局单例上：异常路径也必须摘掉，否则后续渲染会继续沿用本次策略
         if (hooked) {
             DOMPurify.removeHook('afterSanitizeAttributes', dropExternalImages);
         }

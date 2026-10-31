@@ -10,13 +10,6 @@ const SEARCH_DEBOUNCE_MS = 300;
 /**
  * 后台下拉框的远程选项（三个页面共用：项目队长、成员绑定账号、证书关联成员）
  *
- * 为什么需要它：后端分页上限是 50（安全边界，不能放开），前端原先把 pageSize 写成 100，
- * 结果被静默截断——第 51 个以后的成员根本选不到，界面也不会提示。
- * 正确做法不是调大 pageSize，而是「先给前 50 个，再用关键词搜」。
- *
- * 输入防抖 300ms：下拉搜索每敲一个字符都发请求，对后端是无意义压力，
- * 也会让输入框的联想结果乱序返回。
- *
  * @param fetcher 按关键词取一页数据；关键词为空串表示「取首页」
  * @returns options（当前选项）、total（匹配总数）、loading、load（立即加载）、search（防抖搜索）、dispose（清定时器）
  */
@@ -31,12 +24,7 @@ export function useRemoteOptions<T>(fetcher: (keyword: string) => Promise<PageRe
 
     let timer: number | null = null;
 
-    /**
-     * 立即加载（首次挂载、刷新时用）
-     *
-     * 失败时清空选项而不是保留上一次的结果：保留会让「搜索 A 再搜 B 失败」显示成 A 的人，
-     * 用户以为搜到了，实际选中的是错的人。
-     */
+    /** 立即加载（首次挂载、刷新时用） */
     async function load(keyword = '') {
         loading.value = true;
         try {

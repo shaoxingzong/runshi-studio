@@ -39,16 +39,11 @@ const form = reactive<Record<string, unknown>>({
     sortOrder: 0,
 });
 
-// ==================== 获奖成员（关联维护）====================
+// 获奖成员（关联维护）
 
 /** 已绑定的获奖成员 */
 const certMembers = ref<AdminMember[]>([]);
-/**
- * 候选成员（远程搜索）
- *
- * 后端分页上限 50，原先 pageSize: 100 会被静默截断——第 51 位成员永远绑不上；
- * 改成「前 50 + 按姓名搜索」，并在被截断时明确提示。
- */
+/** 候选成员（远程搜索） */
 const {
     options: memberOptions,
     total: memberTotal,
@@ -324,8 +319,7 @@ onBeforeUnmount(disposeMemberSearch);
                     <el-input-number v-model="form.sortOrder as number" :min="0" :max="999" />
                 </el-form-item>
 
-                <!-- 获奖成员：绑定关系依赖证书 ID，所以只在编辑态出现。
-                     与项目不同，证书没有「队长」这类不可移除的成员 -->
+                <!-- 获奖成员：绑定关系依赖证书 ID，所以只在编辑态出现。与项目不同，证书没有「队长」这类不可移除的成员 -->
                 <el-form-item v-if="editing" label="获奖成员">
                     <div v-loading="memberLoading" class="members">
                         <div v-if="!certMembers.length" class="muted">暂无获奖成员</div>

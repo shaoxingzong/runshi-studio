@@ -32,20 +32,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 /**
  * 帖子点赞验收测试
  *
- * 覆盖的规则（与产品口径一一对应）：
- * - 必须登录：未登录点赞返回 A0201，且不产生任何数据；
- * - 只能赞、不能取消：没有 unlike 接口，重复点赞幂等（不重复计数）；
- * - 只有「已通过」的文章可赞：待审 / 不存在统一 A0402「帖子不存在」，不暴露存在性；
- * - 计数是冗余列 like_count，由 SQL 原子自增维护；关系行落在
- * studio_post_like，唯一键 uk_post_user 保证一人一赞。
- *
- * 为什么用 @Transactional：点赞的写操作（insert + update）都在事务内，
- * 测试回滚即可撤销，不需要像非事务测试类那样按前缀手工清理。
- * 用例里对 studio_post 的状态改写也只影响本用例。
- *
- * 为什么不调 AI Stub：本类不经过发帖接口，文章由 createApprovedPost
- * 直接以「已通过」状态落库——要验的是点赞本身，先把内容审核链路排除在外。
- *
  * @author shaoshing
  */
 @SpringBootTest
@@ -74,7 +60,7 @@ class PostLikeTest {
     @Resource
     private JsonMapper jsonMapper;
 
-    // ==================== ① 鉴权 ====================
+    // ① 鉴权
 
     @Test
     @DisplayName("鉴权：未登录点赞 A0201，且不产生任何数据")
@@ -87,7 +73,7 @@ class PostLikeTest {
         assertEquals(0, likeRows(postId), "未登录不应产生点赞关系行");
     }
 
-    // ==================== ② 点赞成功 ====================
+    // ② 点赞成功
 
     @Test
     @DisplayName("点赞成功：计数 +1、落一条关系行、详情与列表均标记 liked=true")
@@ -106,7 +92,7 @@ class PostLikeTest {
         assertTrue(detail.contains("\"liked\":true"), "详情应标记已赞：" + detail);
     }
 
-    // ==================== ③ 幂等（只能赞不能取消）====================
+    // ③ 幂等（只能赞不能取消）
 
     @Test
     @DisplayName("幂等：同一用户重复点赞不重复计数，也没有取消入口")
@@ -124,7 +110,7 @@ class PostLikeTest {
         assertEquals(1, likeRows(postId), "关系行应仍为 1 条");
     }
 
-    // ==================== ④ 只有已通过的文章可赞 ====================
+    // ④ 只有已通过的文章可赞
 
     @Test
     @DisplayName("帖子不存在：A0402，提示与详情接口一致")
@@ -163,7 +149,7 @@ class PostLikeTest {
         assertEquals("A0401", code(postJson("/post/like", "{\"postId\":-1}", token)), "负数应 A0401");
     }
 
-    // ==================== ⑤ 多用户 ====================
+    // ⑤ 多用户
 
     @Test
     @DisplayName("多用户：各自点赞计数累加，关系行一人一条")
@@ -179,7 +165,7 @@ class PostLikeTest {
         assertEquals(2, likeRows(postId), "关系行应一人一条");
     }
 
-    // ==================== ⑥ liked 的读取填充 ====================
+    // ⑥ liked 的读取填充
 
     @Test
     @DisplayName("列表 liked：已赞的文章 true，未赞的 false")
@@ -209,7 +195,7 @@ class PostLikeTest {
         assertEquals(Boolean.FALSE, likedOf(list, postId), "游客看列表 liked 应为 false：" + list);
     }
 
-    // ==================== 工具方法 ====================
+    // 工具方法
 
     /** 发起点赞，返回响应体 */
     private String like(long postId, String token) throws Exception {
@@ -292,11 +278,7 @@ class PostLikeTest {
         return body.substring(start, body.indexOf('"', start));
     }
 
-    /**
-     * 直接落一篇「已通过」的文章
-     *
-     * 刻意不走发帖接口：那条链路会触发 AI 审核，而本类要验的是点赞本身。
-     */
+    /** 直接落一篇「已通过」的文章 */
     private long createApprovedPost(long authorId) {
         StudioPost post = new StudioPost();
         post.setTitle("T32-点赞测试文章");

@@ -9,14 +9,7 @@ import { generateMeta, polishStream } from '@/api/aiCompose';
 import { isRequestError } from '@/api/request';
 import { useUserStore } from '@/stores/user';
 
-/**
- * 发帖 / 修改被驳回的稿子（仅工作室成员）
- *
- * 准入判断要主动拉一次「我的成员档案」：角色是权限标签，可能与档案不同步。
- * 后端同样只准成员发帖，这里只是同一规则的界面表达。
- *
- * 改稿模式：带 ?edit=<帖子id> 进来，加载原稿、提交走 /post/update-mine，保存后回到待审。
- */
+/** 发帖 / 修改自己的文章（仅工作室成员；修改后重新送审） */
 const router = useRouter();
 const route = useRoute();
 const user = useUserStore();
@@ -27,6 +20,8 @@ const coverInput = ref<HTMLInputElement | null>(null);
 
 /** 改稿模式：正在修改的帖子 id（空串 = 新建） */
 const editingId = ref('');
+/** 原稿审核状态：0-待审, 1-已通过, 2-已驳回；用于文案与「查看原文」入口 */
+const editingStatus = ref<number | null>(null);
 /** 改稿模式下原稿的加载态：正文没回来之前禁用保存，避免提交半模态数据 */
 const loadingDraft = ref(false);
 
@@ -56,13 +51,12 @@ async function loadDraft(postId: string) {
     try {
         const detail = await postApi.myDetail(postId);
         editingId.value = postId;
+        editingStatus.value = detail.status ?? null;
         form.title = detail.title;
         form.summary = detail.summary ?? '';
         form.coverImage = detail.coverImage ?? '';
         form.content = detail.content ?? '';
     } catch (e) {
-        // 读不到（不是本人 / 不是待审或已驳回）：说明入口不合法，回列表并说明。
-        // 请求层已弹过一次提示（notified），这里只在它没弹的情况下补一句，避免双弹窗
         if (!isRequestError(e) || !e.notified) {
             ElMessage.error((e as Error).message || '原稿加载失败');
         }
@@ -72,29 +66,17 @@ async function loadDraft(postId: string) {
     }
 }
 
-/**
- * 编辑器上传图片
- *
- * 必须上传到站内并把返回的 `/uploads/...` 路径回调给编辑器：后端会拒绝外链图，
- * 而 base64 内嵌会让正文膨胀到难以存储。
- */
+/** 编辑器上传图片 */
 async function onUploadImg(files: Array<File>, callback: (urls: string[]) => void) {
     try {
         const urls = await Promise.all(files.map((file) => uploadPostImage(file)));
         callback(urls);
     } catch {
-        // 失败时不回调：编辑器会把这次插入作废，用户看到的是「图片没进去」，
-        // 比塞一个坏链接进去更好排查
         ElMessage.error('图片上传失败，请重试');
     }
 }
 
-/**
- * 编辑器实例（只声明本页用到的 expose 方法）
- *
- * 用 `insert` 把内容插到光标处——这正是粘贴 / 拖拽上传需要的；改用 `v-model` 整体赋值，
- * 插入点会被推到正文末尾。
- */
+/** 编辑器实例（只声明本页用到的 expose 方法） */
 type EditorExpose = {
     insert: (generate: (selectedText: string) => { targetValue: string }) => void;
     getSelectedText: () => string | undefined;
@@ -132,12 +114,7 @@ async function insertImages(files: File[]) {
     }
 }
 
-/**
- * 粘贴图片（Ctrl+V 截图即可插入正文）
- *
- * md-editor-v3 没有暴露 paste 事件，但 contenteditable 内的粘贴会冒泡到外层容器，在这里统一接管。
- * `preventDefault` 必须在同步阶段调用：等 await 之后再调，默认的「插入文本」早已发生。
- */
+/** 粘贴图片（Ctrl+V 截图即可插入正文） */
 async function onPaste(event: ClipboardEvent) {
     const files = Array.from(event.clipboardData?.files ?? []);
     if (!files.some((file) => file.type.startsWith('image/'))) {
@@ -171,8 +148,6 @@ async function onCoverPicked(event: Event) {
         form.coverImage = await uploadPostImage(file);
         ElMessage.success('封面已上传');
     } catch (e) {
-        // 上传失败（格式不支持 / 体积超限 / 服务端 5xx）：必须让用户知道，
-        // 否则他只会看到「点了没反应」，然后反复点
         ElMessage.error((e as Error).message || '封面上传失败，请重试');
     } finally {
         // 清空 value，否则连续选同一张图不会再触发 change
@@ -180,32 +155,19 @@ async function onCoverPicked(event: Event) {
     }
 }
 
-// ==================== AI 写作助手 ====================
-//
-// 两条链路都是「增强」而非依赖：润色失败不覆盖正文，生成失败不回填表单。
-// 润色结果先落在一个预览面板里，用户点「采用」才真正替换选区——
-// 直接流式写进编辑器会让用户在中途取消时无法还原原文。
-
 /** 润色结果（流式累积）；非空时显示「采用 / 取消」面板 */
 const polishText = ref('');
 /** 是否正在润色（含首字等待） */
 const polishing = ref(false);
-/** 本次润色的原文长度，仅用于界面提示 */
 const polishSourceLength = ref(0);
 /** 润色失败的提示（面板内展示，不打断用户） */
 const polishError = ref('');
-/** 当前润色请求的中止句柄：重复点击或取消时中断上一次 */
 let polishAbort: AbortController | null = null;
 
 /** 是否正在生成标题摘要 */
 const generatingMeta = ref(false);
 
-/**
- * 润色当前选中的文字
- *
- * 必须先用 getSelectedText 取选区、再发请求：insert 的回调虽然也能拿到选中内容，
- * 但它是同步的，没法等待异步的流式结果。所以采用「取选区 → 异步生成 → 采用时替换」。
- */
+/** 润色当前选中的文字 */
 async function startPolish() {
     const selected = editorRef.value?.getSelectedText() ?? '';
     if (!selected.trim()) {
@@ -263,8 +225,6 @@ function applyPolish() {
     polishError.value = '';
     ElMessage.success('已替换选中内容');
 }
-
-/** 放弃本次润色结果（不改动正文） */
 function discardPolish() {
     polishAbort?.abort();
     polishAbort = null;
@@ -331,7 +291,7 @@ async function submit() {
         if (isEditing.value) {
             await postApi.updateMine({ id: editingId.value, ...payload });
             // 改完必然回到待审：这句话必须说清楚，否则作者会以为改完就生效了
-            ElMessage.success('已保存，修改内容将重新送审');
+            ElMessage.success('已保存，文章已重新送审');
         } else {
             await postApi.add(payload);
             // 先审后发：此刻内容是待审状态，不会出现在公开列表里
@@ -348,11 +308,19 @@ async function submit() {
     <div class="page">
         <div class="page-head">
             <div>
-                <h1>{{ isEditing ? '修改被驳回的文章' : '写文章' }}</h1>
-                <p v-if="isEditing">修改后将重新送审，审核通过才会出现在社区。</p>
+                <h1>{{ isEditing ? '修改文章' : '写文章' }}</h1>
+                <p v-if="isEditing">修改后将重新送审，审核通过前不会在社区显示。</p>
                 <p v-else>支持 Markdown；可直接粘贴或拖拽图片，也可点工具栏上传。</p>
             </div>
-            <el-button @click="router.push('/posts/my')">我的发帖</el-button>
+            <div class="head-actions">
+                <el-button
+                    v-if="isEditing && editingStatus === 1"
+                    @click="router.push(`/posts/${editingId}`)"
+                >
+                    查看原文
+                </el-button>
+                <el-button @click="router.push('/posts/my')">我的文章</el-button>
+            </div>
         </div>
 
         <div class="card editor-card">
@@ -376,8 +344,7 @@ async function submit() {
                 <img v-if="form.coverImage" :src="form.coverImage" alt="封面预览" class="cover-preview" />
             </div>
 
-            <!-- 外层容器接管 paste：md-editor-v3 没有 paste 事件，
-                 但 contenteditable 区域内的粘贴会冒泡到这里 -->
+            <!-- 外层容器接管 paste：md-editor-v3 没有 paste 事件，但 contenteditable 区域内的粘贴会冒泡到这里 -->
             <div class="editor-wrap" @paste="onPaste">
                 <MdEditor
                     ref="editorRef"
@@ -460,6 +427,12 @@ async function submit() {
     justify-content: space-between;
     gap: 16px;
     margin-bottom: 20px;
+}
+
+.head-actions {
+    display: flex;
+    flex-shrink: 0;
+    gap: 10px;
 }
 
 .editor-card {

@@ -31,11 +31,6 @@ import java.util.List;
 /**
  * AI 咨询接口（HTTP 入口，全部要求登录）
  *
- * 鉴权分工：/ai/chat、/chat/stream、/chat/history、/session/delete 不在白名单，由全局拦截器
- * 要求登录、Service 再兜一层；/ai/session/list 额外标 {@code @SaCheckLogin} 作为纵深防御。
- *
- * 登录后普通用户受 studio.ai.query-limit（默认 5 次）约束，成员与管理员不限次也不计数。
- *
  * @author shaoshing
  */
 @Tag(name = "AI 咨询模块", description = "官网 AI 咨询：提问与历史记录（匿名可访问）")
@@ -49,11 +44,7 @@ public class AiChatController {
     /**
      * AI 提问（同步）：一次返回完整回答
      *
-     * sessionId 可空，为空即新建会话并在响应里带回新 ID，因此不需要单独的「创建会话」接口——
-     * 少一个接口就少一次「会话建好了但提问失败」的空会话垃圾。
-     *
      * @param aiChatRequest message 必填且不超过 500 字；sessionId 为空表示新建会话
-     * @return 会话 ID、回答正文与本次引用的资料列表
      */
     @PostMapping("/chat")
     @Operation(summary = "AI 提问", description = "需登录；sessionId 可空（为空则新建会话），失败返回 C0200")
@@ -66,9 +57,6 @@ public class AiChatController {
     /**
      * 查询会话历史（一次返回最近 50 条）
      *
-     * 上限固定 50：会话随对话轮次无限增长，全量返回会让前端一打开历史页就拉回整个会话。
-     * required = false 是为了让缺参落到 Service 报 A0401；写成 true 会被兜成 B0001「系统错误」。
-     *
      * @param sessionId 会话 ID，缺失时由 Service 报 A0401
      * @return 消息列表（旧 → 新），没有消息时为空列表
      */
@@ -76,17 +64,11 @@ public class AiChatController {
     @Operation(summary = "AI 会话历史", description = "需登录；返回最近 50 条消息（时间正序）")
     public BaseResponse<List<AiMessageVO>> listHistory(@RequestParam(value = "sessionId", required = false)
                                                       String sessionId) {
-        // 刻意用 required = false + 包装类型：缺参数时让 Service 返回
-        // A0401「会话 id 不能为空」，而不是 Spring 抛 MissingServletRequestParameterException
-        // 被全局处理器兜成 B0001「系统错误」
         return ResultUtils.success(aiChatService.listHistory(sessionId));
     }
 
     /**
      * AI 提问（SSE 流式）：回答边生成边推送
-     *
-     * 全项目唯一不返回统一响应体的接口：事件流套上 {@code {code,data,message}} 就无法边收边渲染，
-     * 因此 HTTP 状态恒为 200、业务码在事件负载里；不加 {@code @Valid}，校验交给 Service。
      *
      * @param aiChatRequest message 必填；sessionId 为空表示新建会话
      * @return SSE 发射器，方法立即返回，推流在 Service 的虚拟线程里进行
@@ -98,13 +80,10 @@ public class AiChatController {
         return aiChatService.chatStream(aiChatRequest);
     }
 
-    // ==================== 会话管理 ====================
+    // 会话管理
 
     /**
      * 我的会话列表（分页）
-     *
-     * 用户维度由服务端从登录态取，请求里没有 userId，否则「看别人的会话列表」就成了功能。
-     * 额外标 {@code @SaCheckLogin} 是纵深防御：本路径未进白名单，万一被加进去注解仍能兜住。
      *
      * @param aiSessionQueryRequest 分页参数，允许为 null 或字段全空
      * @return 会话分页结果，按最近活跃倒序，含每个会话的消息条数
@@ -118,9 +97,6 @@ public class AiChatController {
 
     /**
      * 删除会话及其全部消息
-     *
-     * 会话与消息在同一事务内各自标记 deleted_at，数据可追溯。重复删除会得到 A0402：
-     * 第一次删除后按 ID 查不到，与「不存在」走同一条路径。
      *
      * @param aiSessionDeleteRequest sessionId 必填，整个对象为 null 时得到 A0401
      * @return 恒为 true，删除失败一律抛异常
