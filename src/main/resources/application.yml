@@ -224,6 +224,11 @@ studio:
     # 送审正文的最大长度，超出部分截断后再交给模型。
     # 只影响「送审」这一步，入库与展示的正文始终是完整的
     audit-content-max-length: ${POST_AUDIT_CONTENT_MAX_LENGTH:2000}
+    # 正文允许引用的站外图片域名（逗号分隔，可写成带协议的完整地址）：
+    # 接入 OSS / CDN 后填其域名，正文里的绝对地址才不会被图片校验拒掉；
+    # 留空时只允许编辑器上传的 /uploads/ 站内图片（安全默认值）。
+    # 前端渲染还要同步配置 web/.env.production 的 VITE_IMAGE_HOSTS（见部署文档）
+    allowed-image-hosts: ${POST_ALLOWED_IMAGE_HOSTS:}
 
   web:
     # 跨域来源白名单：逗号分隔，端口通配用 *；必须走 allowedOriginPatterns（见 CorsConfig）

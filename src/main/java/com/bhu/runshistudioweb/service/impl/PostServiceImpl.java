@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.exception.ThrowUtils;
+import com.bhu.runshistudioweb.config.PostProperties;
 import com.bhu.runshistudioweb.manager.ContentAuditManager;
 import com.bhu.runshistudioweb.mapper.StudioMemberMapper;
 import com.bhu.runshistudioweb.mapper.StudioPostCommentMapper;
@@ -42,6 +43,7 @@ import com.bhu.runshistudioweb.service.NotificationService;
 import com.bhu.runshistudioweb.service.OperationLogService;
 import com.bhu.runshistudioweb.service.PostService;
 import com.bhu.runshistudioweb.service.StudioMemberService;
+import com.bhu.runshistudioweb.utils.ImageUrlWhitelist;
 import com.bhu.runshistudioweb.utils.MarkdownSanitizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -92,12 +94,12 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
     /** Markdown 图片语法：![任意描述](地址) */
     private static final Pattern MARKDOWN_IMAGE = Pattern.compile("!\\[[^\\]]*\\]\\(([^)\\s]+)\\)");
 
-    /** 站内图片路径前缀：只允许引用我们自己上传目录里的图片 */
-    private static final String INTERNAL_IMAGE_PREFIX = "/uploads/";
-
     private final StudioMemberService studioMemberService;
 
     private final StudioMemberMapper studioMemberMapper;
+
+    /** 帖子配置：正文图片域名白名单等 */
+    private final PostProperties postProperties;
 
     /**
      * 内容审核（AI 三分法）
@@ -142,7 +144,7 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         content = MarkdownSanitizer.sanitize(content);
 
         // 图片必须是站内路径：外链图会成为追踪像素（泄露访客 IP），也可能将来裂图
-        assertImagesAreInternal(content);
+        assertImagesAreAllowed(content);
 
         StudioPost post = new StudioPost();
         post.setTitle(StrUtil.trim(request.getTitle()));
@@ -642,7 +644,7 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
         ThrowUtils.throwIf(content.length() > CONTENT_MAX_LENGTH, ErrorCode.PARAMS_ERROR,
                 "正文过长，请控制在 " + CONTENT_MAX_LENGTH + " 字以内");
         content = MarkdownSanitizer.sanitize(content);
-        assertImagesAreInternal(content);
+        assertImagesAreAllowed(content);
 
         // 摘要与封面的兜底规则同 addPost：不填也能有列表展示效果
         String summary = StrUtil.isBlank(request.getSummary())
@@ -723,13 +725,16 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
 
     // 私有工具
 
-    /** 校验正文里的图片全部是站内路径 */
-    private void assertImagesAreInternal(String content) {
+    /** 校验正文里的图片：站内 /uploads/ 或已配置的 OSS/CDN 域名 */
+    private void assertImagesAreAllowed(String content) {
+        List<String> allowedHosts = ImageUrlWhitelist.parseHosts(postProperties.getAllowedImageHosts());
         Matcher matcher = MARKDOWN_IMAGE.matcher(content);
         while (matcher.find()) {
             String url = matcher.group(1);
-            ThrowUtils.throwIf(!url.startsWith(INTERNAL_IMAGE_PREFIX),
-                    ErrorCode.PARAMS_ERROR, "正文中的图片必须先用编辑器上传（" + INTERNAL_IMAGE_PREFIX + "），不支持外链图片");
+            ThrowUtils.throwIf(!ImageUrlWhitelist.isAllowed(url, allowedHosts),
+                    ErrorCode.PARAMS_ERROR,
+                    "正文中的图片必须先用编辑器上传（" + ImageUrlWhitelist.INTERNAL_IMAGE_PREFIX
+                            + "），或使用已配置的图片域名");
         }
     }
 

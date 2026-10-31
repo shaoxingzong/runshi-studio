@@ -38,33 +38,78 @@ export const MARKDOWN_ALLOWED_ATTR = [
 
 /** 清洗选项：唯一的策略差异是「图片能不能是外链」 */
 export interface SanitizeOptions {
-    /** 只允许站内 /uploads/ 图片（帖子正文与审核预览用） */
+    /**
+     * 只允许站内 /uploads/ 图片 + 显式配置的站外图片域名（帖子正文与审核预览用）
+     *
+     * 站外域名不传时读构建变量 VITE_IMAGE_HOSTS（逗号分隔），例如 OSS / CDN 域名。
+     */
     restrictImages?: boolean;
+    /** 额外放行的站外图片域名（不含协议，如 cdn.example.com）；用于测试或按页面覆盖 */
+    allowedImageHosts?: string[];
 }
 
-/** 剥掉非站内图片的 src（命名函数，removeHook 才能精确摘掉自己这一个） */
-function dropExternalImages(node: Element): void {
+/** 构建时注入的站外图片白名单：接入 OSS/CDN 后在这里放行其域名 */
+const DEFAULT_IMAGE_HOSTS = (import.meta.env.VITE_IMAGE_HOSTS ?? '')
+    .split(',')
+    .map((host) => normalizeImageHost(host))
+    .filter(Boolean);
+
+/** 把配置里的域名归一化成 host：允许写成带协议的完整地址 */
+function normalizeImageHost(value: string): string {
+    const trimmed = value.trim().toLowerCase();
+    if (!trimmed) {
+        return '';
+    }
+    try {
+        return new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`).hostname;
+    } catch {
+        return '';
+    }
+}
+
+/** 图片地址是否允许：站内 /uploads/，或 http(s) 且域名在白名单里 */
+function isAllowedImageSrc(src: string, allowedHosts: readonly string[]): boolean {
+    if (src.startsWith('/uploads/')) {
+        return true;
+    }
+    // 除站内路径外只接受绝对 http(s) 地址：相对路径、data:、blob: 一律拒绝
+    if (!/^https?:\/\//i.test(src) || allowedHosts.length === 0) {
+        return false;
+    }
+    try {
+        return allowedHosts.includes(new URL(src).hostname.toLowerCase());
+    } catch {
+        return false;
+    }
+}
+
+/** 剥掉非白名单图片的 src（按次生成闭包，removeHook 才能精确摘掉自己这一个） */
+function dropExternalImages(node: Element, allowedHosts: readonly string[]): void {
     if (node.tagName !== 'IMG') {
         return;
     }
-    const src = node.getAttribute('src') || '';
-    // 只放行站内上传目录；相对路径以外的（含 data:、http:）一律剥掉 src
-    if (!src.startsWith('/uploads/')) {
+    const src = (node.getAttribute('src') || '').trim();
+    if (!isAllowedImageSrc(src, allowedHosts)) {
         node.removeAttribute('src');
     }
 }
 
 /**
- * 清洗 renderMarkdown 的产物（帖子详情 / 项目详情 / 审核预览共用的唯一实现）
+ * 清洗 renderMarkdown 的产物（帖子详情 / 审核预览 / 项目详情共用的唯一实现）
  *
  * @param html renderMarkdown 的输出（不可信：来源可能是发帖用户）
- * @param options restrictImages=true 时只保留站内图片
+ * @param options restrictImages=true 时只保留站内图片与白名单里的站外图片
  * @returns 已按白名单清洗的 HTML，可直接交给 v-html
  */
 export function sanitizeMarkdownHtml(html: string, options: SanitizeOptions = {}): string {
     const hooked = options.restrictImages === true;
+    // 钩子按次生成闭包：不同调用可以带不同的白名单，用完即摘，不污染全局
+    const allowedHosts = (options.allowedImageHosts ?? DEFAULT_IMAGE_HOSTS)
+        .map((host) => normalizeImageHost(host))
+        .filter(Boolean);
+    const hook = (node: Element) => dropExternalImages(node, allowedHosts);
     if (hooked) {
-        DOMPurify.addHook('afterSanitizeAttributes', dropExternalImages);
+        DOMPurify.addHook('afterSanitizeAttributes', hook);
     }
     try {
         return DOMPurify.sanitize(html, {
@@ -73,7 +118,7 @@ export function sanitizeMarkdownHtml(html: string, options: SanitizeOptions = {}
         }) as string;
     } finally {
         if (hooked) {
-            DOMPurify.removeHook('afterSanitizeAttributes', dropExternalImages);
+            DOMPurify.removeHook('afterSanitizeAttributes', hook);
         }
     }
 }

@@ -360,7 +360,7 @@ onMounted(load);
                             v-model="form.content"
                             type="textarea"
                             :rows="10"
-                            placeholder="图片需先在发帖编辑器上传后，把 /uploads/... 路径写进正文（外链图片会被拒绝）"
+                            placeholder="图片需先在发帖编辑器上传后，把 /uploads/... 路径写进正文（仅额外放行已配置的 OSS/CDN 域名）"
                         />
                     </el-form-item>
                 </el-form>

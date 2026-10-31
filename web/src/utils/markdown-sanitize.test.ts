@@ -44,6 +44,32 @@ describe('render + sanitize 全链路', () => {
         expect(clean).toContain('src="/uploads/2026/10/cover.png"');
         expect(clean).not.toContain('evil.example.com');
     });
+
+    it('配置 OSS/CDN 域名后：该域名的绝对图片保留，其他外链仍被剥掉', () => {
+        const { html } = renderMarkdown(ARTICLE);
+        const allowed = sanitize(html, {
+            restrictImages: true,
+            allowedImageHosts: ['cdn.example.com', 'https://oss.example.com'],
+        });
+
+        // ARTICLE 里的站内图仍在；白名单域名的绝对地址放行
+        expect(allowed).toContain('src="/uploads/2026/10/cover.png"');
+        const cdnHtml = renderMarkdown(
+            '![封面](https://cdn.example.com/2026/10/cover.png)',
+        ).html;
+        const cdnClean = sanitize(cdnHtml, {
+            restrictImages: true,
+            allowedImageHosts: ['cdn.example.com'],
+        });
+        expect(cdnClean).toContain('src="https://cdn.example.com/2026/10/cover.png"');
+
+        // 不在白名单里的外链仍然被剥 src
+        const evilClean = sanitize(
+            renderMarkdown('![坏图](https://evil.example.com/x.png)').html,
+            { restrictImages: true, allowedImageHosts: ['cdn.example.com'] },
+        );
+        expect(evilClean).not.toContain('evil.example.com');
+    });
 });
 describe('sanitizeMarkdownHtml 的 mXSS 绕过回归', () => {
     it('命名空间混淆（math/mglyph/style）夹带的 onerror 不能存活', () => {

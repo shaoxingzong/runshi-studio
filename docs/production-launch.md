@@ -289,3 +289,127 @@
 - 本次 `PostSelfUpdateTest` 已同步到当前产品规则：作者可修改自己的待审 / 驳回 / 已通过帖子，保存后统一重置为待审；测试不再按旧规则断言。
 - 前端 `web/.env.production` 中 `VITE_SITE_URL` 当前为空；局域网访问不影响，正式域名上线时再注入。
 - 本次 VM 上运行的仍是旧后端 jar；前端已经是最新构建。两者发布顺序建议：先备份数据库 → 发布后端 → 发布前端 → 冒烟测试。
+
+---
+
+## 10. 2 核 2G 推荐版本与内存预算（详细）
+
+### 10.1 当前 VM 实测
+
+| 项目 | 实测值 |
+|---|---|
+| CPU | 2 核 |
+| 内存 | 1963 MB |
+| Swap | 2047 MB（已启用，几乎未使用） |
+| 操作系统 | Ubuntu 22.04.5 LTS |
+| JDK | OpenJDK 21.0.12.1 |
+| MySQL | 8.0.46 |
+| Redis | 7.2.5 |
+| Nginx | 1.18.0 |
+| Node.js | 未安装 |
+| 当前内存 | used 约 1041 MB，available 约 762 MB |
+| `VECTOR_STORE_TYPE` | `memory` |
+
+> 结论：JDK 21 已达标；MySQL 8.0.46 可继续用；**Redis 7.2.5 不满足 RAG 向量库要求**，当前只能把向量放在 JVM 内存里。
+
+### 10.2 推荐组合
+
+| 组件 | 推荐版本 | 当前是否满足 | 建议 |
+|---|---|---|---|
+| 操作系统 | Ubuntu 22.04.5 LTS（继续用）或 24.04 LTS（重装时） | 是 | 现有 22.04 可用到 2027 年，不必为上线重装 |
+| JDK | Eclipse Temurin 21 LTS，21.0.12 及以上 | 是 | 保持；不要换 17 / 25 |
+| MySQL | 现有 8.0.46 保持；新装选 MySQL 8.4 LTS | 是 | 已有数据时不要临时跨大版本升级 |
+| Redis | **8.4.x（使用 RAG Redis 向量库时）** | **否** | 7.2.5 只能跑 memory 向量库；要持久化向量必须升级 |
+| Nginx | 1.26.x stable；现有 1.18.0 | 是（功能可用） | 1.18 是 22.04 自带版本；无安全要求可暂不升级 |
+| Node.js | 22 LTS，只在本机构建 | 未安装（正确） | 2G 服务器上不要装 Node / Maven 构建 |
+| Docker | 不建议 | 未使用 | 省内存，保持裸机 systemd 部署 |
+
+### 10.3 为什么 Redis 是唯一必须升级的组件
+
+- Redis 7.2.5 支持 Sa-Token 的 `KEEPTTL` 与配额回刷的 `GETDEL`，所以登录 / 限流 / AI 配额都能正常工作。
+- 但 RAG 的 Redis 向量库要求 **8.4+ 的 Query Engine + JSON**；在 7.2.5 上把 `VECTOR_STORE_TYPE` 设为 `redis`，应用启动会直接失败。
+- 当前 `VECTOR_STORE_TYPE=memory`，向量只存在 JVM 内存中：
+  - 重启后向量全部丢失；
+  - 启动自检会重新切块并调用 Embedding 模型重建向量，既慢又会产生额外调用费用。
+- 升级 Redis 8.4 后建议把生产切到 `VECTOR_STORE_TYPE=redis`，并验证：
+
+  ```bash
+  redis-cli FT._LIST
+  redis-cli FT.INFO studio-rag-chunks
+  ```
+
+  `FT.INFO` 里的 `num_docs` 应与 `studio_knowledge_chunk` 的存活行数一致。
+
+### 10.4 2 核 2G 内存预算
+
+| 进程 | 预估常驻内存 |
+|---|---|
+| 操作系统 + systemd + 基础服务 | 250–350 MB |
+| Java（`-Xmx512m` + Metaspace / 线程 / 直接内存） | 700–850 MB |
+| MySQL 8.0（buffer pool 256M） | 350–500 MB |
+| Redis 8.4（含向量索引，`maxmemory 384M`） | 300–450 MB |
+| Nginx | 20–40 MB |
+| 合计 | **约 1.7–2.2 GB** |
+
+**2G 是刚好够用的下限，不是舒适配置。** 当前 VM 已用约 1 GB，剩余可用约 760 MB；如果切到 Redis 向量库，Redis 内存会明显上升。建议：
+
+1. **优先升到 2 核 4G**；这是最省事的方案。
+2. 必须保持 2G 时，保留现有 2G swap，并严格限制 Redis、MySQL 和 JVM 的上限。
+3. 前端和 Maven 构建都在本地完成，服务器只运行 jar + Nginx + MySQL + Redis。
+
+### 10.5 2G 环境推荐参数
+
+**Java（systemd）**
+
+```ini
+ExecStart=/usr/bin/java -Xms256m -Xmx512m \
+  -XX:MaxMetaspaceSize=192m -XX:+UseG1GC \
+  -jar /opt/runshi/app.jar
+```
+
+HikariCP 保持默认连接数（10），不要在 2 核 2G 上放大连接池。
+
+**MySQL（`mysqld.cnf`）**
+
+```ini
+innodb_buffer_pool_size = 256M
+innodb_redo_log_capacity = 256M
+max_connections = 50
+# 内存特别紧时可关闭；开启有利于排障
+# performance_schema = OFF
+```
+
+**Redis（`redis.conf`）**
+
+```ini
+maxmemory 384mb
+maxmemory-policy noeviction
+appendonly yes
+appendfsync everysec
+```
+
+- `noeviction` 是必须的：向量索引不能被 LRU 淘汰。
+- 代价是内存满后写入会失败（登录、配额、向量写入都会受影响），必须监控 `used_memory` 与 `FT.INFO`，并预留余量。
+- AOF 必须开启：AI 配额增量回刷依赖重启后不丢计数。
+
+**Swap / 内核**
+
+```bash
+# 当前已有 2G swap，保留即可
+vm.swappiness = 10
+vm.overcommit_memory = 1
+```
+
+**Nginx**
+
+```ini
+worker_processes auto;   # 2 核，内存占用很小
+```
+
+### 10.6 升级优先级
+
+1. **Redis 8.4.x**：如果生产需要 RAG 向量持久化，这是上线前唯一必须升级的组件。
+2. **内存升到 4G**：如果预算允许，优先于其它软件升级。
+3. MySQL 8.4 LTS：仅在重装 / 新建库时选择；现有 8.0.46 不要临时升级。
+4. Nginx 1.26 stable：可选，升级前备份现有配置。
+5. JDK 21：保持不变，跟随 21 LTS 的最新补丁即可。
