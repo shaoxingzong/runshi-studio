@@ -159,6 +159,14 @@ async function unwrap<T>(promise: Promise<AxiosResponse<ApiResponse<T>>>, silent
     if (body.code === 'A0201') {
         tokenStore.clear();
         window.dispatchEvent(new CustomEvent(AUTH_EXPIRED_EVENT));
+        // 不直接展示后端文案：登录失效的提示必须统一、可预期。
+        // 后端曾经把 Sa-Token 的原始异常（如「token 已被冻结」）透出来，
+        // 用户会误以为账号被处置了，而实际只是 30 分钟无操作导致的活跃超时。
+        const expiredMessage = '登录已过期，请重新登录';
+        if (!silent) {
+            ElMessage.error(expiredMessage);
+        }
+        throw new RequestError(expiredMessage, kind, body.code, !silent);
     }
 
     const message = body.message || `请求失败（${body.code}）`;

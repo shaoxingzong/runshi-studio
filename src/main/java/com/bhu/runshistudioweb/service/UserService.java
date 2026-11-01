@@ -71,6 +71,23 @@ public interface UserService extends IService<SysUser> {
      */
     boolean userLogout();
 
+    /**
+     * 当前登录用户修改自己的密码
+     *
+     * 必须校验原密码：登录态只证明「这个浏览器是登录过的」，
+     * 不证明「坐在屏幕前的人是账号主人」（公用电脑没退出就是这个场景）。
+     *
+     * 副作用：改密成功后踢掉该账号的全部会话（含当前这一个），前端需要引导重新登录。
+     * 这是有意的——密码泄露的典型处置就是改密，改完还留着旧会话等于没改。
+     *
+     * @param oldPassword 原密码明文，与库中哈希串比对
+     * @param newPassword 新密码明文，8~20 位
+     * @param checkPassword 确认密码，必须与 newPassword 完全一致
+     * @return 恒为 true；走到返回值说明密码已更新且旧会话已清理
+     * @throws BusinessException 参数为空 / 长度不合法 / 两次不一致 / 原密码错误 / 新旧相同（均 A0401）、未登录（A0201）
+     */
+    boolean changePassword(String oldPassword, String newPassword, String checkPassword);
+
     // 管理端：仅供管理员调用
 
     /**

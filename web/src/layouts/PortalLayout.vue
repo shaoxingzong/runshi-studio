@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ArrowDown, Bell, Document, Setting, SwitchButton, User } from '@element-plus/icons-vue';
+import { ArrowDown, Bell, Document, Lock, Setting, SwitchButton, User } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { userApi } from '@/api/user';
 import { notificationApi } from '@/api/notification';
 import MemberProfileDialog from '@/components/MemberProfileDialog.vue';
+import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue';
 import SmartImage from '@/components/SmartImage.vue';
 import { useUserStore } from '@/stores/user';
 
@@ -72,6 +73,8 @@ const visibleNavItems = computed(() => navItems.filter((item) => !item.memberOnl
 const unreadCount = ref(0);
 /** 成员资料编辑弹窗：从账号菜单直接打开，与打卡页共用同一个组件 */
 const profileVisible = ref(false);
+/** 修改密码弹窗：成功后所有会话失效，必须重新登录 */
+const passwordVisible = ref(false);
 /** 轮询定时器句柄（卸载时必须清，否则内存泄漏 + 接口打到已销毁的组件） */
 let unreadTimer: number | null = null;
 
@@ -112,10 +115,19 @@ async function onAccountCommand(command: string) {
         case 'admin':
             await router.push('/admin');
             break;
+        case 'password':
+            passwordVisible.value = true;
+            break;
         case 'logout':
             await logout();
             break;
     }
+}
+
+/** 改密成功后：后端已清理全部会话，本地登录态必须同步清掉并回登录页 */
+async function onPasswordChanged() {
+    user.logout();
+    await router.replace({ name: 'login', query: { redirect: route.fullPath } });
 }
 </script>
 
@@ -153,7 +165,8 @@ async function onAccountCommand(command: string) {
                                 <SmartImage
                                     :src="user.displayAvatar"
                                     :alt="user.displayName"
-                                    :seed="user.account"
+                                    :seed="user.displayName"
+                                    fallback="initial"
                                 />
                             </span>
                             <span class="account-name">{{ user.displayName }}</span>
@@ -170,6 +183,8 @@ async function onAccountCommand(command: string) {
                                 <el-dropdown-item v-if="user.isAdmin" command="admin" :icon="Setting" divided>
                                     后台管理
                                 </el-dropdown-item>
+                                <!-- 改密码放在「后台管理」之后、退出之前：它属于账号操作，不属于内容操作 -->
+                                <el-dropdown-item command="password" :icon="Lock">修改密码</el-dropdown-item>
                                 <el-dropdown-item command="logout" :icon="SwitchButton" divided>
                                     退出登录
                                 </el-dropdown-item>
@@ -198,6 +213,7 @@ async function onAccountCommand(command: string) {
 
         <!-- 资料编辑弹窗挂布局层：账号菜单和打卡页共用，避免每个入口各写一份表单 -->
         <MemberProfileDialog v-model="profileVisible" />
+        <ChangePasswordDialog v-model="passwordVisible" @changed="onPasswordChanged" />
     </div>
 </template>
 

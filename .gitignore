@@ -68,3 +68,7 @@ Thumbs.db
 .trae/
 docs/DIAGRAM_GUIDE.md
 /tools-*
+
+### 个人文稿（只在本地保留，不随仓库公开）###
+/docs/runshi-studio-*.md
+/docs/why-i-built-this.md

@@ -14,6 +14,20 @@
 | Nginx | 任意稳定版 | 反向代理 + 静态资源 + HTTPS 终止（配置样例见 `deploy/nginx.conf`） |
 | Node.js | 20+ | 仅构建前端需要 |
 
+### 1.1 2 核 2G 推荐组合
+
+| 组件 | 推荐版本 | 说明 |
+|---|---|---|
+| JDK | Eclipse Temurin 21 LTS（21.0.12 及以上） | 与项目 `java.version=21` 对齐；不要用 JDK 17 / 25 |
+| MySQL | 现有 8.0.46 继续用；新装选 MySQL 8.4 LTS | 生产已有数据时不要临时跨大版本升级 |
+| Redis | **8.4.x**（使用 RAG Redis 向量库时） | 7.x 不支持 Query Engine + JSON，只能退化为 `VECTOR_STORE_TYPE=memory`，重启后重建向量 |
+| Nginx | 1.26.x stable（现有 1.18 也可运行） | 1.18 是 Ubuntu 22.04 自带版本；如无安全要求可暂不升级 |
+| Node.js | 22 LTS（只在本机构建前端） | 2G 内存服务器不建议安装 Node / Maven 做构建 |
+| 操作系统 | 现有 Ubuntu 22.04.5 LTS 继续用；重装再选 24.04 LTS | 22.04 支持到 2027 年 |
+
+> 2 核 2G 的具体内存预算、参数调优和 Redis 向量库注意事项，见
+> [`docs/production-launch.md`](docs/production-launch.md) 第 10 节。
+
 ---
 
 ## 2. 构建
@@ -34,7 +48,9 @@
 ```bash
 cd web
 npm install
-npm run build        # 产物在 web/dist/，交由 Nginx 托管
+# VITE_SITE_URL 用于把分享预览图（og:image）改写成绝对地址；
+# 不传也能构建成功，只是微信 / Twitter 分享时没有预览图
+VITE_SITE_URL=https://你的域名 npm run build   # 产物在 web/dist/，交由 Nginx 托管
 ```
 
 > `npm run build` 自带 `vue-tsc --noEmit` 类型检查，类型不过会直接构建失败——这是前端的质量门禁，别跳过。
@@ -93,6 +109,7 @@ mysql -uroot -p < db/user.sql
 | `MYSQL_URL` | `jdbc:mysql://127.0.0.1:3306/studio_db` | 数据库不在本机时 |
 | `MYSQL_USERNAME` | `runshi` | 与数据库实际账号不一致时 |
 | `FILE_ROOT_DIR` | `/data/runshi-studio-upload` | 上传目录想放别处时（改了记得同步 Nginx 的 `/uploads/` 代理目标） |
+| `POST_ALLOWED_IMAGE_HOSTS` | 空 | 图片走 OSS/CDN 且正文直接引用绝对地址时填其域名（逗号分隔）；留空只允许 `/uploads/`，前端需同步构建变量 `VITE_IMAGE_HOSTS` |
 | `ATTENDANCE_LAN_CIDRS` | 空 | **只要用考勤功能就必须配**，否则全员签到记为「外网」（见第 5 节） |
 | `ATTENDANCE_TRUSTED_PROXIES` | `127.0.0.1,::1` | Nginx 与应用**不同机**时必须填入 Nginx 的地址，否则考勤拿到的是 Nginx 的 IP |
 | `WEB_ALLOWED_ORIGINS` | `https://你的域名`（占位符） | 前后端**不同域**部署时必须填真实域名；同域部署（Nginx 代理 `/api`）则无需跨域，保持占位即可 |
@@ -153,9 +170,9 @@ WantedBy=multi-user.target
 
 ### 4.1 口令轮换清单（公开仓库的历史包袱，上线必做）
 
-本仓库早期的演示数据脚本（`db/test-data-full.sql`、`db/quiz-test-data.sql`）曾把口令写成注释。明文已从当前文件删除，但 **Git 历史仍可翻到**——删文件不等于止血，**改密才是唯一有效的处置**。
+本仓库早期版本曾包含演示数据脚本（`db/test-data-full.sql`、`db/quiz-test-data.sql`），其中注释暴露过口令。这两个文件已从当前仓库删除，但 **Git 历史仍可翻到**——删文件不等于止血，**改密才是唯一有效的处置**。如果这些账号曾导入过任何环境（尤其是生产库），上线前必须逐条处置。
 
-| 账号 | 来源 | 处置 |
+| 账号 | 历史来源（文件已删除） | 处置 |
 |---|---|---|
 | `shaoshing` | `db/test-data-full.sql`（角色 admin） | **立即改密或删除**；改密之前一律视为已被接管 |
 | `chenyu` / `linxia` / `zhaoyang` / `wangmeng` / `liuqing` / `sunhao` / `alumnus` / `tangke` / `zhouran` / `xuyi` / `banned01` | 同上（共用同一条演示哈希） | 改密或删除；共用同一哈希＝同一把钥匙 |
@@ -207,11 +224,12 @@ IPv4 地址. . . . . . . . . . . . . : 192.168.1.23
 
 配置样例：[`deploy/nginx.conf`](deploy/nginx.conf)。它包含：前端静态资源托管（SPA fallback）、`/api` 与 `/uploads` 反向代理、gzip、安全响应头。
 
-使用时的三个注意点：
+使用时的四个注意点：
 
 1. **`/api` 代理必须传 `X-Real-IP` 与 `X-Forwarded-For`**（样例里已带），否则考勤与限流拿到的全是 Nginx 的 IP；
-2. **`client_max_body_size` 与后端一致**（后端 multipart 上限 10MB，样例设为 `10m`）；
-3. **HTPT/HSTS**：样例里 HSTS 默认注释掉，确认证书与跳转配置无误后再打开。
+2. **`/api` 代理必须同时传 `Host`、`X-Forwarded-Proto`、`X-Forwarded-Port`**（样例里已带）。后端靠这三个头还原「浏览器眼里的同源」：少了它们，HTTPS 页面里的同源 POST（登录 / 发帖 / 上传）会被判成跨域并 403，而 GET 全部正常，极难排查；
+3. **`/uploads/` 的 `proxy_pass` 必须带 `/api/uploads/` 这段 URI**（样例里已带）：后端 context-path 是 `/api`，静态映射的真实地址是 `/api/uploads/**`，只写 `http://127.0.0.1:8080` 会让全站图片 404；
+4. **`client_max_body_size` 与后端一致**（后端 multipart 上限 10MB，样例设为 `10m`）；**HSTS** 默认注释掉，确认证书与跳转配置无误后再打开。
 
 ---
 
@@ -265,7 +283,10 @@ tar -xzf /data/backup/runshi-studio/uploads_YYYYmmdd_HHMMSS.tar.gz -C /data
 - [ ] `ATTENDANCE_LAN_CIDRS` 已配真实网段，且**启动日志确认** `考勤内外网判定已启用`（不是 warn）
 - [ ] Nginx 与应用同机（或 `ATTENDANCE_TRUSTED_PROXIES` 已含 Nginx 地址）；签到一次验证「本次网络」显示内网
 - [ ] `WEB_ALLOWED_ORIGINS` 已填真实域名（跨域部署时）；同域部署则确认前端 `.env.production` 的 `VITE_API_BASE_URL=/api`
-- [ ] 上传目录 `FILE_ROOT_DIR` 已建且**应用用户可写**（目录本身首次上传时会自动创建，但父目录需要对应用用户可写，否则上传才暴露权限问题）；传一张图验证 `/uploads/` 可达
+- [ ] 上传目录 `FILE_ROOT_DIR` 已建且**应用用户可写**（目录本身首次上传时会自动创建，但父目录需要对应用用户可写，否则上传才暴露权限问题）；传一张图验证**浏览器地址栏里的 `/uploads/...` 能直接打开**（Nginx 必须把它转到后端的 `/api/uploads/`，否则全站裂图）
+- [ ] Nginx 的 `/api/` 已透传 `Host` / `X-Forwarded-Proto` / `X-Forwarded-Port` 三个头：缺任意一个，HTTPS 站点里的同源 POST（登录 / 发帖 / 上传）会被后端判成跨域并返回 403，而 GET 一切正常
+- [ ] 分享预览验证：把首页链接发到微信 / 社交平台，确认标题 + 预览图正常（依赖构建时的 `VITE_SITE_URL`）
+- [ ] **注册姓名与成员资料**：注册页必须填写「姓名」，注册后右上角显示姓名而不是登录账号；成员在工作台「我的资料」可改姓名/头像/专业/方向/简介，登录账号只读（届别、职务、状态、排序仍由管理员维护）
 - [ ] 日志目录 `/data/logs/runshi-studio/` 已建；确认 `app.log` 按天滚动、`app.log.error` 单独归档（14 天 / 1GB 上限）
 - [ ] 登录 / 注册限流生效：同一 IP 连续错误登录 11 次后返回「太频繁」（A0501）
 - [ ] AI 功能冒烟：问一个问题，确认有回答、配额计数正常（普通用户第 6 次起被限）
@@ -281,5 +302,6 @@ tar -xzf /data/backup/runshi-studio/uploads_YYYYmmdd_HHMMSS.tar.gz -C /data
 | 登录接口 500 | Redis 低于 6.0 不支持 `KEEPTTL`；或 Redis 实际没设密码而配置里写了 |
 | 全员签到记「外网」 | 见第 5 节两张排查表 |
 | 前端页面 404 但接口正常 | Nginx 少了 SPA fallback（`try_files ... /index.html`），见样例配置 |
-| 上传成功但图片裂图 | `/uploads/` 没代理到后端，或 `FILE_ROOT_DIR` 与应用实际写入目录不一致 |
+| 上传成功但图片裂图 | `/uploads/` 没代理到后端，或代理目标少了 `/api` 前缀（后端真实地址是 `/api/uploads/**`），或 `FILE_ROOT_DIR` 与应用实际写入目录不一致 |
+| 页面能浏览，但一登录 / 发帖 / 上传就 403 | 后端把同源请求判成了跨域：Nginx 少了 `X-Forwarded-Proto` 或 `X-Forwarded-Port`（见 8 节清单） |
 | 日志把磁盘写满 | 不可能——`logback-spring.xml` 有按天+大小双滚动与 1GB 总容量上限；若看到异常增长，检查是否有高频 warn（如限流触发、AI 熔断） |

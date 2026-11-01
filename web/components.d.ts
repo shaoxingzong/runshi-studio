@@ -12,6 +12,7 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     AnswerFeedback: typeof import('./src/components/quiz/AnswerFeedback.vue')['default']
+    ChangePasswordDialog: typeof import('./src/components/ChangePasswordDialog.vue')['default']
     ElAlert: typeof import('element-plus/es')['ElAlert']
     ElAside: typeof import('element-plus/es')['ElAside']
     ElBadge: typeof import('element-plus/es')['ElBadge']

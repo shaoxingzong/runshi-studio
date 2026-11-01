@@ -9,6 +9,7 @@ import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.exception.ThrowUtils;
 import com.bhu.runshistudioweb.model.dto.common.DeleteRequest;
 import com.bhu.runshistudioweb.model.dto.user.UserAddRequest;
+import com.bhu.runshistudioweb.model.dto.user.UserChangePasswordRequest;
 import com.bhu.runshistudioweb.model.dto.user.UserLoginRequest;
 import com.bhu.runshistudioweb.model.dto.user.UserQueryRequest;
 import com.bhu.runshistudioweb.model.dto.user.UserRegisterRequest;
@@ -125,6 +126,22 @@ public class UserController {
     public BaseResponse<Boolean> userLogout() {
         // ② 未登录时 Service 会抛 A0201 而不是静默返回 true——含糊的成功会掩盖登录态问题
         return ResultUtils.success(userService.userLogout());
+    }
+
+    /**
+     * 用户自助修改密码
+     *
+     * 成功后会清理该账号的全部会话，前端需引导用新密码重新登录。
+     *
+     * @param request 原密码 + 新密码 + 确认密码
+     * @return true 表示密码已更新
+     */
+    @PostMapping("/change-password")
+    @Operation(summary = "修改我的密码", description = "需登录并校验原密码；成功后该账号全部会话失效，需重新登录")
+    public BaseResponse<Boolean> changePassword(@RequestBody @Valid UserChangePasswordRequest request) {
+        ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
+        return ResultUtils.success(userService.changePassword(
+                request.getOldPassword(), request.getNewPassword(), request.getCheckPassword()));
     }
 
     // 管理端：全部要求 admin 角色

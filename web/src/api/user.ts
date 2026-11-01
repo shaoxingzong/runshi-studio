@@ -20,5 +20,9 @@ export const userApi = {
     updateMyMember: (body: Partial<Pick<Member, 'name' | 'avatar' | 'major' | 'direction' | 'githubUrl' | 'summary'>>) =>
         http.post<Member>('/member/mine/update', body),
 
+    // 修改自己的密码：后端校验原密码，成功后清理该账号全部会话（需重新登录）
+    changePassword: (oldPassword: string, newPassword: string, checkPassword: string) =>
+        http.post<boolean>('/user/change-password', { oldPassword, newPassword, checkPassword }),
+
     logout: () => http.post<boolean>('/user/logout', {}, { silent: true }),
 };

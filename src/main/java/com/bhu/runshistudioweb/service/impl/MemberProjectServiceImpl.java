@@ -24,8 +24,11 @@ import org.springframework.stereotype.Service;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * 成员-项目关联服务实现
@@ -75,7 +78,8 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
         ThrowUtils.throwIf(projectId <= 0, ErrorCode.PARAMS_ERROR, "项目 id 不合法");
         ThrowUtils.throwIf(memberId <= 0, ErrorCode.PARAMS_ERROR, "成员 id 不合法");
 
-        assertProjectExists(projectId);
+        // 项目存在性校验：返回值这里用不到，只取「不存在则抛异常」这一副作用
+        getProjectOrThrow(projectId);
         assertMemberExists(memberId);
 
         // 应用层查重：命中就给出可读提示（唯一索引抛的是英文 SQL 异常，不能直接给前端）
@@ -120,10 +124,12 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
     public List<MemberVO> listMembersByProject(long projectId) {
         // 参数校验：非法 id 不该产生任何数据库往返
         ThrowUtils.throwIf(projectId <= 0, ErrorCode.PARAMS_ERROR, "项目 id 不合法");
-        // 先校验项目存在：否则「项目不存在」会被伪装成「这个项目还没有成员」
-        assertProjectExists(projectId);
-        // 取数逻辑与管理端、C 端共用，保证两端看到的成员完全一致
-        return selectMembersOfProject(projectId).stream().map(this::toMemberVO).toList();
+        // 先取项目：既校验存在性（否则「项目不存在」会被伪装成「这个项目还没有成员」），也拿到队长 id 用于排序
+        StudioProject project = getProjectOrThrow(projectId);
+        // 取数逻辑与管理端、C 端共用，保证两端看到的成员完全一致；排序规则也一致：队长恒为第一个
+        return selectMembersOfProject(projectId).stream()
+                .sorted(leaderFirst(project.getLeaderId()))
+                .map(this::toMemberVO).toList();
     }
 
     /** 成员参与的项目（管理端视图） */
@@ -154,20 +160,27 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
     public List<MemberFrontVO> listFrontMembersByProject(long projectId) {
         // 参数校验：非法 id 不该产生任何数据库往返
         ThrowUtils.throwIf(projectId <= 0, ErrorCode.PARAMS_ERROR, "项目 id 不合法");
-        // 先校验项目存在：否则「项目不存在」会被伪装成「这个项目没有成员」
-        assertProjectExists(projectId);
-        // 队长必然在结果里（leader_id 同步不变量），官网项目详情的成员区域不用再自己拼
-        return selectMembersOfProject(projectId).stream().map(this::toMemberFrontVO).toList();
+        // 先取项目：既校验存在性（否则「项目不存在」会被伪装成「这个项目没有成员」），也拿到队长 id 用于排序
+        StudioProject project = getProjectOrThrow(projectId);
+        // 队长必然在结果里（leader_id 同步不变量），并排在第一个；其余成员沿用成员模块的默认排序
+        return selectMembersOfProject(projectId).stream()
+                .sorted(leaderFirst(project.getLeaderId()))
+                .map(this::toMemberFrontVO).toList();
     }
 
     // 两步查询（管理端与 C 端共用，保证两端语义一致）
 
     /** 两步查询：取参与某项目的全部成员实体 */
     private List<StudioMember> selectMembersOfProject(long projectId) {
-        // 第一步：只取 member_id 一列，走 idx_proj_member 的覆盖索引，不必回表读整行
+        // 第一步：只取 member_id 一列，走 idx_proj_member 的覆盖索引，不必回表读整行；
+        // 同时按「加入这个项目的先后」排序——项目内顺序由关联行的 created_at 决定，
+        // 与成员表上的全局 sort_order 无关（同一个人在不同项目里的位置可以不同）。
         LambdaQueryWrapper<StudioMemberProject> relationWrapper = new LambdaQueryWrapper<>();
         relationWrapper.select(StudioMemberProject::getMemberId)
-                .eq(StudioMemberProject::getProjectId, projectId);
+                .eq(StudioMemberProject::getProjectId, projectId)
+                // created_at 只到秒，同一秒内批量添加的成员靠雪花 id 递增兜底，结果仍是真实加入顺序
+                .orderByAsc(StudioMemberProject::getCreatedAt)
+                .orderByAsc(StudioMemberProject::getId);
         List<Long> memberIds = this.list(relationWrapper).stream()
                 .map(StudioMemberProject::getMemberId)
                 .toList();
@@ -179,9 +192,13 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
 
         LambdaQueryWrapper<StudioMember> wrapper = new LambdaQueryWrapper<>();
         wrapper.in(StudioMember::getId, memberIds);
-        // 成员侧沿用成员模块的默认排序：置顶权重倒序 + id 倒序兜底
-        wrapper.orderByDesc(StudioMember::getSortOrder).orderByDesc(StudioMember::getId);
-        return studioMemberMapper.selectList(wrapper);
+        Map<Long, StudioMember> memberById = studioMemberMapper.selectList(wrapper).stream()
+                .collect(Collectors.toMap(StudioMember::getId, member -> member));
+        // IN 查询不保证返回顺序，必须按第一步拿到的 id 序列重新装配，否则排序白做
+        return memberIds.stream()
+                .map(memberById::get)
+                .filter(Objects::nonNull)
+                .toList();
     }
 
     /** 两步查询：取某成员参与的全部项目实体 */
@@ -238,15 +255,37 @@ public class MemberProjectServiceImpl extends ServiceImpl<StudioMemberProjectMap
                 .eq(StudioMemberProject::getMemberId, memberId);
     }
 
-    /** 校验项目存在（含「已逻辑删除视为不存在」） */
-    private void assertProjectExists(long projectId) {
-        ThrowUtils.throwIf(studioProjectMapper.selectById(projectId) == null,
-                ErrorCode.NOT_FOUND_ERROR, "项目不存在");
+    /**
+     * 取项目实体，不存在（含「已逻辑删除视为不存在」）则抛 NOT_FOUND
+     *
+     * 返回实体而不是 void：调用方还要读 leader_id 做排序。
+     * 原来这里只做存在性校验，查询结果被丢弃；改成返回实体后，排序可以复用这一次查询，
+     * 不会多出任何一次数据库往返。
+     */
+    private StudioProject getProjectOrThrow(long projectId) {
+        StudioProject project = studioProjectMapper.selectById(projectId);
+        ThrowUtils.throwIf(project == null, ErrorCode.NOT_FOUND_ERROR, "项目不存在");
+        return project;
+    }
+
+    /**
+     * 队长排第一，其余成员保持「加入项目的先后」
+     *
+     * 比较键取「是否队长」的布尔值：false 排在 true 前面，所以队长自然落到第一个。
+     * Stream.sorted 是稳定排序，其余成员的相对顺序完全保留 selectMembersOfProject 里
+     * 按关联行 created_at 排好的结果，不会被这个比较器打乱。
+     * leaderId 为空（历史项目未设队长）时所有元素键值相同，等于不排序，不会抛异常。
+     *
+     * @param leaderId 项目队长对应的成员 id，可为 null
+     * @return 可直接传给 Stream.sorted 的比较器
+     */
+    private Comparator<StudioMember> leaderFirst(Long leaderId) {
+        return Comparator.comparing((StudioMember member) -> !Objects.equals(member.getId(), leaderId));
     }
 
     /** 校验成员存在（含「已逻辑删除视为不存在」） */
     private void assertMemberExists(long memberId) {
-        // 与 assertProjectExists 同理：逻辑删除的成员不该再被绑定或查询
+        // 与 getProjectOrThrow 同理：逻辑删除的成员不该再被绑定或查询
         ThrowUtils.throwIf(studioMemberMapper.selectById(memberId) == null,
                 ErrorCode.NOT_FOUND_ERROR, "成员不存在");
     }

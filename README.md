@@ -28,7 +28,7 @@
 | Spring Boot | 4.1.1 | 后端框架（`spring-boot-starter-webmvc`） |
 | Java | 21 | 语言（虚拟线程、record、switch 表达式） |
 | MyBatis-Plus | 3.5.17 | 数据库访问 |
-| MySQL | 9.x | 数据库（20 张表，建库脚本 `db/user.sql`） |
+| MySQL | 9.x | 数据库（21 张表，单文件建库脚本 `db/init-all.sql`） |
 | Redis | 8.4+ | 登录态（Sa-Token）、AI 配额计数、限流、RAG 向量索引（Query Engine） |
 | Sa-Token | 1.46.0 | 登录与角色鉴权 |
 | LangChain4j | 1.20.2 | AI 咨询与 RAG（同步 + SSE 流式） |
@@ -53,10 +53,11 @@
 ### ① 建库
 
 ```bash
-mysql -uroot -p123456 < db/user.sql
+mysql -uroot -p123456 < db/init-all.sql
 ```
 
-> ⚠️ 这是「先 DROP 再 CREATE」的全量脚本，**会清空数据**，只在空库上执行。
+> ⚠️ 这是「先 DROP 再 CREATE」的单文件全量初始化（21 张表 + 应用账号，**不含题库种子数据**），**会清空数据**，只在空库上执行。
+> 需要题库内容时再单独执行 `mysql -uroot -p123456 studio_db < db/quiz-seed-history.sql`；其余旧脚本仍然保留，可按需单独执行。
 
 ### ② 配本地私有配置（密钥不进 Git）
 
@@ -118,7 +119,8 @@ runshi-studio-web/
 ├── src/test/java/                            自动化测试（单测 / MockMvc / DDL 校验）
 ├── web/                                      Vue3 前端独立工程
 ├── db/
-│   ├── user.sql                              全量建库脚本（唯一权威 DDL 源头）
+│   ├── init-all.sql                          单文件全量初始化（仅结构 + 应用账号，推荐入口）
+│   ├── user.sql                              纯结构建库脚本（生产/按需单独执行，结构与本文件同步）
 │   ├── init-prod.sql                         生产环境准备（建库 / 应用账号 / 最小权限）
 │   ├── audit-backfill.sql                    审计列一次性回填（存量库按需执行）
 │   ├── quiz-seed-history.sql                 刷题题库种子（生产内容，按需导入）

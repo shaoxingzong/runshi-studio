@@ -59,7 +59,26 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(NotLoginException.class)
     public BaseResponse<?> notLoginExceptionHandler(NotLoginException e) {
         log.warn("NotLoginException | type={} | loginType={} | {}", e.getType(), e.getLoginType(), e.getMessage());
-        return ResultUtils.error(ErrorCode.NOT_LOGIN_ERROR, e.getMessage());
+        return ResultUtils.error(ErrorCode.NOT_LOGIN_ERROR, loginExpiredMessage(e.getType()));
+    }
+
+    /**
+     * 把 Sa-Token 的异常类型翻译成用户能看懂的一句话
+     *
+     * Sa-Token 的原始文案是框架内部术语（如「token 已被冻结」），用户既看不懂，也不知道该做什么。
+     * 尤其是「活跃超时」场景：配置里 active-timeout=1800，超过 30 分钟无操作 token 就会被冻结，
+     * 用户看到的应该是「登录已过期，请重新登录」，而不是「冻结」这种像账号被处置的说法。
+     *
+     * @param type Sa-Token 的未登录类型常量
+     * @return 面向用户的提示文案，全部指向「重新登录」这一个动作
+     */
+    private String loginExpiredMessage(String type) {
+        return switch (type) {
+            case NotLoginException.BE_REPLACED -> "账号已在其他设备登录，请重新登录";
+            case NotLoginException.KICK_OUT -> "账号已被强制下线，请重新登录";
+            // TOKEN_TIMEOUT（超过 7 天）与 TOKEN_FREEZE（超过 30 分钟无操作）对用户是同一件事
+            default -> "登录已过期，请重新登录";
+        };
     }
 
     /**

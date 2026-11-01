@@ -181,11 +181,12 @@ describe('A0201：登录态回收', () => {
         const listener = () => events.push(AUTH_EXPIRED_EVENT);
         window.addEventListener(AUTH_EXPIRED_EVENT, listener);
 
-        await expect(http.get('/user/current')).rejects.toThrow('未登录');
+        // 文案由前端统一，不透传后端原文（后端可能返回「token 已被冻结」这类框架术语）
+        await expect(http.get('/user/current')).rejects.toThrow('登录已过期，请重新登录');
 
         expect(tokenStore.get()).toBe('');
         expect(events).toEqual([AUTH_EXPIRED_EVENT]);
-        expect(messageError).toHaveBeenCalledWith('未登录');
+        expect(messageError).toHaveBeenCalledWith('登录已过期，请重新登录');
 
         window.removeEventListener(AUTH_EXPIRED_EVENT, listener);
     });
@@ -194,7 +195,7 @@ describe('A0201：登录态回收', () => {
         tokenStore.clear();
         mockGet.mockResolvedValue(fail('A0201', '未登录'));
 
-        await expect(http.get('/user/current')).rejects.toThrow('未登录');
+        await expect(http.get('/user/current')).rejects.toThrow('登录已过期，请重新登录');
         expect(tokenStore.get()).toBe('');
     });
 });

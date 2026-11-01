@@ -43,8 +43,19 @@ export const useUserStore = defineStore('user', () => {
      */
     const displayName = computed(() => memberProfile.value?.name || userName.value || account.value);
 
-    /** 界面展示头像：成员档案头像 > 账号头像；均为空时由 SmartImage 使用默认头像 */
-    const displayAvatar = computed(() => memberProfile.value?.avatar || userAvatar.value);
+    /**
+     * 站点标志类图片：不是个人头像，出现时按「未设置头像」处理
+     *
+     * 历史数据里有成员把工作室 logo 当作头像上传，右上角就会显示成一枚徽标，
+     * 看起来像「默认头像坏了」。这里统一拦掉，退回姓名首字。
+     */
+    const PLACEHOLDER_AVATARS = new Set(['/logo.jpg', '/logo.png', '/default-avatar.png']);
+
+    /** 界面展示头像：成员档案头像 > 账号头像；均为空（或只是站点标志）时由 SmartImage 使用姓名首字 */
+    const displayAvatar = computed(() => {
+        const candidate = memberProfile.value?.avatar || userAvatar.value || '';
+        return PLACEHOLDER_AVATARS.has(candidate) ? '' : candidate;
+    });
 
     /** 监听登录失效事件：token 过期 / 被顶下线时把内存里的登录态一并回收 */
     function onAuthExpired() {

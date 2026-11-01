@@ -2,6 +2,8 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
+import SmartImage from '@/components/SmartImage.vue';
+import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue';
 
 /** 后台布局：侧边导航 + 顶栏（需要登录，见路由守卫） */
 const router = useRouter();
@@ -49,6 +51,14 @@ function logout() {
     user.logout();
     router.push({ name: 'admin-login' });
 }
+
+/** 修改密码弹窗：成功后全部会话失效，直接回后台登录页 */
+const passwordVisible = ref(false);
+
+async function onPasswordChanged() {
+    user.logout();
+    await router.replace({ name: 'admin-login' });
+}
 </script>
 
 <template>
@@ -67,9 +77,21 @@ function logout() {
 
         <el-container>
             <el-header class="header" :class="{ narrow }">
-                <span class="muted who">已登录：{{ user.account || '管理员' }}</span>
+                <!-- 头像与门户同一套兜底：没设头像就用姓名首字，不显示站点标志 -->
+                <span class="who">
+                    <span class="who-avatar">
+                        <SmartImage
+                            :src="user.displayAvatar"
+                            :alt="user.displayName"
+                            :seed="user.displayName"
+                            fallback="initial"
+                        />
+                    </span>
+                    <span class="muted">{{ user.displayName || user.account || '管理员' }}</span>
+                </span>
                 <span class="spacer" />
                 <el-button link @click="$router.push('/')">返回官网</el-button>
+                <el-button link @click="passwordVisible = true">修改密码</el-button>
                 <el-button link type="danger" @click="logout">退出登录</el-button>
             </el-header>
 
@@ -77,6 +99,8 @@ function logout() {
                 <router-view />
             </el-main>
         </el-container>
+
+        <ChangePasswordDialog v-model="passwordVisible" @changed="onPasswordChanged" />
     </el-container>
 </template>
 
@@ -116,6 +140,35 @@ function logout() {
 
 .spacer {
     flex: 1;
+}
+
+/* 顶栏账号：头像 + 展示名，与门户右上角同一套兜底（无头像时显示姓名首字） */
+.who {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.who-avatar {
+    display: inline-flex;
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    overflow: hidden;
+    /* 细边框让浅色兜底头像与白色顶栏分得开 */
+    box-shadow: 0 0 0 1px rgb(15 23 42 / 8%);
+}
+
+.who-avatar :deep(.img-fallback__img),
+.who-avatar :deep(.img-fallback__box) {
+    width: 100%;
+    height: 100%;
+}
+
+.who-avatar :deep(.img-fallback__box) {
+    font-size: 12px;
+    font-weight: 700;
 }
 
 /* ===== 窄屏（< 768px，由 script 里的 narrow 标志驱动）===== */

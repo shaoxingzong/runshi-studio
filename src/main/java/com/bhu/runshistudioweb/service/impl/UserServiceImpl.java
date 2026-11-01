@@ -38,9 +38,12 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * 用户服务实现：注册 / 登录 / 注销，管理端增删改查与分页
@@ -241,6 +244,45 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         return true;
     }
 
+    /**
+     * 修改自己的密码：校验原密码 → 写新哈希 → 踢掉全部会话
+     *
+     * 原密码校验不能省：登录态只证明这个浏览器登录过，不证明操作的人是账号主人
+     * （公用电脑没退出、手机被借用都是真实场景）。
+     */
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public boolean changePassword(String oldPassword, String newPassword, String checkPassword) {
+        ThrowUtils.throwIf(StrUtil.isBlank(oldPassword), ErrorCode.PARAMS_ERROR, "原密码不能为空");
+        ThrowUtils.throwIf(StrUtil.isBlank(newPassword), ErrorCode.PARAMS_ERROR, "新密码不能为空");
+        // 字段间一致性注解做不到，只能在这里比；前端校验可以被绕过，后端必须再挡一次
+        ThrowUtils.throwIf(!newPassword.equals(checkPassword), ErrorCode.PARAMS_ERROR, "两次输入的新密码不一致");
+        // 与注册同一套长度规则：规则一变，存量用户的密码就会与新规则对不上
+        ThrowUtils.throwIf(newPassword.length() < MIN_PASSWORD_LENGTH || newPassword.length() > MAX_PASSWORD_LENGTH,
+                ErrorCode.PARAMS_ERROR, "密码长度需在 8 ~ 20 位之间");
+
+        // getLoginUser 内部已校验登录态与封禁状态，这里直接复用
+        SysUser user = this.getLoginUser();
+
+        ThrowUtils.throwIf(!PasswordUtils.matches(oldPassword, user.getUserPassword()),
+                ErrorCode.PARAMS_ERROR, "原密码不正确");
+        // 新旧相同就直接拒：否则「改密成功」但实际没变，用户会以为旧密码已经失效
+        ThrowUtils.throwIf(PasswordUtils.matches(newPassword, user.getUserPassword()),
+                ErrorCode.PARAMS_ERROR, "新密码不能与原密码相同");
+
+        SysUser update = new SysUser();
+        update.setId(user.getId());
+        update.setUserPassword(PasswordUtils.encrypt(newPassword));
+        boolean updated = this.updateById(update);
+        ThrowUtils.throwIf(!updated, ErrorCode.SYSTEM_ERROR, "密码修改失败，请稍后重试");
+
+        // 改密后让该账号的全部会话失效（含当前这一个）：留着旧 token 等于密码没改
+        // 前端收到成功响应后引导用户用新密码重新登录
+        StpUtil.logout(user.getId());
+        log.info("用户自助修改密码成功，已清理全部会话 | userId={}", user.getId());
+        return true;
+    }
+
     // 管理端：调用方必须已通过 @SaCheckRole("admin")
 
     @Override
@@ -366,7 +408,10 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
         SysUser user = this.getById(id);
         // 查不到要给出明确的 A0402，而不是返回 null 让前端收到「成功但 data 为空」
         ThrowUtils.throwIf(user == null, ErrorCode.NOT_FOUND_ERROR, "用户不存在");
-        return this.getUserVO(user);
+        UserVO userVO = this.getUserVO(user);
+        // 与列表页同一口径：账号没头像时用成员档案头像兜底
+        fillAvatarFromMemberProfile(List.of(userVO));
+        return userVO;
     }
 
     /** 管理员删除用户（逻辑删除）：让账号消失，并立刻让它的登录态失效 */
@@ -419,7 +464,11 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
 
         // 分页在数据库侧完成，转换逐条走 getUserVO（实体带着密码哈希串，不能直接序列化出去）
         Page<SysUser> entityPage = this.page(new Page<>(current, pageSize), wrapper);
-        return toUserVOPage(entityPage);
+        Page<UserVO> voPage = toUserVOPage(entityPage);
+        // 头像兜底：成员在「我的资料」里换的头像写在 studio_member.avatar，
+        // 账号表 user_avatar 通常是空的；不回填的话管理端列表永远显示默认头像
+        fillAvatarFromMemberProfile(voPage.getRecords());
+        return voPage;
     }
 
     /** 实体转管理端 VO（含角色与状态，不含密码） */
@@ -435,6 +484,51 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
     }
 
     // 私有工具方法
+
+    /**
+     * 用成员档案头像回填账号头像（只在账号头像为空时生效）
+     *
+     * 为什么需要：头像有两条写入路径——成员在「我的资料」里改的是 studio_member.avatar，
+     * 账号表的 user_avatar 几乎一直是空的。管理端用户列表读的是 UserVO.userAvatar，
+     * 不回填就会出现「成员明明换了头像，后台还是默认头像」。
+     *
+     * 一次 IN 查询批量取，避免 N+1；分页 20 条也只多一次往返。
+     *
+     * @param userVOs 待回填的用户视图列表，允许为空
+     */
+    private void fillAvatarFromMemberProfile(List<UserVO> userVOs) {
+        if (userVOs == null || userVOs.isEmpty()) {
+            return;
+        }
+        List<Long> userIds = userVOs.stream()
+                .filter(vo -> StrUtil.isBlank(vo.getUserAvatar()))
+                .map(UserVO::getId)
+                .filter(Objects::nonNull)
+                .toList();
+        if (userIds.isEmpty()) {
+            return;
+        }
+
+        List<StudioMember> members = studioMemberMapper.selectList(new LambdaQueryWrapper<StudioMember>()
+                .select(StudioMember::getUserId, StudioMember::getAvatar)
+                .in(StudioMember::getUserId, userIds)
+                .isNotNull(StudioMember::getAvatar)
+                .ne(StudioMember::getAvatar, ""));
+        if (members.isEmpty()) {
+            return;
+        }
+
+        // 合并函数兜底：正常情况一个账号只有一份在档档案，但历史脏数据不该让整页查询失败
+        Map<Long, String> avatarByUserId = members.stream()
+                .filter(member -> member.getUserId() != null && StrUtil.isNotBlank(member.getAvatar()))
+                .collect(Collectors.toMap(StudioMember::getUserId, StudioMember::getAvatar, (first, ignored) -> first));
+
+        for (UserVO vo : userVOs) {
+            if (StrUtil.isBlank(vo.getUserAvatar())) {
+                vo.setUserAvatar(avatarByUserId.get(vo.getId()));
+            }
+        }
+    }
 
     /** 校验账号未被占用 */
     private void assertAccountNotExists(String userAccount) {
