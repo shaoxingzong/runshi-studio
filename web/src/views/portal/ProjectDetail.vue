@@ -104,6 +104,10 @@ usePageMeta({
             </div>
         </template>
         <template v-else>
+            <!-- 顶部返回：长页面（封面 + 正文 + 成员）要滚到底才能返回，体验很差，这里再给一个顶部入口 -->
+            <div class="page-top">
+                <el-button link @click="$router.back()">← 返回</el-button>
+            </div>
             <div class="card">
                 <!-- 封面失败时不再留裂图：SmartImage 会退成「项目名首字 + 渐变块」 -->
                 <div v-if="detail.coverImage" class="cover-wrap">
@@ -196,6 +200,10 @@ usePageMeta({
 </template>
 
 <style scoped>
+.page-top {
+    margin-bottom: 10px;
+}
+
 /* 封面容器：不再写死高度。固定 320px + object-fit:cover 会把竖图/截图裁掉一部分
    （表现为「封面显示不全」）；这里让图片按原比例完整展开，仅给兜底色块留最小高度。 */
 .cover-wrap {

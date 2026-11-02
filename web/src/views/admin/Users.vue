@@ -102,6 +102,9 @@ async function toggleStatus(row: AdminUser) {
 /** 背景：注册只能产生普通用户，而成员档案在 studio_member 里，两者通过 user_id 可选绑定。 */
 const promoteVisible = ref(false);
 const promoteTarget = ref<AdminUser | null>(null);
+/** 预检结果：该账号已绑定的成员档案（null 表示未绑定）。已绑定时不允许再「转为成员」 */
+const promoteBound = ref<{ id: string; name: string } | null>(null);
+const promoteChecking = ref(false);
 const promoteForm = reactive({
     name: '',
     gradeYear: new Date().getFullYear(),
@@ -110,7 +113,7 @@ const promoteForm = reactive({
     summary: '',
 });
 
-function openPromote(row: AdminUser) {
+async function openPromote(row: AdminUser) {
     promoteTarget.value = row;
     Object.assign(promoteForm, {
         // 昵称往往就是真实姓名，预填能省一次输入；没昵称就退回账号名
@@ -121,12 +124,30 @@ function openPromote(row: AdminUser) {
         summary: '',
     });
     promoteVisible.value = true;
+
+    // 预检：该账号是否已有成员档案。有就直接在弹窗里说明并禁用提交，
+    // 而不是等用户填完点确定、再由后端报「该账号已绑定成员档案」。
+    promoteBound.value = null;
+    promoteChecking.value = true;
+    try {
+        const page = await adminApi.memberPage({ current: 1, pageSize: 1, userId: row.id });
+        const existed = page.records?.[0];
+        promoteBound.value = existed ? { id: existed.id, name: existed.name } : null;
+    } catch {
+        // 预检失败不阻塞提交：后端 add 仍会做「账号未被占用」的兜底校验
+    } finally {
+        promoteChecking.value = false;
+    }
 }
 
 /** 提交顺序是刻意的：先建档案（绑定账号），成功后再改角色。反过来会留下「角色已是成员、却没有档案」的脏数据——界面看不出异常，只是成员管理里查不到人。 */
 async function submitPromote() {
     const target = promoteTarget.value;
     if (!target) {
+        return;
+    }
+    if (promoteBound.value) {
+        ElMessage.warning(`该账号已绑定成员档案「${promoteBound.value.name}」，无需重复创建`);
         return;
     }
     if (!promoteForm.name) {
@@ -504,6 +525,14 @@ onMounted(load);
             <p class="muted">
                 为账号「{{ promoteTarget?.userAccount }}」创建成员档案并绑定，同时把角色改为「成员」。
             </p>
+            <el-alert
+                v-if="promoteBound"
+                type="warning"
+                :closable="false"
+                show-icon
+                title="该账号已绑定成员档案"
+                :description="`已绑定「${promoteBound.name}」（成员 ID ${promoteBound.id}），无需重复创建。请到「成员管理」里编辑该档案。`"
+            />
             <el-form label-position="top">
                 <el-form-item label="姓名">
                     <el-input v-model="promoteForm.name" placeholder="成员姓名（必填）" />
@@ -530,7 +559,9 @@ onMounted(load);
             </el-form>
             <template #footer>
                 <el-button @click="promoteVisible = false">取消</el-button>
-                <el-button type="primary" @click="submitPromote">确定</el-button>
+                <el-button type="primary" :disabled="!!promoteBound || promoteChecking" @click="submitPromote">
+                    {{ promoteChecking ? '检查中…' : '确定' }}
+                </el-button>
             </template>
         </el-dialog>
     </div>

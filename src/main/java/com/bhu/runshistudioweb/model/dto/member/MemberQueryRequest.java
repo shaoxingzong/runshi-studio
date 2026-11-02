@@ -18,6 +18,9 @@ public class MemberQueryRequest implements Serializable {
     /** 成员 id（精确匹配） */
     private Long id;
 
+    /** 绑定的登录账号 ID（精确匹配；管理端「转为成员」前预检该账号是否已有成员档案） */
+    private Long userId;
+
     /** 成员姓名（模糊查询；上限 64，与前端搜索框 maxlength 对齐） */
     @Size(max = 64, message = "搜索关键词不能超过 64 个字符")
     private String name;

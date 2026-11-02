@@ -293,6 +293,8 @@ public class StudioMemberServiceImpl extends ServiceImpl<StudioMemberMapper, Stu
         LambdaQueryWrapper<StudioMember> wrapper = new LambdaQueryWrapper<>();
         // 条件重载的第一个参数为 false 时该条件不会拼进 SQL，省去手写 if 判断
         wrapper.eq(query.getId() != null, StudioMember::getId, query.getId());
+        // 按绑定账号精确过滤：管理端「转为成员」前预检该账号是否已有成员档案
+        wrapper.eq(query.getUserId() != null, StudioMember::getUserId, query.getUserId());
         wrapper.like(StrUtil.isNotBlank(query.getName()), StudioMember::getName, query.getName());
         wrapper.like(StrUtil.isNotBlank(query.getDirection()), StudioMember::getDirection, query.getDirection());
         // 精确匹配：届别、职务、状态是数值/枚举值域，精确匹配才能命中索引、结果也才可预期
