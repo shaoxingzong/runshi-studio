@@ -114,16 +114,6 @@ async function insertImages(files: File[]) {
     }
 }
 
-/** 粘贴图片（Ctrl+V 截图即可插入正文） */
-async function onPaste(event: ClipboardEvent) {
-    const files = Array.from(event.clipboardData?.files ?? []);
-    if (!files.some((file) => file.type.startsWith('image/'))) {
-        return; // 纯文本 / HTML 粘贴：放行，交给编辑器默认行为
-    }
-    event.preventDefault();
-    await insertImages(files);
-}
-
 /**
  * 拖拽图片到编辑器（md-editor-v3 用 `onDrop` prop 透传）
  *
@@ -344,8 +334,10 @@ async function submit() {
                 <img v-if="form.coverImage" :src="form.coverImage" alt="封面预览" class="cover-preview" />
             </div>
 
-            <!-- 外层容器接管 paste：md-editor-v3 没有 paste 事件，但 contenteditable 区域内的粘贴会冒泡到这里 -->
-            <div class="editor-wrap" @paste="onPaste">
+            <!-- 粘贴图片由 md-editor-v3 内置处理（会触发 onUploadImg）。
+                 这里不要再挂 @paste：同一事件冒泡到外层会再上传/插入一次，
+                 表现为「图片重复插入 + 上传配额翻倍」。 -->
+            <div class="editor-wrap">
                 <MdEditor
                     ref="editorRef"
                     v-model="form.content"
