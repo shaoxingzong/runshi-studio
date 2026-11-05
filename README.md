@@ -2,6 +2,8 @@
 
 高校工作室的一体化平台：**对外门户**（项目案例 / 荣誉墙 / 社区 / AI 助手）+ **成员工作台**（考勤签到 / 我的发帖 / 成员档案）+ **管理后台**（用户 / 成员 / 项目 / 证书 / 知识库 / 内容审核 / 流量分析）。
 
+> 开源协议：**[AGPL-3.0-only](LICENSE)**（GNU Affero General Public License v3.0 only），详见文末「开源协议」。
+
 前后端**分离部署**：后端 Spring Boot（`/api` 前缀），前端 Vue3 独立工程（`web/`），生产由 Nginx 托管静态资源并把 `/api` 反向代理到后端。
 
 ---
@@ -56,8 +58,8 @@
 mysql -uroot -p123456 < db/init-all.sql
 ```
 
-> ⚠️ 这是「先 DROP 再 CREATE」的单文件全量初始化（21 张表 + 应用账号，**不含题库种子数据**），**会清空数据**，只在空库上执行。
-> 需要题库内容时再单独执行 `mysql -uroot -p123456 studio_db < db/quiz-seed-history.sql`；其余旧脚本仍然保留，可按需单独执行。
+> ⚠️ 这是「先 DROP 再 CREATE」的单文件全量初始化（21 张表 + 应用账号，**不含种子数据**），**会清空数据**，只在空库上执行。
+> `db/init-all.sql` 是唯一建库入口；`db/seg/` 是按表拆分的 21 个单表建表脚本（由它生成，便于单独查看/重建某张表）。
 
 ### ② 配本地私有配置（密钥不进 Git）
 
@@ -119,13 +121,8 @@ runshi-studio-web/
 ├── src/test/java/                            自动化测试（单测 / MockMvc / DDL 校验）
 ├── web/                                      Vue3 前端独立工程
 ├── db/
-│   ├── init-all.sql                          单文件全量初始化（仅结构 + 应用账号，推荐入口）
-│   ├── user.sql                              纯结构建库脚本（生产/按需单独执行，结构与本文件同步）
-│   ├── init-prod.sql                         生产环境准备（建库 / 应用账号 / 最小权限）
-│   ├── audit-backfill.sql                    审计列一次性回填（存量库按需执行）
-│   ├── quiz-seed-history.sql                 刷题题库种子（生产内容，按需导入）
-│   ├── backup.sh                             数据库与上传目录备份脚本
-│   └── seg/sysUser.sql                       单表建表脚本（局部重建调试用）
+│   ├── init-all.sql                          单文件全量初始化（21 张表 + 应用账号，不含业务数据）
+│   └── seg/                                  21 个单表建表脚本（由 init-all.sql 拆分生成）
 ├── docs/                                     ER 图与请求链路文档
 └── deploy/nginx.conf                         生产部署配置样例
 ```
@@ -139,3 +136,27 @@ runshi-studio-web/
 1. **新增匿名接口必须登记白名单**，且只写精确路径——`/project/**` 会把管理端的 `/project/list/page` 一起放行；
 2. **关联表实体不能加 `deletedAt`**——关联表是物理删除，加了会直接报 `Unknown column`；
 3. **计数字段用 `Integer` 不用 `Long`**——全局 JSON 配置把 Long 序列化成字符串，前端会拿到 `"12"`。
+
+---
+
+## 开源协议
+
+本项目采用 **GNU Affero General Public License v3.0 only**，协议全文见 [LICENSE](LICENSE)。
+
+```
+SPDX-License-Identifier: AGPL-3.0-only
+Copyright (C) 2026 宗少兴 (shaoshing)
+```
+
+**这意味着什么**
+
+- 你可以自由地运行、学习、修改和分发本项目；
+- 若你**分发**修改版，或**把它作为网络服务提供给用户**（AGPL 第 13 条），必须以同一协议提供对应的完整源码。这正是选 AGPL 而非 GPL 的原因：GPL 管不到「直接架个网站、不分发二进制」的场景；
+- 协议**不可撤销**：已经按此协议发布的版本，不能事后收回授权。
+
+**不覆盖的范围**
+
+- 「润石工作室」名称、Logo 等商标权益不在授权范围内；
+- 第三方依赖各自遵循其原有协议；`web/public/` 下的图片、字体等素材需单独确认授权。
+
+> 外部贡献默认按同一协议授权。若以后需要更换协议或提供商业授权，贡献者需先签署 CLA / DCO。
