@@ -64,7 +64,7 @@ class MemberIdentityConsistencyTest {
         String token = support.adminToken();
         long userId = support.createUser(UserRoleConstant.USER);
 
-        // 允许创建（db/user.sql 明确保留「可以有档案没账号（历史导入）」）
+        // 允许创建（db/init-all.sql 明确保留「可以有档案没账号（历史导入）」）
         String body = support.postJson("/member/add",
                 "{\"name\":\"未绑定测试\",\"gradeYear\":2023}", token);
         assertEquals("00000", support.code(body),

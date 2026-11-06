@@ -74,7 +74,7 @@ class PostDdlVerifyTest {
 
     /** 从全量建库脚本里取出目标表的建表语句 */
     private List<String> readCreateTableStatements(String... tableNames) throws Exception {
-        String raw = Files.readString(Path.of("db/user.sql"));
+        String raw = Files.readString(Path.of("db/init-all.sql"));
         StringBuilder builder = new StringBuilder();
         raw.lines()
                 .filter(line -> !line.trim().startsWith("--"))

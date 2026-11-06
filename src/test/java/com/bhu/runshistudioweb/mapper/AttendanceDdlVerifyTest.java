@@ -61,7 +61,7 @@ class AttendanceDdlVerifyTest {
 
     /** 从全量建库脚本里取出考勤表的建表语句 */
     private String readCreateTableDdl() throws Exception {
-        String raw = Files.readString(Path.of("db/user.sql"));
+        String raw = Files.readString(Path.of("db/init-all.sql"));
         StringBuilder sb = new StringBuilder();
         raw.lines()
                 .filter(line -> !line.trim().startsWith("--"))
@@ -74,7 +74,7 @@ class AttendanceDdlVerifyTest {
                 return trimmed.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ");
             }
         }
-        throw new IllegalStateException("db/user.sql 里找不到 studio_attendance 的建表语句");
+        throw new IllegalStateException("db/init-all.sql 里找不到 studio_attendance 的建表语句");
     }
 
     /** 造数：让优化器有统计依据 */

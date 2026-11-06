@@ -4,7 +4,7 @@ package com.bhu.runshistudioweb.constant;
  * 用户角色常量
  *
  * {@code @SaCheckRole} 只接受编译期常量，所以注解里用的字面量放本类，取值字典放枚举。
- * 两处必须与 UserRoleEnum 的 value、db/user.sql 里 user_role 的列注释保持一致。
+ * 两处必须与 UserRoleEnum 的 value、db/init-all.sql 里 user_role 的列注释保持一致。
  *
  * @author shaoshing
  */

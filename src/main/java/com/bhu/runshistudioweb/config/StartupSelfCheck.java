@@ -75,7 +75,7 @@ public class StartupSelfCheck {
             throw new IllegalStateException(
                     "启动自检失败：数据库不可用（" + url + "）。"
                             + "请检查 MYSQL_URL / MYSQL_USERNAME / MYSQL_PASSWORD 是否注入、MySQL 是否可达、"
-                            + "账号是否有 studio_db 的权限（初始化见 db/init-prod.sql）", e);
+                            + "账号是否有 studio_db 的权限（初始化见 db/init-all.sql）", e);
         }
     }
 

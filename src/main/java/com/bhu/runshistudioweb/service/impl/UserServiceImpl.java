@@ -71,7 +71,7 @@ public class UserServiceImpl extends ServiceImpl<SysUserMapper, SysUser> impleme
     /** 姓名长度上限，必须与 UserRegisterRequest 的 @Size 及 DDL 的 user_name varchar(64) 一致 */
     private static final int MAX_USER_NAME_LENGTH = 64;
 
-    /** 用户状态：0-正常，1-封禁（与 db/user.sql 中 user_status 的注释一致） */
+    /** 用户状态：0-正常，1-封禁（与 db/init-all.sql 中 user_status 的注释一致） */
     private static final int USER_STATUS_NORMAL = 0;
     private static final int USER_STATUS_BANNED = 1;
 

@@ -20,7 +20,7 @@
 | 前端已部署 | 已同步到 `/opt/runshi/dist`，站点返回 200 |
 | 服务状态 | `runshi-studio` 为 active / enabled，Redis `PONG` |
 | 必填环境变量 | `MYSQL_PASSWORD`、`REDIS_PASSWORD`、`AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL`、`AI_EMBEDDING_MODEL` 均已注入 |
-| 测试 SQL | 本地的 `db/test-data-full.sql`、`db/quiz-test-data.sql` 已删除 |
+| 测试 SQL | `db/init-all.sql` 是唯一建库入口；`db/seg/` 是按表拆分脚本；种子与测试脚本均已删除 |
 | 生产库现状 | 22 个用户、15 篇文章；其中 **12 个是历史演示/测试账号** |
 | 生产后端版本 | VM 上仍是 **2026-10-30 19:18 的旧 jar**；本地新 jar 为 2026-10-31 14:48 |
 
@@ -33,26 +33,18 @@
 
 ## 2. 本轮清理结果
 
-### 已删除（测试/演示数据，禁止在生产导入）
+### 清理结果（db/init-all.sql 为唯一建库入口）
 
-- `db/test-data-full.sql`：会清空业务数据并灌入演示数据，文件头明确标注「不要在生产库执行」
-- `db/quiz-test-data.sql`：刷题测试账号与测试作答数据
+- 测试/演示数据脚本、题库种子、审计回填、旧备份脚本均已删除；
+- 建库统一执行 `db/init-all.sql`，备份直接用文档里的 mysqldump / tar 命令；
+- `db/seg/` 是由 init-all.sql 拆分的 21 个单表建表脚本，仅供查看/单独重建单表，不作为建库入口。
 
-相关文档已同步更新：`README.md` 目录树、`DEPLOY.md` 口令轮换说明。
-
-### 保留（生产需要的脚本）
+### 保留（建库入口 + 单表拆分脚本）
 
 | 文件 | 用途 |
 |---|---|
-| `db/init-all.sql` | 单文件全量初始化（21 张表 + 应用账号/授权，**不含题库种子等数据**）；本地/单机一键建库用，**DROP + CREATE，只适合全新空库**，执行前改掉账号口令占位符 |
-| `db/user.sql` | 纯结构建库脚本（生产/按需单独执行）；**DROP + CREATE，只适合全新空库** |
-| `db/init-prod.sql` | 建库、应用账号、最小权限授权；**不含表结构导入**，口令必须是占位符 |
-| `db/audit-backfill.sql` | 审计列一次性回填；存量库按需在低峰执行 |
-| `db/quiz-seed-history.sql` | 447 道真实题库种子，属于生产内容，不是测试账号数据；按需导入 |
-| `db/backup.sh` | 数据库 + 上传目录备份脚本 |
-| `db/seg/sysUser.sql` | 单表建表脚本，局部重建调试用 |
-
-> 如果连 `quiz-seed-history.sql` 也不想保留，删除前请先确认线上题库已有独立备份。
+| `db/init-all.sql` | 单文件全量初始化（21 张表 + 应用账号/授权，**不含种子数据**）；本地/单机一键建库用，**DROP + CREATE，只适合全新空库**，执行前改掉账号口令占位符 |
+| `db/seg/*.sql` | 按表拆分的 21 个建表脚本（由 init-all.sql 生成）；**含 DROP，会清空单表数据**，改结构请改 init-all.sql 后重新拆分 |
 
 ---
 
@@ -66,8 +58,8 @@
 - [x] 后端 `.\mvnw.cmd test`：479 个用例通过
 - [x] 后端 `.\mvnw.cmd clean package -DskipTests` 通过
 - [x] 测试 SQL 已从本地删除
-- [x] `db/init-prod.sql` 的 `CREATE USER` 口令已确认为占位符 `CHANGE_ME_BEFORE_RUN`
-- [ ] 确认 `db/init-prod.sql` 工作区改动中没有误带真实口令（提交前再检查一次）
+- [x] `db/init-all.sql` 的 `CREATE USER` 口令已确认为占位符 `CHANGE_ME_BEFORE_RUN`
+- [ ] 确认 `db/init-all.sql` 工作区改动中没有误带真实口令（提交前再检查一次）
 - [ ] 确认 `application-local.yml`、`.env` 等私有配置没有进 Git
 
 ### 3.2 生产环境
@@ -90,41 +82,23 @@
 
 > 只在**没有业务数据**的新库上执行。
 
-1. 编辑 `db/init-prod.sql`，把 `CHANGE_ME_BEFORE_RUN` 换成真实口令（改完不要提交）。
-2. 执行环境准备：
+1. 编辑 `db/init-all.sql`，把末尾 `CREATE USER` 的 `CHANGE_ME_BEFORE_RUN` 换成真实口令（改完不要提交）。
+2. 执行建库 + 21 张表 + 应用账号/授权：
 
    ```bash
-   mysql -uroot -p < db/init-prod.sql
-   ```
-
-3. 导入表结构：
-
-   ```bash
-   mysql -uroot -p < db/user.sql
-   ```
-
-4. 可选：导入真实题库内容：
-
-   ```bash
-   mysql -uroot -p studio_db < db/quiz-seed-history.sql
-   ```
-
-5. 可选：存量审计列回填（新库一般不需要）：
-
-   ```bash
-   mysql -uroot -p studio_db < db/audit-backfill.sql
+   mysql -uroot -p < db/init-all.sql
    ```
 
 ### 4.2 情况 B：已有数据的库（当前 VM 属于这种情况）
 
-**不要执行 `db/user.sql` 或 `db/init-prod.sql`**：`user.sql` 会 DROP + CREATE，`init-prod.sql` 也面向空库。
+**不要执行 `db/init-all.sql`**：它会 DROP + CREATE，只在全新空库上使用。
 
 上线前只做两件事：
 
-1. **先备份**：
+1. **先备份**（db/ 不再保留备份脚本，直接用 mysqldump）：
 
    ```bash
-   DB_PASS='<应用口令>' bash db/backup.sh
+   mysqldump --single-transaction --routines -uroot -p studio_db | gzip > /data/backup/pre-launch.sql.gz
    ```
 
 2. **清理历史演示/测试账号**（先查、再改，执行前务必确认备份已完成）：
@@ -272,7 +246,7 @@
 ## 8. 安全与运维注意事项
 
 1. **测试 SQL 删除 ≠ Git 历史清除**：旧演示口令仍在 Git 历史中，相关账号必须改密或删除。
-2. `db/init-prod.sql` 只能保留占位口令；真实口令通过 `app.env` 注入，不提交仓库。
+2. `db/init-all.sql` 只能保留占位口令；真实口令通过 `app.env` 注入，不提交仓库。
 3. `app.env` 权限建议 600，且只保存在 VM；不要复制进仓库或聊天记录。
 4. MySQL / Redis 只监听 `127.0.0.1`；对公网只开放 Nginx 的 80/443。
 5. 正式域名确定后：

@@ -94,11 +94,28 @@ class NotificationDdlVerifyTest {
         }
     }
 
+    @Test
+    @DisplayName("新增通知类型无需改表结构：建库脚本的 type 注释已同步 POST_COMMENTED/POST_LIKED")
+    void newTypesDocumentedInDdl() throws Exception {
+        String initAll = Files.readString(Path.of("db/init-all.sql"));
+        assertTrue(initAll.contains("POST_COMMENTED/POST_LIKED"),
+                "db/init-all.sql 的 type 列注释应列出新增互动通知类型");
+
+        String split = Files.readString(Path.of("db/seg/20-studio_notification.sql"));
+        assertTrue(split.contains("POST_COMMENTED/POST_LIKED"),
+                "拆分脚本 db/seg/20 必须与 init-all.sql 同步（它是从前者拆出来的）");
+
+        // 结构不变：仍然只有这一组唯一键，没有为了逐条评论去改 DDL
+        String ddl = readCreateTableDdl("studio_notification");
+        assertTrue(ddl.contains("uk_receiver_biz"),
+                "逐条评论靠 biz_id=评论 ID 复用现有唯一键，不应新增索引或改列");
+    }
+
     // 工具方法（与 QuizDdlVerifyTest 同一套）
 
     /** 从全量建库脚本里取出指定表的建表语句，改写为 IF NOT EXISTS */
     private String readCreateTableDdl(String tableName) throws Exception {
-        String raw = Files.readString(Path.of("db/user.sql"));
+        String raw = Files.readString(Path.of("db/init-all.sql"));
         StringBuilder sb = new StringBuilder();
         raw.lines()
                 .filter(line -> !line.trim().startsWith("--"))
@@ -111,7 +128,7 @@ class NotificationDdlVerifyTest {
                 return trimmed.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ");
             }
         }
-        throw new IllegalStateException("db/user.sql 里找不到 " + tableName + " 的建表语句");
+        throw new IllegalStateException("db/init-all.sql 里找不到 " + tableName + " 的建表语句");
     }
 
     private boolean columnExists(String table, String column) {

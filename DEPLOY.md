@@ -55,26 +55,16 @@ VITE_SITE_URL=https://你的域名 npm run build   # 产物在 web/dist/，交�
 
 > `npm run build` 自带 `vue-tsc --noEmit` 类型检查，类型不过会直接构建失败——这是前端的质量门禁，别跳过。
 
-### 2.3 建库（两步：环境准备 → 结构导入）
-
-**第一步，环境准备**（建库、建应用用户 `runshi`、最小权限授权，幂等可重复执行）：
+### 2.3 建库（单文件）
 
 ```bash
-# ⚠️ 先编辑 db/init-prod.sql，把 CREATE USER 里的占位口令改成真实口令
-mysql -uroot -p < db/init-prod.sql
+# ⚠️ 先编辑 db/init-all.sql，把末尾 CREATE USER 的占位口令 CHANGE_ME_BEFORE_RUN 改成真实口令
+mysql -uroot -p < db/init-all.sql
 ```
 
-**第二步，结构导入**（16 张表；**DROP+CREATE，只适合空库**，已在使用中的库不要整跑）：
-
-```bash
-mysql -uroot -p < db/user.sql
-```
-
-> ⚠️ 两步刻意分开，不合并成一个脚本：`user.sql` 自带 `USE studio_db`，
-> 嵌套执行时会覆盖调用方的库切换——实测事故：DROP+CREATE 全部落回原库把数据清空。
-> 两步各自单纯，胜过一步聪明。
->
-> `runshi` 只授了 CRUD（无 DDL）：应用账号被拖库时损失可控在数据层，结构不会被改。
+> ⚠️ 脚本会先 DROP 再 CREATE，只适合**全新的空库**；已在使用中的库不要执行。
+> 它包含 21 张表、应用账号 `runshi` 与最小权限授权；账号只授 CRUD（无 DDL），
+> 应用账号被拖库时损失可控在数据层，结构不会被改。
 
 ---
 
@@ -235,26 +225,25 @@ IPv4 地址. . . . . . . . . . . . . : 192.168.1.23
 
 ## 7. 数据备份（git 只备份代码，不备份数据）
 
-帖子、成员、证书、流量、上传的图片**全是人工积累、丢了不可再生**的数据。用仓库里的脚本每天备份：
+帖子、成员、证书、流量、上传的图片**全是人工积累、丢了不可再生**的数据。db/init-all.sql 是唯一建库入口，db/seg/ 是按表拆分的单表脚本，
+备份用下面这两条命令自己跑：
 
 ```bash
-# db/backup.sh：MySQL 全量快照（单事务不锁表）+ 上传目录打包 + 保留 14 天
-# 首次先手动跑一遍验证（把 DB_PASS 换成真实口令）：
-DB_PASS='真实口令' bash db/backup.sh
+# 数据库全量快照（无参 --single-transaction 不锁表，适合在用的库）
+mysqldump --single-transaction --routines --triggers \
+  -uroot -p studio_db | gzip > /data/backup/db_$(date +%Y%m%d_%H%M%S).sql.gz
 
-# 验证产物（默认 /data/backup/runshi-studio/）：
-ls -lh /data/backup/runshi-studio/
-#   db_20261018_020000.sql.gz       数据库
-#   uploads_20261018_020000.tar.gz  上传目录
+# 上传目录打包（图片丢了就是裂图）
+tar -czf /data/backup/uploads_$(date +%Y%m%d_%H%M%S).tar.gz /data/runshi-studio-upload
 ```
 
-**挂到 crontab**（每天凌晨 2 点，失败时发邮件——没有告警的备份等于没备份）：
+**挂到 crontab**（每天凌晨 2 点；没有告警的备份等于没备份）：
 
 ```cron
-0 2 * * * DB_PASS='真实口令' /usr/bin/bash /opt/runshi/db/backup.sh >> /data/logs/backup.log 2>&1
+0 2 * * * mysqldump --single-transaction --routines -uroot -p'真实口令' studio_db | gzip > /data/backup/db_$(date +\%Y\%m\%d_\%H\%M\%S).sql.gz
 ```
 
-> 口令也可以放进 root 的 `~/.my.cnf`（权限 600）让脚本从 `DB_PASS` 环境变量退化为可选——
+> 口令建议放进 root 的 `~/.my.cnf`（权限 600），避免明文出现在 crontab 里——
 > 但**别把 .cnf 提交进仓库**。
 
 **恢复步骤**（数据损坏 / 误删时）：

@@ -2,8 +2,7 @@
 -- 润石工作室官网 · 单文件全量初始化（仅结构 + 应用账号）
 -- ============================================================================================================
 --
--- 用途：在全新的空库上一键建好 studio_db（21 张表）并创建应用账号；不插入任何题库种子或业务数据。
---       题库种子等数据请按需单独执行 db/quiz-seed-history.sql。
+-- 用途：在全新的空库上一键建好 studio_db（21 张表）并创建应用账号；不插入任何业务数据。
 -- 执行方式：
 --   ① mysql 客户端：mysql -uroot -p123456 < db/init-all.sql
 --   ② 已建好库：  mysql -uroot -p123456 studio_db < db/init-all.sql
@@ -12,17 +11,11 @@
 -- ⚠️ 末尾 CREATE USER 的口令是占位符 CHANGE_ME_BEFORE_RUN：生产执行前必须改成真实口令；
 --    本地暂时不建应用账号时，删掉末尾那一段即可（不影响表结构）。
 --
--- 合并来源（旧文件全部保留，可单独执行；本文件是新的单文件入口）：
---   一、表结构       ← db/user.sql（21 张表）
---   db/init-prod.sql    应用账号与授权（已并入文件末尾）
---   db/seg/sysUser.sql  仅为 sys_user 单表片段，已包含在第一节，无需再执行
---   题库种子与审计回填属于数据，不放进初始化：需要时分别执行 db/quiz-seed-history.sql、db/audit-backfill.sql
---
--- 维护约定：后续新增/修改表结构时更新本文件；如需继续单独使用 db/user.sql，请同步结构部分。
+-- 本文件是仓库里唯一的建库脚本：后续新增/修改表结构、账号授权，直接改本文件。
 -- ============================================================================================================
 
 -- ============================================================================================================
--- 一、表结构（来源 db/user.sql，共 21 张表，DROP + CREATE）
+-- 一、表结构（共 21 张表，DROP + CREATE）
 -- ============================================================================================================
 -- 设计约定（贯穿全部表，改表前必读）：
 --   1) 主键统一用雪花算法 bigint（MyBatis-Plus ASSIGN_ID），**不自增**——便于分库分表、可提前生成 ID。
@@ -481,8 +474,10 @@ CREATE TABLE `studio_post_like` (
 --
 -- ⚠️ 本表只增不改不删：**没有 deleted_at**（访问记录没有「改」和「删」的场景，
 -- 加了只会让每个查询多带一个条件），也没有 updated_by。
--- 代价是数据只涨——量级到百万行后应按 created_at 归档/分区（DDL 注释即约定，
--- 本期不做自动清理，见 Service 的同类注释）。
+-- 数据增长由应用侧的 TrafficArchiveManager 每天 03:30 分批清理
+-- （保留天数见 studio.traffic.retention-days，默认 180 天）。
+-- 已有生产库需手工补索引：
+--   ALTER TABLE `studio_page_visit` ADD KEY `idx_created_at` (`created_at`);
 CREATE TABLE `studio_page_visit` (
     `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
     `page_path` varchar(256) NOT NULL COMMENT '页面路径（如 /posts、/projects/123；不含 query）',
@@ -496,7 +491,9 @@ CREATE TABLE `studio_page_visit` (
     -- 每日趋势 / 时间段统计：按页 + 时间
     KEY `idx_path_time` (`page_path`, `created_at`),
     -- UV 去重（COUNT(DISTINCT visitor_id)）与「回头访客」分析
-    KEY `idx_visitor_time` (`visitor_id`, `created_at`)
+    KEY `idx_visitor_time` (`visitor_id`, `created_at`),
+    -- 归档清理（DELETE WHERE created_at < ?）：没有它每天凌晨都会全表扫描
+    KEY `idx_created_at` (`created_at`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '门户页面访问记录表（流量统计）';
 
 -- ============================================================================================================
@@ -618,7 +615,7 @@ CREATE TABLE `studio_quiz_wrong` (
 CREATE TABLE `studio_notification` (
     `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
     `receiver_id` bigint NOT NULL COMMENT '接收者用户 ID（关联 sys_user.id）',
-    `type` varchar(32) NOT NULL COMMENT '通知类型：POST_APPROVED/POST_REJECTED/COMMENT_REPLIED/MEMBER_GRANTED/REPORT_RESOLVED/REPORT_DISMISSED，须与 NotificationTypeEnum 一致',
+    `type` varchar(32) NOT NULL COMMENT '通知类型：POST_APPROVED/POST_REJECTED/COMMENT_REPLIED/POST_COMMENTED/POST_LIKED/MEMBER_GRANTED/REPORT_RESOLVED/REPORT_DISMISSED，须与 NotificationTypeEnum 一致',
     `biz_type` varchar(32) DEFAULT NULL COMMENT '来源业务类型：POST/COMMENT/USER',
     `biz_id` bigint DEFAULT NULL COMMENT '来源业务 ID（点击跳转用）',
     `title` varchar(128) NOT NULL COMMENT '通知标题（一句话摘要，快照不随业务变化）',
@@ -698,7 +695,7 @@ CREATE TABLE `studio_operation_log` (
 -- 附：应用账号与授权（生产执行前把 CHANGE_ME_BEFORE_RUN 换成真实口令；本地不需要可删掉本段）
 -- ============================================================================================================
 -- 口令不写进仓库：这里只保留占位符，改完不要提交回来。
--- 账号与 db/init-prod.sql 保持一致：应用账号 runshi，只给 CRUD，不给 DDL 权限。
+-- 应用账号 runshi：只给 CRUD，不给 DDL 权限，应用账号被拖库时损失可控在数据层。
 CREATE USER IF NOT EXISTS 'runshi'@'%' IDENTIFIED BY 'CHANGE_ME_BEFORE_RUN';
 GRANT SELECT, INSERT, UPDATE, DELETE ON `studio_db`.* TO 'runshi'@'%';
 FLUSH PRIVILEGES;

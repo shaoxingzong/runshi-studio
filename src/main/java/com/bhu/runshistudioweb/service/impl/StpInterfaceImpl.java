@@ -18,7 +18,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class StpInterfaceImpl implements StpInterface {
 
-    /** 用户状态：0-正常（与 db/user.sql 中 user_status 的取值保持一致：0-正常，1-封禁） */
+    /** 用户状态：0-正常（与 db/init-all.sql 中 user_status 的取值保持一致：0-正常，1-封禁） */
     private static final int USER_STATUS_NORMAL = 0;
 
     private final SysUserMapper sysUserMapper;

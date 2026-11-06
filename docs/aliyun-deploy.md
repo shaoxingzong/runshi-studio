@@ -129,21 +129,18 @@ sudo docker exec -it redis-stack redis-cli -a '你的Redis密码' INFO memory | 
 
 ---
 
-## 5. 建库（两步）
+## 5. 建库（单文件）
 
 ```bash
 cd /opt
 sudo git clone https://github.com/shaoxingzong/runshi-studio.git
 cd runshi-studio
 
-# ① 改口令：把 CHANGE_ME_BEFORE_RUN 换成真实口令
-sudo nano db/init-prod.sql
+# ① 改口令：把末尾 CREATE USER 的 CHANGE_ME_BEFORE_RUN 换成真实口令
+sudo nano db/init-all.sql
 
-# ② 环境准备（幂等）
-sudo mysql < db/init-prod.sql
-
-# ③ 表结构（21 张；DROP+CREATE，只适合空库）
-sudo mysql < db/user.sql
+# ② 建库 + 21 张表 + 应用账号/授权（DROP+CREATE，只适合全新空库）
+sudo mysql < db/init-all.sql
 ```
 
 验证：
@@ -364,8 +361,11 @@ ossutil ls oss://你的bucket/test/
 #### ④ 把备份传到 OSS
 
 ```bash
-# 先手动跑一次本地备份
-DB_PASS='你的MySQL应用口令' bash /opt/runshi-studio/db/backup.sh
+# 先手动跑一次本地备份（db/ 不再保留备份脚本，直接用 mysqldump）
+mkdir -p /data/backup/runshi-studio
+mysqldump --single-transaction --routines --triggers -uroot -p studio_db \
+  | gzip > /data/backup/runshi-studio/db_$(date +%Y%m%d_%H%M%S).sql.gz
+tar -czf /data/backup/runshi-studio/uploads_$(date +%Y%m%d_%H%M%S).tar.gz /data/runshi-studio-upload
 
 # 再整目录同步到 OSS（-u 只传新增/变化）
 ossutil cp /data/backup/runshi-studio/ oss://你的bucket/backup/ -r -u
@@ -375,8 +375,8 @@ ossutil cp /data/backup/runshi-studio/ oss://你的bucket/backup/ -r -u
 
 ```bash
 sudo crontab -e
-# 追加：
-30 2 * * * DB_PASS='你的MySQL应用口令' /usr/bin/bash /opt/runshi-studio/db/backup.sh >> /data/logs/backup.log 2>&1 && /usr/local/bin/ossutil cp /data/backup/runshi-studio/ oss://你的bucket/backup/ -r -u >> /data/logs/backup.log 2>&1
+# 追加（口令建议放 root 的 ~/.my.cnf，避免明文进 crontab）：
+30 2 * * * mysqldump --single-transaction --routines -uroot studio_db | gzip > /data/backup/runshi-studio/db_$(date +\%Y\%m\%d_\%H\%M\%S).sql.gz && tar -czf /data/backup/runshi-studio/uploads_$(date +\%Y\%m\%d_\%H\%M\%S).tar.gz /data/runshi-studio-upload && /usr/local/bin/ossutil cp /data/backup/runshi-studio/ oss://你的bucket/backup/ -r -u >> /data/logs/backup.log 2>&1
 ```
 
 #### ⑤ 生命周期（省钱）
