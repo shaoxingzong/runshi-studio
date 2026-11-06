@@ -32,4 +32,10 @@ public class TrafficOverviewVO implements Serializable {
 
     /** 热门页面 TOP N（按 PV 倒序） */
     private List<PageTrafficVO> topPages;
+
+    /** 来源分布 TOP N（站外域名；站内跳转与直接输入网址归入「直接访问」） */
+    private List<TrafficDimensionVO> referrers;
+
+    /** 设备分布（pc / mobile / unknown，按前端粗分） */
+    private List<TrafficDimensionVO> devices;
 }

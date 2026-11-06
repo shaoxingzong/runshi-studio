@@ -4,7 +4,6 @@ import com.bhu.runshistudioweb.exception.BusinessException;
 import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.exception.ThrowUtils;
 import org.springframework.beans.factory.annotation.Value;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -26,12 +25,14 @@ import java.util.UUID;
  * @author shaoshing
  */
 @Component
-@RequiredArgsConstructor
 public class FileManager {
 
     /** 上传文件存储根目录，对应配置项 studio.file.root-dir */
-    @Value("${studio.file.root-dir}")
     private final String rootDir;
+
+    public FileManager(@Value("${studio.file.root-dir}") String rootDir) {
+        this.rootDir = rootDir;
+    }
 
     /**
      * 文件上传：校验 → 落盘 → 返回相对访问路径

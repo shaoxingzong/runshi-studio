@@ -247,15 +247,38 @@ studio:
       minute-limit: ${TRAFFIC_RATE_LIMIT_MINUTE:60}
       daily-limit: ${TRAFFIC_RATE_LIMIT_DAILY:3000}
 
+    # 访问记录保留天数：每天 03:30 由 TrafficArchiveManager 分批删除更早的数据。
+    # 180 天足够看同比与季度趋势；设 0 或负数表示保留全部（关闭清理）。
+    # ⚠️ 生产库已有数据时，先确认 studio_page_visit 上有 created_at 索引，
+    #    否则每天的清理都会退化为全表扫描（建索引语句见 db/init-all.sql 的表定义注释）。
+    retention-days: ${TRAFFIC_RETENTION_DAYS:180}
+
 # ===== Actuator 端点暴露范围（这是「安全边界」，不是调试开关）=====
 # 改成 "*" 会让 /actuator/env（配置项）、/actuator/heapdump（堆转储，可能含密码与 token）
 # 零鉴权对外开放。且这些端点由独立的 WebMvcEndpointHandlerMapping 处理，
 # Sa-Token 的 MVC 拦截器对它**完全无效**——不能指望鉴权框架兜住它。
+#
+# 当前只多开了三类只读端点：
+#   - metrics：JSON 形式的指标快照，便于本地排查；
+#   - prometheus：Prometheus 文本格式，给外部抓取器用；
+#   - info：应用名、版本等静态信息，不含配置值。
+#
+# ⚠️ 即使只开这几项，也必须在 Nginx 层把 /api/actuator/** 限制为内网/本机访问
+#    （见 deploy/nginx.conf 的「监控端点」段）。后端默认监听 0.0.0.0，
+#    云主机安全组如果放开了 8080，这些端点就是公网可读的。
 management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      # 不返回各组件详情（数据库地址、Redis 版本等），只给 UP/DOWN
+      show-details: never
+  metrics:
+    tags:
+      # 所有指标统一带上应用名：将来多个服务被同一个 Prometheus 抓取时能区分
+      application: ${spring.application.name}
 
 # ===== 接口文档：默认关闭，dev 打开 =====
 knife4j:

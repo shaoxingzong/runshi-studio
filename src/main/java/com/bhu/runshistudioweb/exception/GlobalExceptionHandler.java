@@ -10,7 +10,6 @@ import io.swagger.v3.oas.annotations.Hidden;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BindException;
@@ -30,12 +29,15 @@ import org.springframework.web.multipart.MaxUploadSizeExceededException;
 @Hidden               // 不在接口文档中暴露异常处理器本身
 @RestControllerAdvice // 全局异常处理，作用于所有 @RestController
 @Slf4j                // 生成 log 对象，异常必须留痕，否则线上无从排查
-@RequiredArgsConstructor
 public class GlobalExceptionHandler {
 
     /** 上传大小上限，直接从 multipart 配置读取，避免在提示文案里写死数字 （改了 spring.servlet.multipart.max-file-size 而忘记改文案，会让用户看到错误的限制值） */
-    @Value("${spring.servlet.multipart.max-file-size:未知}")
     private final String maxFileSize;
+
+    public GlobalExceptionHandler(
+            @Value("${spring.servlet.multipart.max-file-size:未知}") String maxFileSize) {
+        this.maxFileSize = maxFileSize;
+    }
 
     /**
      * 处理业务异常：把错误码与提示原样透传给前端

@@ -21,10 +21,11 @@ public interface TrafficService extends IService<StudioPageVisit> {
     void report(TrafficReportRequest request);
 
     /**
-     * 流量总览：PV/UV 总量 + 今日 + 每日趋势 + 热门页面
+     * 流量总览：PV/UV 总量 + 今日 + 每日趋势 + 热门页面 + 来源/设备分布
      *
      * @param days 趋势天数（1-90）。传 0 或负数按 30 处理；超过 90 收敛到 90，不会报错
-     * @return 总览数据，永不为 null；没有访问记录时各计数为 0、daily 仍返回完整的 N 天（值为 0）、topPages 为空列表（不是 null）
+     * @return 总览数据，永不为 null；没有访问记录时各计数为 0、daily 仍返回完整的 N 天（值为 0）、
+     *         topPages / referrers / devices 为空列表（不是 null）
      */
     TrafficOverviewVO getOverview(int days);
 }

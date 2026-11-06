@@ -10,6 +10,7 @@ import com.bhu.runshistudioweb.model.dto.traffic.TrafficReportRequest;
 import com.bhu.runshistudioweb.model.entity.StudioPageVisit;
 import com.bhu.runshistudioweb.model.vo.traffic.DailyTrafficVO;
 import com.bhu.runshistudioweb.model.vo.traffic.PageTrafficVO;
+import com.bhu.runshistudioweb.model.vo.traffic.TrafficDimensionVO;
 import com.bhu.runshistudioweb.model.vo.traffic.TrafficOverviewVO;
 import com.bhu.runshistudioweb.service.TrafficService;
 import lombok.RequiredArgsConstructor;
@@ -44,6 +45,9 @@ public class TrafficServiceImpl extends ServiceImpl<StudioPageVisitMapper, Studi
 
     /** 热门页面取前几名：运营只看头部，返回全量既慢又没人看 */
     private static final int TOP_PAGE_LIMIT = 10;
+
+    /** 维度榜（来源 / 设备）各自取前几名：长尾值展示出来也没人看 */
+    private static final int DIMENSION_LIMIT = 10;
 
     /** 趋势里日期字段的格式 */
     private static final DateTimeFormatter DAY_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
@@ -93,6 +97,9 @@ public class TrafficServiceImpl extends ServiceImpl<StudioPageVisitMapper, Studi
         vo.setTodayUv(countDistinctVisitor(todayStart, tomorrowStart));
         vo.setDaily(dailyTrend(from, today, safeDays));
         vo.setTopPages(topPages(from));
+        // 这两个维度早就入库了（referrer_host / device_type），之前只采不展示等于白采
+        vo.setReferrers(referrerTop(from));
+        vo.setDevices(deviceDistribution(from));
         return vo;
     }
 
@@ -169,6 +176,47 @@ public class TrafficServiceImpl extends ServiceImpl<StudioPageVisitMapper, Studi
                 (rs, rowNum) -> {
                     PageTrafficVO vo = new PageTrafficVO();
                     vo.setPagePath(rs.getString("page_path"));
+                    vo.setPv(rs.getInt("pv"));
+                    vo.setUv(rs.getInt("uv"));
+                    return vo;
+                },
+                from);
+    }
+
+    /**
+     * 来源域名 TOP N
+     *
+     * IFNULL 把空来源归为「直接访问」：直接输入网址、从收藏夹进入、站内跳转
+     * 都不会带 Referer，分组时如果不归并，这些会变成一堆 NULL 行，前端还要再处理一次。
+     */
+    private List<TrafficDimensionVO> referrerTop(LocalDateTime from) {
+        return jdbcTemplate.query(
+                "SELECT IFNULL(referrer_host, '直接访问') AS name, "
+                        + "COUNT(*) AS pv, COUNT(DISTINCT visitor_id) AS uv "
+                        + "FROM studio_page_visit WHERE created_at >= ? "
+                        + "GROUP BY IFNULL(referrer_host, '直接访问') "
+                        + "ORDER BY pv DESC LIMIT " + DIMENSION_LIMIT,
+                (rs, rowNum) -> {
+                    TrafficDimensionVO vo = new TrafficDimensionVO();
+                    vo.setName(rs.getString("name"));
+                    vo.setPv(rs.getInt("pv"));
+                    vo.setUv(rs.getInt("uv"));
+                    return vo;
+                },
+                from);
+    }
+
+    /** 设备分布：unknown 是前端取不到 UA 时的兜底值，保留原值让前端做中文映射 */
+    private List<TrafficDimensionVO> deviceDistribution(LocalDateTime from) {
+        return jdbcTemplate.query(
+                "SELECT IFNULL(device_type, 'unknown') AS name, "
+                        + "COUNT(*) AS pv, COUNT(DISTINCT visitor_id) AS uv "
+                        + "FROM studio_page_visit WHERE created_at >= ? "
+                        + "GROUP BY IFNULL(device_type, 'unknown') "
+                        + "ORDER BY pv DESC LIMIT " + DIMENSION_LIMIT,
+                (rs, rowNum) -> {
+                    TrafficDimensionVO vo = new TrafficDimensionVO();
+                    vo.setName(rs.getString("name"));
                     vo.setPv(rs.getInt("pv"));
                     vo.setUv(rs.getInt("uv"));
                     return vo;

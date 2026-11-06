@@ -235,8 +235,15 @@ router.beforeEach((to) => {
     }
     return true;
 });
-router.afterEach((to) => {
+router.afterEach((to, _from, failure) => {
     usePageMeta({ title: (to.meta.title as string) ?? '' });
+
+    // 失败/重复导航不算一次页面浏览：Vue Router 4 对「push 到当前同一路径」这类
+    // 导航会走 afterEach 并带上 failure，如果不过滤，点一下已在当前页的导航链接
+    // 就会白记一次 PV（首页 / 尤其容易被连点）。
+    if (failure) {
+        return;
+    }
 
     try {
         void trafficApi

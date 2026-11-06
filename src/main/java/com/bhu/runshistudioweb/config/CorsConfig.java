@@ -2,7 +2,6 @@ package com.bhu.runshistudioweb.config;
 
 import cn.hutool.core.util.StrUtil;
 import jakarta.servlet.http.HttpServletRequest;
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -41,7 +40,6 @@ import java.util.Locale;
  * @author shaoshing
  */
 @Configuration
-@RequiredArgsConstructor
 public class CorsConfig {
 
     /** 代理链上取第一个值：多级代理时第一个才是浏览器原始请求的协议 / 主机 */
@@ -55,8 +53,13 @@ public class CorsConfig {
      * 默认值里的 * 是端口通配：http://localhost:* 匹配任意端口，但不匹配其它域名——
      * 它不是「允许所有来源」，不要理解成放开限制。
      */
-    @Value("${studio.web.allowed-origins:http://localhost:*,http://127.0.0.1:*}")
     private final String allowedOrigins;
+
+    public CorsConfig(
+            @Value("${studio.web.allowed-origins:http://localhost:*,http://127.0.0.1:*}")
+            String allowedOrigins) {
+        this.allowedOrigins = allowedOrigins;
+    }
 
     /**
      * 注册跨域过滤器，对所有路径生效

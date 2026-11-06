@@ -16,6 +16,9 @@ const overview = ref<TrafficOverview | null>(null);
 const loading = ref(false);
 const error = ref('');
 
+/** 设备类型的中文映射：后端只存 pc / mobile / unknown 三个原始值 */
+const DEVICE_TEXT: Record<string, string> = { pc: '电脑端', mobile: '移动端', unknown: '未知' };
+
 async function load() {
     loading.value = true;
     error.value = '';
@@ -52,12 +55,12 @@ onMounted(load);
             </div>
         </div>
 
-        <!-- 口径说明常驻：UV 的精度边界必须在数字旁边，而不是写在文档里等人误读 -->
+        <!-- 口径说明常驻：PV 与 UV 的区别必须在数字旁边，而不是写在文档里等人误读 -->
         <el-alert
             type="info"
             :closable="false"
             class="notice"
-            title="UV 按浏览器标识去重：同一人换设备、清缓存或使用无痕模式会被记为多个 UV。只统计页面路径，不记录 IP、UA 与网址参数。"
+            title="PV 是页面浏览次数：每次进入或刷新页面都会 +1；UV 才按浏览器标识去重（同一人换设备、清缓存或使用无痕模式会被记为多个 UV）。只统计页面路径，不记录 IP、UA 与网址参数。"
         />
 
         <!-- 错误态用共享组件 ErrorRetry：内联手写 alert 与组件 markup 重复，改组件样式时会漏掉这里 -->
@@ -101,6 +104,31 @@ onMounted(load);
                     <el-table-column prop="pv" label="PV" width="120" />
                     <el-table-column prop="uv" label="UV" width="120" />
                 </el-table>
+            </div>
+
+            <!-- 来源与设备并列：两块都只有几行，拆成上下两大块会把页面拉得很长 -->
+            <div class="dim-grid">
+                <div class="card block">
+                    <h3>来源 TOP 10</h3>
+                    <el-empty v-if="!overview.referrers.length" description="暂无数据" :image-size="60" />
+                    <el-table v-else :data="overview.referrers" border>
+                        <el-table-column prop="name" label="来源域名" min-width="160" show-overflow-tooltip />
+                        <el-table-column prop="pv" label="PV" width="100" />
+                        <el-table-column prop="uv" label="UV" width="100" />
+                    </el-table>
+                </div>
+
+                <div class="card block">
+                    <h3>设备分布</h3>
+                    <el-empty v-if="!overview.devices.length" description="暂无数据" :image-size="60" />
+                    <el-table v-else :data="overview.devices" border>
+                        <el-table-column label="设备类型" min-width="120">
+                            <template #default="{ row }">{{ DEVICE_TEXT[row.name] || row.name }}</template>
+                        </el-table-column>
+                        <el-table-column prop="pv" label="PV" width="100" />
+                        <el-table-column prop="uv" label="UV" width="100" />
+                    </el-table>
+                </div>
             </div>
         </template>
     </div>
@@ -180,5 +208,12 @@ h3 {
 .block {
     padding: 18px 20px;
     margin-bottom: 16px;
+}
+
+/* 两块维度表并排；窄屏自动堆叠，不写死两列 */
+.dim-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
 }
 </style>

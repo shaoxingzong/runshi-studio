@@ -1,6 +1,5 @@
 package com.bhu.runshistudioweb.config;
 
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.ResourceHandlerRegistry;
@@ -15,12 +14,14 @@ import java.nio.file.Paths;
  * @author shaoshing
  */
 @Configuration
-@RequiredArgsConstructor
 public class WebMvcConfig implements WebMvcConfigurer {
 
     /** 上传文件的存储根目录，与 FileManager 读的是同一个配置项 */
-    @Value("${studio.file.root-dir}")
     private final String rootDir;
+
+    public WebMvcConfig(@Value("${studio.file.root-dir}") String rootDir) {
+        this.rootDir = rootDir;
+    }
 
     /** 注册静态资源映射：把 URL /uploads/** 指向磁盘上的上传根目录 */
     @Override

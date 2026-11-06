@@ -267,6 +267,14 @@ export interface PageTraffic {
     uv: number;
 }
 
+/** 流量维度统计（来源 / 设备等分组的一行） */
+export interface TrafficDimension {
+    // 维度值：来源域名（空值由后端归一为「直接访问」）或设备类型（pc / mobile / unknown）
+    name: string;
+    pv: number;
+    uv: number;
+}
+
 /** 流量总览（管理端「流量分析」页） */
 export interface TrafficOverview {
     totalPv: number;
@@ -275,6 +283,8 @@ export interface TrafficOverview {
     todayUv: number;
     daily: DailyTraffic[];
     topPages: PageTraffic[];
+    referrers: TrafficDimension[];
+    devices: TrafficDimension[];
 }
 
 /** 公开评论（后端 PostCommentVO，楼中楼） */

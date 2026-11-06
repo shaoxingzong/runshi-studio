@@ -94,6 +94,17 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!--
+            Prometheus 指标导出：只有 actuator 不够——它默认只提供 JSON 形式的少量端点，
+            没有可被抓取的时序格式。加上这个 registry 后才会自动暴露 /actuator/prometheus，
+            把 JVM 内存、GC、Hikari 连接池、HTTP 请求耗时/状态码等翻译成 Prometheus 文本格式。
+            版本由 spring-boot-dependencies 统一管理，不手写版本号。
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
         <!-- Knife4j Next（社区维护 fork，唯一支持 Spring Boot 4 的版本线） -->
         <dependency>
             <groupId>com.baizhukui</groupId>
