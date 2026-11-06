@@ -14,6 +14,7 @@ import com.bhu.runshistudioweb.mapper.StudioMemberMapper;
 import com.bhu.runshistudioweb.mapper.StudioPostCommentMapper;
 import com.bhu.runshistudioweb.mapper.StudioPostMapper;
 import com.bhu.runshistudioweb.mapper.StudioPostReportMapper;
+import com.bhu.runshistudioweb.mapper.SysUserMapper;
 import com.bhu.runshistudioweb.model.dto.post.AuditRequest;
 import com.bhu.runshistudioweb.model.dto.post.AuditResult;
 import com.bhu.runshistudioweb.model.dto.post.PostCommentAddRequest;
@@ -21,6 +22,7 @@ import com.bhu.runshistudioweb.model.entity.StudioMember;
 import com.bhu.runshistudioweb.model.entity.StudioPost;
 import com.bhu.runshistudioweb.model.entity.StudioPostComment;
 import com.bhu.runshistudioweb.model.entity.StudioPostReport;
+import com.bhu.runshistudioweb.model.entity.SysUser;
 import com.bhu.runshistudioweb.model.enums.AiAuditStatusEnum;
 import com.bhu.runshistudioweb.model.enums.AuditStatusEnum;
 import com.bhu.runshistudioweb.model.enums.MemberStatusEnum;
@@ -44,6 +46,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
@@ -80,8 +84,11 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
     /** 内容审核（AI 三分法） */
     private final ContentAuditManager contentAuditManager;
 
-    /** 站内通知（评论通过后告知被回复者） */
+    /** 站内通知（评论通过后告知帖子作者与被回复者） */
     private final NotificationService notificationService;
+
+    /** 账号表：评论者展示名的兜底来源（非在队成员也能评论） */
+    private final SysUserMapper sysUserMapper;
 
     /** 操作日志（审核与删除都要留痕） */
     private final OperationLogService operationLogService;
@@ -181,28 +188,104 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
             studioPostMapper.update(null, new LambdaUpdateWrapper<StudioPost>()
                     .eq(StudioPost::getId, comment.getPostId())
                     .setSql("comment_count = comment_count + 1"));
-            notifyReplyIfParent(comment);
+            notifyApprovedComments(List.of(comment));
         }
         log.info("AI 审核完成 | commentId={} | 结论={}", commentId, aiStatus.getDesc());
     }
 
-    /** 评论通过后，通知被回复者（父评论的作者） */
-    private void notifyReplyIfParent(StudioPostComment comment) {
-        // 顶层评论没有被回复者，不需要通知
-        if (comment.getParentId() == null) {
+    /**
+     * 评论审核通过后投递互动通知（AI 判安全与人工审核通过两条路径共用）
+     *
+     * <p>一条评论最多打扰两个人：帖子作者收到 POST_COMMENTED（逐条），父评论作者收到
+     * COMMENT_REPLIED。当两者是同一人时只发前者，避免同一事件双重提醒。
+     *
+     * <p>批量审核场景下，帖子、评论者展示名、父评论作者都一次查完（3 次查询封顶），
+     * 避免逐条评论各查一次库的 N+1。
+     */
+    private void notifyApprovedComments(List<StudioPostComment> comments) {
+        if (comments == null || comments.isEmpty()) {
             return;
         }
-        // 父评论可能已被删：悬空场景跳过通知，不影响评论本身
-        StudioPostComment parent = this.getById(comment.getParentId());
-        if (parent == null) {
-            return;
+
+        // ① 帖子（作者 ID + 标题）
+        Set<Long> postIds = comments.stream()
+                .map(StudioPostComment::getPostId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<Long, StudioPost> posts = postIds.isEmpty() ? Map.of()
+                : studioPostMapper.selectList(new LambdaQueryWrapper<StudioPost>()
+                        .in(StudioPost::getId, postIds)
+                        .select(StudioPost::getId, StudioPost::getAuthorId, StudioPost::getTitle))
+                        .stream().collect(Collectors.toMap(StudioPost::getId, p -> p, (a, b) -> a));
+
+        // ② 评论者展示名：先按在队成员档案取，查不到的用账号昵称兜底
+        Set<Long> actorIds = comments.stream()
+                .map(StudioPostComment::getAuthorId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<Long, String> actorNames = displayNames(actorIds);
+
+        // ③ 父评论作者（仅回复场景需要）
+        Set<Long> parentIds = comments.stream()
+                .map(StudioPostComment::getParentId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<Long, Long> parentAuthors = parentIds.isEmpty() ? Map.of()
+                : this.list(new LambdaQueryWrapper<StudioPostComment>()
+                        .in(StudioPostComment::getId, parentIds)
+                        .select(StudioPostComment::getId, StudioPostComment::getAuthorId))
+                        .stream().collect(Collectors.toMap(
+                                StudioPostComment::getId, StudioPostComment::getAuthorId, (a, b) -> a));
+
+        for (StudioPostComment comment : comments) {
+            StudioPost post = posts.get(comment.getPostId());
+            String postTitle = post == null || StrUtil.isBlank(post.getTitle())
+                    ? "原帖子" : post.getTitle();
+            String actorName = actorNames.getOrDefault(comment.getAuthorId(), "有人");
+            String summary = commentSummary(comment.getContent());
+
+            // ① 被回复者：沿用原有 COMMENT_REPLIED 行为与文案（不改已上线语义）
+            Long parentAuthorId = comment.getParentId() == null
+                    ? null : parentAuthors.get(comment.getParentId());
+            if (parentAuthorId != null) {
+                notificationService.notify(parentAuthorId, comment.getAuthorId(),
+                        NotificationTypeEnum.COMMENT_REPLIED.getValue(), "POST", comment.getPostId(),
+                        "有人回复了你的评论",
+                        "你的评论在《" + postTitle + "》下收到了新回复");
+            }
+
+            // ② 帖子作者：新增的逐条通知。bizId 用评论 ID，同一帖子多条评论不会被唯一键吞掉。
+            //    若作者同时也是被回复者，上面已有 COMMENT_REPLIED，不再叠加一条，避免双重打扰。
+            boolean authorIsParentAuthor = parentAuthorId != null && post != null
+                    && Objects.equals(parentAuthorId, post.getAuthorId());
+            if (!authorIsParentAuthor && post != null && post.getAuthorId() != null) {
+                notificationService.notify(post.getAuthorId(), comment.getAuthorId(),
+                        NotificationTypeEnum.POST_COMMENTED.getValue(), "COMMENT", comment.getId(),
+                        actorName + " 评论了你的帖子",
+                        "《" + postTitle + "》：" + summary);
+            }
         }
-        StudioPost post = studioPostMapper.selectById(comment.getPostId());
-        String postTitle = post == null ? "原帖子" : post.getTitle();
-        notificationService.notify(parent.getAuthorId(), comment.getAuthorId(),
-                NotificationTypeEnum.COMMENT_REPLIED.getValue(), "POST", comment.getPostId(),
-                "有人回复了你的评论",
-                "你的评论在《" + postTitle + "》下收到了新回复");
+    }
+
+    /** 批量取评论者展示名：在队成员用档案姓名，查不到的用账号昵称（一次查询，避免 N+1） */
+    private Map<Long, String> displayNames(Set<Long> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, String> names = new HashMap<>();
+        authorProfiles(new ArrayList<>(userIds))
+                .forEach((userId, profile) -> names.put(userId, profile.name()));
+
+        List<Long> missing = userIds.stream()
+                .filter(id -> !names.containsKey(id))
+                .toList();
+        if (!missing.isEmpty()) {
+            sysUserMapper.selectList(new LambdaQueryWrapper<SysUser>()
+                            .in(SysUser::getId, missing)
+                            .select(SysUser::getId, SysUser::getUserName, SysUser::getUserAccount))
+                    .forEach(user -> {
+                        String display = StrUtil.isNotBlank(user.getUserName())
+                                ? user.getUserName() : user.getUserAccount();
+                        if (StrUtil.isNotBlank(display)) {
+                            names.put(user.getId(), display);
+                        }
+                    });
+        }
+        return names;
     }
 
     /** 某帖子的公开评论列表（游客可调用，楼中楼已组装好） */
@@ -333,9 +416,8 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
                         .eq(StudioPost::getId, entry.getKey())
                         .setSql("comment_count = comment_count + " + entry.getValue()));
             }
-            for (StudioPostComment target : targets) {
-                notifyReplyIfParent(target);
-            }
+            // 一次批量投递：AI 灰色转人工通过后也不会漏发，且不会逐条查库
+            notifyApprovedComments(targets);
         }
 
         // 留痕：一条评论一行（按内容反查「这句是谁放出来的」）；rows 为 0 时不记

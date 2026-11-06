@@ -29,7 +29,7 @@ public class StudioNotification implements Serializable {
     /** 接收者用户 ID（sys_user.id） */
     private Long receiverId;
 
-    /** 通知类型：POST_APPROVED / POST_REJECTED / COMMENT_REPLIED / MEMBER_GRANTED，见 NotificationTypeEnum */
+    /** 通知类型：POST_APPROVED / POST_REJECTED / COMMENT_REPLIED / POST_COMMENTED / POST_LIKED / MEMBER_GRANTED / REPORT_*，见 NotificationTypeEnum */
     private String type;
 
     /** 来源业务类型：POST / COMMENT / USER（与 biz_id 配合做跳转） */

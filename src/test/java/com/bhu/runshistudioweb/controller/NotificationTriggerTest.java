@@ -107,6 +107,34 @@ class NotificationTriggerTest {
         return null;
     }
 
+    /** 统计某类型通知的条数（逐条 / 聚合的关键断言） */
+    private int countType(String token, String type) {
+        String page = support.getBody("/notification/page?current=1&pageSize=50", token);
+        int count = 0;
+        for (JsonNode record : support.data(page).get("records")) {
+            if (type.equals(record.get("type").asText())) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    /** 发一条评论（待审），返回评论 ID */
+    private long addComment(String token, long postId, Long parentId, String content) {
+        String json = "{\"postId\":" + postId + ",\"content\":\"" + content + "\""
+                + (parentId == null ? "" : ",\"parentId\":" + parentId) + "}";
+        String body = support.postJson("/post/comment/add", json, token);
+        assertEquals("00000", support.code(body), body);
+        return Long.parseLong(support.data(body).asText());
+    }
+
+    /** 人工审核评论（批量接口，单个 id 也走它） */
+    private void approveComment(long commentId) {
+        String body = support.postJson("/admin/post/comment/audit",
+                "{\"ids\":[" + commentId + "],\"action\":\"approve\"}", adminToken);
+        assertEquals("00000", support.code(body), body);
+    }
+
     // 帖子审核
 
     @Test
@@ -227,6 +255,81 @@ class NotificationTriggerTest {
         // 作者的列表里只应有「帖子审核通过」，不该有「评论被回复」
         JsonNode selfReplyNotification = findType(authorToken, "COMMENT_REPLIED");
         assertEquals(null, selfReplyNotification, "不能给自己发通知");
+    }
+
+    // 评论 / 点赞互动通知
+
+    @Test
+    @DisplayName("顶层评论审核通过：帖子作者收到 POST_COMMENTED，含评论者与摘要")
+    void approvedCommentNotifiesPostAuthor() {
+        long postId = createPendingPost(authorToken, "通知测试-被评论");
+        auditPost(postId, "approve", null);
+        long commentId = addComment(replierToken, postId, null, "写得真好，学到了");
+
+        approveComment(commentId);
+
+        JsonNode item = findType(authorToken, "POST_COMMENTED");
+        assertNotNull(item, "顶层评论通过审核后，帖子作者应收到评论通知");
+        assertEquals("帖子被评论", item.get("typeDesc").asText());
+        assertTrue(item.get("content").asText().contains("通知测试-被评论"),
+                "正文应带帖子标题：" + item);
+        assertTrue(item.get("content").asText().contains("写得真好"),
+                "正文应带评论摘要，让人知道对方说了什么：" + item);
+        assertEquals(String.valueOf(commentId), item.get("bizId").asText(),
+                "bizId 用评论 ID（逐条幂等）");
+        assertEquals(String.valueOf(postId), item.get("postId").asText(),
+                "postId 由服务端反查，供前端跳回帖子");
+    }
+
+    @Test
+    @DisplayName("两条不同评论逐条通知：不撞唯一键")
+    void eachCommentNotifiesSeparately() {
+        long postId = createPendingPost(authorToken, "通知测试-逐条");
+        auditPost(postId, "approve", null);
+        long first = addComment(replierToken, postId, null, "第一条评论");
+        long second = addComment(replierToken, postId, null, "第二条评论");
+
+        String auditBody = support.postJson("/admin/post/comment/audit",
+                "{\"ids\":[" + first + "," + second + "],\"action\":\"approve\"}", adminToken);
+        assertEquals("00000", support.code(auditBody), auditBody);
+
+        assertEquals(2, countType(authorToken, "POST_COMMENTED"),
+                "逐条通知：同一帖子的两条评论不该被唯一键吞掉一条");
+    }
+
+    @Test
+    @DisplayName("待审评论不提前通知；作者自己评论自己不给自己发")
+    void pendingAndSelfCommentDoNotNotify() {
+        long postId = createPendingPost(authorToken, "通知测试-不打扰");
+        auditPost(postId, "approve", null);
+        addComment(replierToken, postId, null, "待审时不应通知");
+        assertEquals(0, countType(authorToken, "POST_COMMENTED"),
+                "先审后发：审核通过之前不能通知（否则点开看不到内容）");
+
+        long self = addComment(authorToken, postId, null, "自己评论自己");
+        approveComment(self);
+        assertEquals(0, countType(authorToken, "POST_COMMENTED"),
+                "作者自己评论自己的帖子不该给自己发通知");
+    }
+
+    @Test
+    @DisplayName("回复场景：父评论作者就是帖子作者时只发 COMMENT_REPLIED，不双重打扰")
+    void replyDoesNotDoubleNotifyPostAuthor() {
+        long postId = createPendingPost(authorToken, "通知测试-去重");
+        auditPost(postId, "approve", null);
+        // 作者自己发顶层评论（自己给自己不通知），另一用户回复它
+        long top = addComment(authorToken, postId, null, "顶层评论");
+        String auditTop = support.postJson("/admin/post/comment/audit",
+                "{\"ids\":[" + top + "],\"action\":\"approve\"}", adminToken);
+        assertEquals("00000", support.code(auditTop), auditTop);
+
+        long reply = addComment(replierToken, postId, top, "楼中楼回复");
+        approveComment(reply);
+
+        assertEquals(0, countType(authorToken, "POST_COMMENTED"),
+                "作者已收到 COMMENT_REPLIED，不该再叠加一条 POST_COMMENTED");
+        assertEquals(1, countType(authorToken, "COMMENT_REPLIED"),
+                "原有「评论被回复」通知行为必须保持不变");
     }
 
     // 成员授予

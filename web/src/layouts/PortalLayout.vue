@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ArrowDown, Bell, Document, Lock, Setting, SwitchButton, User } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 import { userApi } from '@/api/user';
-import { notificationApi } from '@/api/notification';
+import { notificationApi, subscribeUnread } from '@/api/notification';
 import MemberProfileDialog from '@/components/MemberProfileDialog.vue';
 import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue';
 import SmartImage from '@/components/SmartImage.vue';
@@ -32,11 +32,16 @@ const navItems = [
     { path: '/quiz', label: '刷题', memberOnly: true },
     { path: '/ai', label: 'AI 助手' },
 ];
+
+/** 组件是否已卸载：卸载后不再安排重连（声明提前，避免回调里引用尚未初始化的变量） */
+let unmounted = false;
+
 onMounted(() => {
     void user.loadMemberProfile();
     // 角色只在登录时写过：刷新页面时补拉一次，管理员改过角色/封禁后入口能立刻变化
     void user.refreshProfile();
     void refreshUnread();
+    // 轮询降为兜底：SSE 在线时红点即时到账，长连接断了也能靠它修正
     unreadTimer = window.setInterval(() => {
         if (user.isLogin) {
             void refreshUnread();
@@ -44,13 +49,28 @@ onMounted(() => {
     }, 60_000);
     // 通知页标记已读后广播本事件：铃铛立刻刷新，不等下一次轮询
     window.addEventListener('notification:read', onNotificationRead);
+    // 订阅按登录态启停：登录后建连、退出登录/令牌失效时断开
+    watch(
+        () => user.isLogin,
+        (login) => {
+            if (login) {
+                startUnreadStream();
+            } else {
+                stopUnreadStream();
+                unreadCount.value = 0;
+            }
+        },
+        { immediate: true },
+    );
 });
 
 onBeforeUnmount(() => {
+    unmounted = true;
     if (unreadTimer !== null) {
         window.clearInterval(unreadTimer);
         unreadTimer = null;
     }
+    stopUnreadStream();
     window.removeEventListener('notification:read', onNotificationRead);
 });
 
@@ -62,6 +82,9 @@ async function logout() {
         // 注销失败（令牌已过期等）也必须清掉本地状态，否则界面会永远停在「已登录」
         console.warn('注销失败，仅清理本地登录态', e);
     }
+    // 先断长连接：退出后 token 已失效，留着连接会一直重连失败
+    stopUnreadStream();
+    unreadCount.value = 0;
     user.logout();
     ElMessage.success('已退出登录');
     await router.push('/');
@@ -78,7 +101,76 @@ const passwordVisible = ref(false);
 /** 轮询定时器句柄（卸载时必须清，否则内存泄漏 + 接口打到已销毁的组件） */
 let unreadTimer: number | null = null;
 
-/** 拉一次未读数 */
+/** 断线重连退避：1s → 2s → 4s … 上限 30s；连上后重置 */
+const RECONNECT_BASE_MS = 1_000;
+const RECONNECT_MAX_MS = 30_000;
+let reconnectDelay = RECONNECT_BASE_MS;
+let reconnectTimer: number | null = null;
+/** 当前流式订阅的取消函数；退出登录/卸载时调用 */
+let cancelUnreadStream: (() => void) | null = null;
+/** 当前订阅的 AbortController：重连前断开旧连接 */
+let streamAbort: AbortController | null = null;
+
+/** 建立一次订阅；onDisconnect 里按退避重连，轮询始终作为兜底 */
+function startUnreadStream() {
+    if (!user.isLogin || unmounted) {
+        return;
+    }
+    // 重连前丢掉上一轮的取消句柄：旧连接已断开，留着只会让清理逻辑误判
+    cancelUnreadStream?.();
+    cancelUnreadStream = null;
+    streamAbort = new AbortController();
+    void subscribeUnread(
+        {
+            onUnread: (count) => {
+                unreadCount.value = count;
+                // 成功收到首帧说明连接健康，重置退避
+                reconnectDelay = RECONNECT_BASE_MS;
+            },
+            onDisconnect: () => {
+                if (!user.isLogin || unmounted) {
+                    return;
+                }
+                // 低频轮询会继续修正红点；这里只负责尽快恢复实时通道
+                scheduleReconnect();
+            },
+        },
+        streamAbort.signal,
+    )
+        .then((cancel) => {
+            cancelUnreadStream = cancel;
+        })
+        .catch(() => {
+            scheduleReconnect();
+        });
+}
+
+function scheduleReconnect() {
+    if (!user.isLogin || unmounted || reconnectTimer !== null) {
+        return;
+    }
+    const delay = reconnectDelay;
+    reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
+    reconnectTimer = window.setTimeout(() => {
+        reconnectTimer = null;
+        startUnreadStream();
+    }, delay);
+}
+
+/** 断开实时订阅并取消待执行的重连 */
+function stopUnreadStream() {
+    if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+    }
+    cancelUnreadStream?.();
+    cancelUnreadStream = null;
+    streamAbort?.abort();
+    streamAbort = null;
+    reconnectDelay = RECONNECT_BASE_MS;
+}
+
+/** 拉一次未读数（SSE 兜底 / 标记已读后立刻刷新） */
 async function refreshUnread() {
     if (!user.isLogin) {
         unreadCount.value = 0;

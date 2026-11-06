@@ -69,6 +69,12 @@ async function open(item: Notification) {
     }
     if (item.type === 'MEMBER_GRANTED') {
         await router.push('/workspace');
+    } else if (item.bizType === 'COMMENT') {
+        // 评论类通知的 bizId 是评论 ID，跳转必须用服务端反查出来的 postId；
+        // 评论已删除时 postId 为 null，此时不跳转（沿用「来源悬空」的降级语义）
+        if (item.postId) {
+            await router.push(`/posts/${item.postId}#comment-${item.bizId}`);
+        }
     } else if (item.bizId) {
         await router.push(`/posts/${item.bizId}`);
     }

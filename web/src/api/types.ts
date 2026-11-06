@@ -163,6 +163,8 @@ export interface Notification {
     typeDesc: string;
     bizType?: string | null;
     bizId?: string | null;
+    // 关联帖子 ID：评论类通知的 bizId 是评论 ID，跳转要用这个字段（评论已删时后端给 null）
+    postId?: string | null;
     title: string;
     content: string;
     // 0-未读，1-已读

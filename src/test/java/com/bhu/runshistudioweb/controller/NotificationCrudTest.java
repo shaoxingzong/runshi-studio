@@ -212,4 +212,62 @@ class NotificationCrudTest {
                 "POST", 42L, "自己回复自己", "内容");
         assertEquals(0, unreadInDb(userIdA), "不能给自己发通知");
     }
+
+    // 评论类通知的跳转契约
+
+    @Test
+    @DisplayName("评论通知：typeDesc 中文、postId 由评论 ID 批量反查出来")
+    void commentNotificationCarriesPostId() {
+        long postId = 990001L;
+        long commentId = 990002L;
+        jdbcTemplate.update("""
+                INSERT INTO studio_post_comment (id, post_id, author_id, content, status, ai_audit_status,
+                                                 created_at, updated_at, deleted_at)
+                VALUES (?, ?, ?, '测试评论', 1, 0, NOW(), NOW(), 0)
+                """, commentId, postId, userIdB);
+
+        notificationService.notify(userIdA, userIdB, "POST_COMMENTED",
+                "COMMENT", commentId, "有人评论了你的帖子", "《测试帖》：测试评论");
+
+        String body = support.getBody("/notification/page", tokenA);
+        var item = support.data(body).get("records").get(0);
+        assertEquals("帖子被评论", item.get("typeDesc").asText(), "新增类型的中文描述由服务端填充");
+        assertEquals(String.valueOf(commentId), item.get("bizId").asText(), "bizId 必须是评论 ID（逐条幂等）");
+        assertEquals(String.valueOf(postId), item.get("postId").asText(),
+                "postId 由评论反查得到，前端靠它跳回帖子");
+    }
+
+    @Test
+    @DisplayName("评论已删除/来源悬空：postId 为 null，前端降级为不跳转")
+    void danglingCommentHasNoPostId() {
+        // bizId 指向一条不存在的评论：反查映射为空，VO 的 postId 保持 null
+        notificationService.notify(userIdA, userIdB, "POST_COMMENTED",
+                "COMMENT", 990099L, "有人评论了你的帖子", "来源已删除");
+
+        String body = support.getBody("/notification/page", tokenA);
+        var item = support.data(body).get("records").get(0);
+        assertTrue(item.get("postId") == null || item.get("postId").isNull(),
+                "悬空来源不该编造 postId：" + item);
+    }
+
+    @Test
+    @DisplayName("点赞通知：中文类型描述与逐条评论通知互不干扰")
+    void likeNotificationTypeDesc() {
+        notificationService.notify(userIdA, userIdB, "POST_LIKED",
+                "POST", 42L, "《测试帖》收到 1 个赞", "有人赞了你的帖子");
+        notificationService.notify(userIdA, userIdB, "POST_COMMENTED",
+                "COMMENT", 43L, "有人评论了你的帖子", "《测试帖》：评论");
+
+        String body = support.getBody("/notification/page", tokenA);
+        var records = support.data(body).get("records");
+        assertEquals(2, records.size(), "两类通知应各自独立：" + body);
+        boolean sawLike = false;
+        for (var record : records) {
+            if ("POST_LIKED".equals(record.get("type").asText())) {
+                sawLike = true;
+                assertEquals("帖子被点赞", record.get("typeDesc").asText());
+            }
+        }
+        assertTrue(sawLike, "应能看到点赞通知");
+    }
 }

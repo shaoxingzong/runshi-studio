@@ -16,6 +16,12 @@ public enum NotificationTypeEnum {
     /** 评论被回复：指向原评论所在帖子 */
     COMMENT_REPLIED("COMMENT_REPLIED", "评论被回复"),
 
+    /** 帖子被评论：通知帖子作者，逐条投递（bizType=COMMENT、bizId=评论 ID） */
+    POST_COMMENTED("POST_COMMENTED", "帖子被评论"),
+
+    /** 帖子被点赞：通知帖子作者，按帖子聚合成一条（bizType=POST、bizId=帖子 ID） */
+    POST_LIKED("POST_LIKED", "帖子被点赞"),
+
     /** 获得工作室成员身份：由管理员在用户管理里授予 */
     MEMBER_GRANTED("MEMBER_GRANTED", "获得成员身份"),
 

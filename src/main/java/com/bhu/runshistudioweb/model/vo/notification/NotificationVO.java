@@ -34,6 +34,15 @@ public class NotificationVO implements Serializable {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long bizId;
 
+    /**
+     * 关联帖子 ID（序列化为字符串），供「评论类」通知跳转
+     *
+     * <p>评论通知的 bizId 存的是评论 ID（逐条幂等所需），不能直接当帖子 ID 用；
+     * 服务端按本页评论 ID 批量反查后填这里。评论已删除时为 null，前端降级为不跳转。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long postId;
+
     /** 通知标题（快照） */
     private String title;
 

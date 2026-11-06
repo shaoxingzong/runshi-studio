@@ -95,6 +95,22 @@ function scrollToComments() {
     commentsRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
+/** 通知中心带来的评论锚点：命中具体评论就滚到它，否则退回评论区整体 */
+async function jumpToCommentAnchor() {
+    const hash = route.hash;
+    if (!hash.startsWith('#comment-')) {
+        return;
+    }
+    await nextTick();
+    const target = document.getElementById(hash.slice(1));
+    if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else {
+        // 评论可能已被删除或尚未审核通过：至少让用户看到评论区
+        scrollToComments();
+    }
+}
+
 /** 作者改自己的文章：改完会重新送审，审核通过前不再公开展示 */
 function editMyPost() {
     router.push({ path: '/posts/new', query: { edit: id } });
@@ -152,6 +168,8 @@ async function load() {
     try {
         detail.value = await postApi.detail(id);
         comments.value = await postApi.commentList(id);
+        // 从通知中心跳来时 URL 带 #comment-{id}：评论是异步渲染的，必须等 DOM 就绪再滚
+        await jumpToCommentAnchor();
     } catch (e) {
         // 失败 / 帖子不存在：给出原因与重试，而不是整页空白
         error.value = (e as Error).message || '加载失败';
@@ -350,7 +368,7 @@ usePageMeta({
                 <el-empty v-if="comments.length === 0" description="还没有评论，来说两句吧" />
 
                 <div v-else class="comment-list">
-                    <div v-for="comment in comments" :key="comment.id" class="comment">
+                    <div v-for="comment in comments" :id="`comment-${comment.id}`" :key="comment.id" class="comment">
                         <div class="comment-head">
                             <!-- 评论人头像：与作者区同一套兜底（无头像时显示统一默认头像）-->
                             <span class="comment-avatar">
@@ -383,7 +401,7 @@ usePageMeta({
 
                         <!-- 楼中楼：只两层，children 由后端挂好，这里直接渲染 -->
                         <div v-if="comment.children?.length" class="replies">
-                            <div v-for="reply in comment.children" :key="reply.id" class="reply">
+                            <div v-for="reply in comment.children" :id="`comment-${reply.id}`" :key="reply.id" class="reply">
                                 <span class="reply-avatar">
                                     <SmartImage
                                         :src="reply.authorAvatar"

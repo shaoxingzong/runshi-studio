@@ -1,9 +1,11 @@
 package com.bhu.runshistudioweb.controller;
 
 import cn.dev33.satoken.annotation.SaCheckLogin;
+import cn.dev33.satoken.stp.StpUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bhu.runshistudioweb.common.BaseResponse;
 import com.bhu.runshistudioweb.common.ResultUtils;
+import com.bhu.runshistudioweb.manager.NotificationPushManager;
 import com.bhu.runshistudioweb.model.dto.notification.NotificationQueryRequest;
 import com.bhu.runshistudioweb.model.dto.notification.NotificationReadRequest;
 import com.bhu.runshistudioweb.model.vo.notification.NotificationVO;
@@ -12,11 +14,13 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 /**
  * 站内通知接口（C 端，全部要求登录）
@@ -25,11 +29,13 @@ import org.springframework.web.bind.annotation.RestController;
  */
 @RestController
 @RequestMapping("/notification")
-@Tag(name = "站内通知", description = "审核结论、评论回复、身份授予的事件通知：列表、未读数、已读")
+@Tag(name = "站内通知", description = "审核结论、评论回复、点赞、身份授予的事件通知：列表、未读数、已读、实时推送")
 @RequiredArgsConstructor
 public class NotificationController {
 
     private final NotificationService notificationService;
+
+    private final NotificationPushManager notificationPushManager;
 
     /**
      * 分页查询我的通知（新的在前）
@@ -86,5 +92,21 @@ public class NotificationController {
     @Operation(summary = "全部标记已读", description = "只更新未读的；返回本次实际更新的条数")
     public BaseResponse<Integer> markAllRead() {
         return ResultUtils.success(notificationService.markAllRead());
+    }
+
+    /**
+     * 订阅未读数的实时推送（SSE 长连接）
+     *
+     * <p>连接建立即推一次当前未读数，之后每次通知落库/已读变更都会在事务提交后推送。
+     * 前端断线按退避重连，并保留低频轮询兜底——单实例注册表漏推时红点仍能修正。
+     *
+     * @return SSE 发射器，方法立即返回；事件名 unread，负载形如 {"unread":3}
+     */
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @SaCheckLogin
+    @Operation(summary = "订阅未读数实时推送", description = "登录态 SSE 长连接；心跳 30s，连接最长 5 分钟")
+    public SseEmitter stream() {
+        long userId = StpUtil.getLoginIdAsLong();
+        return notificationPushManager.subscribe(userId, notificationService.unreadCount());
     }
 }

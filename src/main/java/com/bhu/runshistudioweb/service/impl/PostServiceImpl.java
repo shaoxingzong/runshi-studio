@@ -245,6 +245,12 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
                         .setSql("like_count = like_count + 1")),
                 ErrorCode.OPERATION_ERROR, "点赞失败");
 
+        // 通知帖子作者：按「作者 + 帖子」聚合成一条，重复点赞的幂等分支在上面已直接返回，不会重复投递
+        // 通知服务内部自带异常隔离，写入失败不影响点赞成功
+        if (post.getAuthorId() != null) {
+            notificationService.notifyLikeAggregated(post.getAuthorId(), userId, postId, post.getTitle());
+        }
+
         // 事务提交后再读一次最新值：事务内读到的可能是旧快照
         return toLong(this.getById(postId).getLikeCount());
     }

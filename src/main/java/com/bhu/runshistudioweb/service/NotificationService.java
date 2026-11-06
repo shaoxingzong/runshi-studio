@@ -26,6 +26,27 @@ public interface NotificationService {
                 String bizType, Long bizId, String title, String content);
 
     /**
+     * 投递「帖子被点赞」聚合通知（同一作者 + 同一帖子只有一条，随新赞更新）
+     *
+     * <p>用单条 INSERT ... ON DUPLICATE KEY UPDATE 原子写入，与 {@link #notify} 的
+     * 「撞键跳过」语义不同：这条要刷新赞数、时间并重新置为未读。累计赞数以点赞关系表为准。
+     *
+     * @param receiverId 帖子作者 ID
+     * @param actorId 点赞人 ID；与 receiverId 相等时不发（不给自己发）
+     * @param postId 帖子 ID（聚合键）
+     * @param postTitle 帖子标题快照
+     */
+    void notifyLikeAggregated(long receiverId, long actorId, long postId, String postTitle);
+
+    /**
+     * 统计指定用户的未读数（供 SSE 推送线程调用）
+     *
+     * <p>{@link #unreadCount()} 从会话取当前登录人；推送发生在事务提交后的回调里，
+     * 那里没有 Sa-Token 会话上下文，因此需要一个纯参数版本。
+     */
+    long countUnreadFor(long receiverId);
+
+    /**
      * 分页查询「我的」通知（新的在前）
      *
      * @param request 查询条件（isRead 过滤 + 分页）；可为 null，按全部 + 第一页处理
