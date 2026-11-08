@@ -29,6 +29,8 @@ const loading = ref(false);
 const error = ref('');
 
 const dialogVisible = ref(false);
+/** 保存中：防止连点重复新建证书 */
+const saving = ref(false);
 const editing = ref<AdminCertificate | null>(null);
 const form = reactive<Record<string, unknown>>({
     title: '',
@@ -160,10 +162,15 @@ function openEdit(row: AdminCertificate) {
 }
 
 async function save() {
+    // 守卫放在所有校验之前
+    if (saving.value) {
+        return;
+    }
     if (!form.title) {
         ElMessage.warning('证书名称必填');
         return;
     }
+    saving.value = true;
     try {
         if (editing.value) {
             await adminApi.certificateUpdate({ id: editing.value.id, ...form });
@@ -175,6 +182,8 @@ async function save() {
         await load();
     } catch {
         // 统一提示已在请求层
+    } finally {
+        saving.value = false;
     }
 }
 
@@ -365,7 +374,9 @@ onBeforeUnmount(disposeMemberSearch);
             </el-form>
             <template #footer>
                 <el-button @click="dialogVisible = false">取消</el-button>
-                <el-button type="primary" @click="save">保存</el-button>
+                <el-button type="primary" :loading="saving" :disabled="saving" @click="save">
+                    保存
+                </el-button>
             </template>
         </el-dialog>
     </div>

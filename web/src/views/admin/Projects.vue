@@ -20,6 +20,8 @@ const loading = ref(false);
 const error = ref('');
 
 const dialogVisible = ref(false);
+/** 保存中：防止连点重复新建项目 */
+const saving = ref(false);
 const editing = ref<AdminProject | null>(null);
 const form = reactive<Record<string, unknown>>({
     title: '',
@@ -171,6 +173,10 @@ function toTechStack(): string[] {
 }
 
 async function save() {
+    // 守卫放在所有校验之前，挡住 loading 渲染前的连点
+    if (saving.value) {
+        return;
+    }
     if (!form.title || !form.description) {
         ElMessage.warning('项目名称与摘要必填');
         return;
@@ -187,6 +193,7 @@ async function save() {
         status: form.status as number,
         sortOrder: form.sortOrder as number,
     };
+    saving.value = true;
     try {
         if (editing.value) {
             await adminApi.projectUpdate({ id: editing.value.id, ...payload });
@@ -198,6 +205,8 @@ async function save() {
         await load();
     } catch {
         // 统一提示已在请求层
+    } finally {
+        saving.value = false;
     }
 }
 
@@ -431,7 +440,9 @@ onBeforeUnmount(disposeMemberSearch);
             </el-form>
             <template #footer>
                 <el-button @click="dialogVisible = false">取消</el-button>
-                <el-button type="primary" @click="save">保存</el-button>
+                <el-button type="primary" :loading="saving" :disabled="saving" @click="save">
+                    保存
+                </el-button>
             </template>
         </el-dialog>
     </div>

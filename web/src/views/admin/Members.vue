@@ -24,6 +24,8 @@ const loading = ref(false);
 const error = ref('');
 
 const dialogVisible = ref(false);
+/** 保存中：弹窗期间连点会重复建档，必须同时做入口守卫与按钮禁用 */
+const saving = ref(false);
 const editing = ref<AdminMember | null>(null);
 const form = reactive<Record<string, unknown>>({
     // 绑定的登录账号 ID；空 = 未绑定（编辑时留空表示不修改，解绑需另设计）
@@ -129,6 +131,10 @@ function openEdit(row: AdminMember) {
 }
 
 async function save() {
+    // 守卫放在最前面：ElMessageBox.confirm 是 await 的，等待期间连点最容易漏进来
+    if (saving.value) {
+        return;
+    }
     if (!form.name) {
         ElMessage.warning('姓名必填');
         return;
@@ -152,6 +158,7 @@ async function save() {
     if (!payload.userId) {
         delete payload.userId;
     }
+    saving.value = true;
     try {
         if (editing.value) {
             await adminApi.memberUpdate({ id: editing.value.id, ...payload });
@@ -163,6 +170,8 @@ async function save() {
         await load();
     } catch {
         // 错误提示已在请求层统一处理
+    } finally {
+        saving.value = false;
     }
 }
 
@@ -361,7 +370,9 @@ onBeforeUnmount(disposeUserSearch);
             </el-form>
             <template #footer>
                 <el-button @click="dialogVisible = false">取消</el-button>
-                <el-button type="primary" @click="save">保存</el-button>
+                <el-button type="primary" :loading="saving" :disabled="saving" @click="save">
+                    保存
+                </el-button>
             </template>
         </el-dialog>
     </div>

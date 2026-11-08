@@ -223,6 +223,10 @@ function isVerdictChanged(): boolean {
 }
 
 async function save() {
+    // 守卫放在所有校验之前：确认弹窗 await 期间连点会漏进来
+    if (saving.value) {
+        return;
+    }
     if (!form.textbookName || !form.chapterName) {
         ElMessage.warning('请填写教材与章节');
         return;
@@ -378,6 +382,10 @@ function openImport() {
 
 /** 先校验（dryRun）：拿到解析数量与逐行错误 */
 async function checkImport() {
+    // 只补前端守卫，不接幂等令牌（批量导入耗时长，30s 窗口反而会误伤重试）
+    if (importChecking.value || importSaving.value) {
+        return;
+    }
     if (!importTarget.textbookName || !importTarget.chapterName) {
         ElMessage.warning('请填写教材与章节');
         return;
@@ -404,6 +412,10 @@ async function checkImport() {
 
 /** 确认导入：只有校验通过（无错误）才允许 */
 async function confirmImport() {
+    // 这是「一次出好几份」最危险的一处：成功后关弹窗，但守卫必须在任何校验前
+    if (importSaving.value || importChecking.value) {
+        return;
+    }
     if (!importPreview.value || importPreview.value.errors.length > 0) {
         return;
     }
@@ -715,7 +727,14 @@ onMounted(async () => {
 
                 <div class="form-actions">
                     <el-button @click="dialogVisible = false">取消</el-button>
-                    <el-button type="primary" :loading="saving" @click="save">保存</el-button>
+                    <el-button
+                        type="primary"
+                        :loading="saving"
+                        :disabled="saving"
+                        @click="save"
+                    >
+                        保存
+                    </el-button>
                 </div>
             </div>
         </el-drawer>
@@ -786,11 +805,17 @@ onMounted(async () => {
 
             <template #footer>
                 <el-button @click="importVisible = false">取消</el-button>
-                <el-button :loading="importChecking" @click="checkImport">校验</el-button>
+                <el-button
+                    :loading="importChecking"
+                    :disabled="importChecking || importSaving"
+                    @click="checkImport"
+                >
+                    校验
+                </el-button>
                 <el-button
                     type="primary"
                     :loading="importSaving"
-                    :disabled="!importPreview || importPreview.errors.length > 0"
+                    :disabled="importSaving || importChecking || !importPreview || importPreview.errors.length > 0"
                     @click="confirmImport"
                 >
                     确认导入
