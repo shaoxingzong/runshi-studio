@@ -1,5 +1,6 @@
 package com.bhu.runshistudioweb.service.impl;
 
+import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.util.StrUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
@@ -7,6 +8,7 @@ import com.bhu.runshistudioweb.exception.BusinessException;
 import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.config.AiProperties;
 import com.bhu.runshistudioweb.exception.ThrowUtils;
+import com.bhu.runshistudioweb.manager.IdempotencyManager;
 import com.bhu.runshistudioweb.manager.KnowledgeBaseManager;
 import com.bhu.runshistudioweb.mapper.StudioCertificateMapper;
 import com.bhu.runshistudioweb.mapper.StudioKnowledgeChunkMapper;
@@ -106,6 +108,9 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
     /** 知识库管理器：切分、向量化入库、向量检索、向量清理 */
     private final KnowledgeBaseManager knowledgeBaseManager;
 
+    /** 创建型接口的请求幂等令牌（手工录入）；Redis 不可用时自动放行 */
+    private final IdempotencyManager idempotencyManager;
+
     /** 检索参数（topK / minScore）来自配置：阈值必须可调，因为它依赖具体向量模型的分值分布，换模型就要重新校准。 */
     private final AiProperties aiProperties;
 
@@ -141,7 +146,12 @@ public class KnowledgeDocServiceImpl implements KnowledgeDocService {
         ThrowUtils.throwIf(content.length() > MAX_CONTENT_LENGTH, ErrorCode.PARAMS_ERROR,
                 "文档正文不能超过 " + MAX_CONTENT_LENGTH + " 个字符");
 
-        // 手工录入不参与幂等：没有业务主键可比，每次调用都新建一篇文档
+        // 手工录入没有业务主键可比，所以不走数据库唯一键，改用请求令牌挡重复提交。
+        // 放在长度/空值校验之后、切分向量化之前：坏请求不占用窗口，重复点击不会切两遍。
+        // 管理员身份取会话，不接受前端传入；令牌为空时 Manager 直接放行（兼容旧客户端）。
+        idempotencyManager.assertFirstRequest(
+                StpUtil.getLoginIdAsLong(), "knowledge", request.getRequestId());
+
         return ingest(title, content, KnowledgeSourceTypeEnum.MANUAL.getValue(), null, null);
     }
 

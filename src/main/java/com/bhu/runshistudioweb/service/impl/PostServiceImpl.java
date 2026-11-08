@@ -9,6 +9,7 @@ import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.exception.ThrowUtils;
 import com.bhu.runshistudioweb.manager.ContentAuditManager;
+import com.bhu.runshistudioweb.manager.IdempotencyManager;
 import com.bhu.runshistudioweb.mapper.StudioMemberMapper;
 import com.bhu.runshistudioweb.mapper.StudioPostCommentMapper;
 import com.bhu.runshistudioweb.mapper.StudioPostLikeMapper;
@@ -124,6 +125,9 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
     /** 用户（sys_user） */
     private final SysUserMapper sysUserMapper;
 
+    /** 创建型接口的请求幂等令牌（发帖）；Redis 不可用时自动放行 */
+    private final IdempotencyManager idempotencyManager;
+
     /** 发布帖子（先审后发） */
     @Override
     public long addPost(PostAddRequest request) {
@@ -143,6 +147,10 @@ public class PostServiceImpl extends ServiceImpl<StudioPostMapper, StudioPost> i
 
         // 图片必须是站内路径：外链图会成为追踪像素（泄露访客 IP），也可能将来裂图
         assertImagesAreInternal(content);
+
+        // 幂等令牌放在「参数/权限校验之后、落库之前」：校验失败的请求不占用窗口，
+        // 重复请求也不会重复触发异步 AI 审核。Redis 挂了会放行，由前端 submitting 守卫兜底。
+        idempotencyManager.assertFirstRequest(userId, "post", request.getRequestId());
 
         StudioPost post = new StudioPost();
         post.setTitle(StrUtil.trim(request.getTitle()));

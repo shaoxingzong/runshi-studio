@@ -10,6 +10,7 @@ import com.baomidou.mybatisplus.spring.service.impl.ServiceImpl;
 import com.bhu.runshistudioweb.exception.ErrorCode;
 import com.bhu.runshistudioweb.exception.ThrowUtils;
 import com.bhu.runshistudioweb.manager.ContentAuditManager;
+import com.bhu.runshistudioweb.manager.IdempotencyManager;
 import com.bhu.runshistudioweb.mapper.StudioMemberMapper;
 import com.bhu.runshistudioweb.mapper.StudioPostCommentMapper;
 import com.bhu.runshistudioweb.mapper.StudioPostMapper;
@@ -96,6 +97,9 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
     /** 举报表 Mapper */
     private final StudioPostReportMapper studioPostReportMapper;
 
+    /** 创建型接口的请求幂等令牌（评论）；Redis 不可用时自动放行 */
+    private final IdempotencyManager idempotencyManager;
+
     /** 发表评论，或回复某条顶层评论（先审后发） */
     @Override
     public long addComment(PostCommentAddRequest request) {
@@ -120,6 +124,9 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
                             || parent.getParentId() != null,
                     ErrorCode.PARAMS_ERROR, "只能回复帖子下的顶层评论");
         }
+
+        // 校验通过后才消费令牌：参数错误的请求不占用窗口，重复请求也不会重复触发 AI 审核
+        idempotencyManager.assertFirstRequest(userId, "comment", request.getRequestId());
 
         // 组装实体：状态固定写待审，不读请求体里的任何状态字段（先审后发）
         StudioPostComment comment = new StudioPostComment();

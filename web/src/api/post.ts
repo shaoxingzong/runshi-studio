@@ -26,9 +26,14 @@ export const postApi = {
 
     myDetail: (id: string) => http.get<PostSelfDetail>('/post/my/detail', { id }),
 
-    // 发帖（仅工作室成员）
-    add: (body: { title: string; content: string; summary?: string; coverImage?: string }) =>
-        http.post<string>('/post/add', body),
+    // 发帖（仅工作室成员）：requestId 为一次性幂等令牌，失败重试须复用
+    add: (body: {
+        title: string;
+        content: string;
+        summary?: string;
+        coverImage?: string;
+        requestId?: string;
+    }) => http.post<string>('/post/add', body),
 
     // 修改自己的文章：待审 / 驳回 / 已通过均可；保存后重新送审
     updateMine: (body: {
@@ -44,9 +49,13 @@ export const postApi = {
     // 某帖子的公开评论：已通过，楼中楼已由后端组装好
     commentList: (postId: string) => http.get<PostComment[]>('/post/comment/list', { postId }),
 
-    // 发表评论 / 回复某条顶层评论（登录用户）
-    commentAdd: (body: { postId: string; content: string; parentId?: string | null }) =>
-        http.post<string>('/post/comment/add', body),
+    // 发表评论 / 回复某条顶层评论（登录用户）：requestId 为一次性幂等令牌
+    commentAdd: (body: {
+        postId: string;
+        content: string;
+        parentId?: string | null;
+        requestId?: string;
+    }) => http.post<string>('/post/comment/add', body),
 
     // 管理端（全部要求 admin）
 

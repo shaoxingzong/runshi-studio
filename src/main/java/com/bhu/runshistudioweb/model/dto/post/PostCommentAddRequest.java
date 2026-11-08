@@ -34,4 +34,11 @@ public class PostCommentAddRequest implements Serializable {
 
     /** 父评论 ID（选填）：回复某条评论时填；直接评论帖子时不填 */
     private Long parentId;
+
+    /**
+     * 一次性请求令牌（选填）：评论框获得焦点时生成，重复提交 / 超时重试复用同一个值。
+     * 为空时服务端跳过幂等检查，兼容旧客户端。
+     */
+    @Size(max = 64, message = "请求令牌过长")
+    private String requestId;
 }

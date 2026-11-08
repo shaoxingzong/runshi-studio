@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { postApi } from '@/api/post';
 import { reportApi } from '@/api/report';
+import { createRequestIdHolder } from '@/api/idempotency';
 import { usePageMeta } from '@/composables/usePageMeta';
 import ErrorRetry from '@/components/ErrorRetry.vue';
 import SmartImage from '@/components/SmartImage.vue';
@@ -192,14 +193,27 @@ function requireLogin(action: string): boolean {
     return false;
 }
 
+/**
+ * 评论 / 回复的防重：共用一个 submitting 守卫，但各自持有独立令牌
+ * （顶层评论框和楼中楼回复框是两个不同的表单，不能互相挡）。
+ * 失败重试复用同一个令牌，成功后才换新的。
+ */
+const commentRequestId = createRequestIdHolder();
+const replyRequestId = createRequestIdHolder();
+
 async function submitComment() {
+    // 守卫必须放在最前面：连点时第二次会在 loading 渲染前进入函数
+    if (submitting.value) {
+        return;
+    }
     const text = commentText.value.trim();
     if (!text || !requireLogin('评论')) {
         return;
     }
     submitting.value = true;
     try {
-        await postApi.commentAdd({ postId: id, content: text });
+        await postApi.commentAdd({ postId: id, content: text, requestId: commentRequestId.get() });
+        commentRequestId.reset();
         // 先审后发：评论此刻是待审状态，不会出现在列表里，必须说清楚
         ElMessage.success('评论已提交，审核通过后可见');
         commentText.value = '';
@@ -209,13 +223,22 @@ async function submitComment() {
 }
 
 async function submitReply(parentId: string) {
+    if (submitting.value) {
+        return;
+    }
     const text = replyText.value.trim();
     if (!text || !requireLogin('回复')) {
         return;
     }
     submitting.value = true;
     try {
-        await postApi.commentAdd({ postId: id, content: text, parentId });
+        await postApi.commentAdd({
+            postId: id,
+            content: text,
+            parentId,
+            requestId: replyRequestId.get(),
+        });
+        replyRequestId.reset();
         ElMessage.success('回复已提交，审核通过后可见');
         replyText.value = '';
         replyTo.value = null;
@@ -359,7 +382,12 @@ usePageMeta({
                     />
                     <div class="composer-foot">
                         <span class="muted tip">评论需审核通过后才会公开显示</span>
-                        <el-button type="primary" :loading="submitting" @click="submitComment">
+                        <el-button
+                            type="primary"
+                            :loading="submitting"
+                            :disabled="submitting"
+                            @click="submitComment"
+                        >
                             发表评论
                         </el-button>
                     </div>
@@ -443,6 +471,7 @@ usePageMeta({
                                     type="primary"
                                     size="small"
                                     :loading="submitting"
+                                    :disabled="submitting"
                                     @click="submitReply(comment.id)"
                                 >
                                     提交回复

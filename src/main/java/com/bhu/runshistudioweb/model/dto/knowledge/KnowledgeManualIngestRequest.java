@@ -25,4 +25,11 @@ public class KnowledgeManualIngestRequest implements Serializable {
     @NotBlank(message = "文档正文不能为空")
     @Size(max = 20000, message = "文档正文不能超过 20000 个字符")
     private String content;
+
+    /**
+     * 一次性请求令牌（选填）：打开录入弹窗时生成，重复点击复用同一个值。
+     * 为空时服务端跳过幂等检查，兼容旧客户端。
+     */
+    @Size(max = 64, message = "请求令牌过长")
+    private String requestId;
 }

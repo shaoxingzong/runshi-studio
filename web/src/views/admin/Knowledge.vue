@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { adminApi } from '@/api/admin';
+import { createRequestIdHolder } from '@/api/idempotency';
 import ErrorRetry from '@/components/ErrorRetry.vue';
 import type { KnowledgeDoc, PageResult } from '@/api/types';
 
@@ -27,6 +28,15 @@ const lastResult = ref('');
 const manualVisible = ref(false);
 const manualSaving = ref(false);
 const manualForm = reactive({ title: '', content: '' });
+/** 手工录入的一次性令牌：每次打开弹窗换一个，失败重试复用 */
+const manualRequestId = createRequestIdHolder();
+
+function openManual() {
+    manualRequestId.reset();
+    manualForm.title = '';
+    manualForm.content = '';
+    manualVisible.value = true;
+}
 
 async function load() {
     loading.value = true;
@@ -69,6 +79,10 @@ async function syncOne() {
 
 /** 手工录入一篇文档 */
 async function submitManual() {
+    // 守卫放在最前面：连点第二下会在按钮 loading 渲染前进入函数
+    if (manualSaving.value) {
+        return;
+    }
     if (!manualForm.title.trim() || !manualForm.content.trim()) {
         ElMessage.warning('标题与正文必填');
         return;
@@ -76,8 +90,9 @@ async function submitManual() {
     manualSaving.value = true;
     try {
         await runBatch('手工录入', () =>
-            adminApi.docManual(manualForm.title.trim(), manualForm.content),
+            adminApi.docManual(manualForm.title.trim(), manualForm.content, manualRequestId.get()),
         );
+        manualRequestId.reset();
         manualVisible.value = false;
         manualForm.title = '';
         manualForm.content = '';
@@ -143,7 +158,7 @@ onMounted(load);
             <span class="spacer" />
             <el-button type="primary" @click="runBatch('全量同步', adminApi.docSyncAll)">全量同步</el-button>
             <el-button type="warning" @click="runBatch('重建向量', adminApi.docReindexAll)">重建向量</el-button>
-            <el-button type="success" @click="manualVisible = true">手工录入</el-button>
+            <el-button type="success" @click="openManual">手工录入</el-button>
         </div>
 
         <el-alert
@@ -254,7 +269,14 @@ onMounted(load);
 
             <template #footer>
                 <el-button @click="manualVisible = false">取消</el-button>
-                <el-button type="primary" :loading="manualSaving" @click="submitManual">录入</el-button>
+                <el-button
+                    type="primary"
+                    :loading="manualSaving"
+                    :disabled="manualSaving"
+                    @click="submitManual"
+                >
+                    录入
+                </el-button>
             </template>
         </el-dialog>
     </div>

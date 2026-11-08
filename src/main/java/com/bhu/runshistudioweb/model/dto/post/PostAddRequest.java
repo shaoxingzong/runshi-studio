@@ -32,4 +32,11 @@ public class PostAddRequest implements Serializable {
     /** 封面图 URL（选填，≤512）：为空时由 Service 取正文第一张图 */
     @Size(max = 512, message = "帖子封面地址过长")
     private String coverImage;
+
+    /**
+     * 一次性请求令牌（选填）：前端进入表单时生成，重复提交 / 超时重试应复用同一个值。
+     * 为空时服务端跳过幂等检查，兼容旧客户端。
+     */
+    @Size(max = 64, message = "请求令牌过长")
+    private String requestId;
 }

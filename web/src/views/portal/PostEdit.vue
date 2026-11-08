@@ -7,6 +7,7 @@ import 'md-editor-v3/lib/style.css';
 import { postApi, uploadPostImage } from '@/api/post';
 import { generateMeta, polishStream } from '@/api/aiCompose';
 import { isRequestError } from '@/api/request';
+import { createRequestIdHolder } from '@/api/idempotency';
 import { useUserStore } from '@/stores/user';
 
 /** 发帖 / 修改自己的文章（仅工作室成员；修改后重新送审） */
@@ -260,7 +261,19 @@ async function generateTitleSummary() {
     }
 }
 
+/**
+ * 提交 / 保存
+ *
+ * 防重两道：① 函数入口的 submitting 守卫（挡连点、回车、loading 渲染前的竞态）；
+ * ② 后端 Redis 幂等令牌（挡超时重试、多标签页）。失败重试复用同一个令牌。
+ */
+const postRequestId = createRequestIdHolder();
+
 async function submit() {
+    // 必须在任何校验之前：连点时第二次会在 submitting 赋值后的下一个微任务里进来
+    if (submitting.value || loadingDraft.value) {
+        return;
+    }
     if (!form.title.trim()) {
         ElMessage.warning('请填写标题');
         return;
@@ -283,7 +296,9 @@ async function submit() {
             // 改完必然回到待审：这句话必须说清楚，否则作者会以为改完就生效了
             ElMessage.success('已保存，文章已重新送审');
         } else {
-            await postApi.add(payload);
+            await postApi.add({ ...payload, requestId: postRequestId.get() });
+            // 新建成功后换新令牌：万一同页再开一次表单，不会被旧令牌挡住
+            postRequestId.reset();
             // 先审后发：此刻内容是待审状态，不会出现在公开列表里
             ElMessage.success('已提交，审核通过后可见');
         }
@@ -402,7 +417,7 @@ async function submit() {
                 <el-button
                     type="primary"
                     :loading="submitting"
-                    :disabled="loadingDraft"
+                    :disabled="submitting || loadingDraft"
                     @click="submit"
                 >
                     {{ isEditing ? '保存修改' : '提交' }}

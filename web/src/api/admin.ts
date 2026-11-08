@@ -70,6 +70,6 @@ export const adminApi = {
     docReindexAll: () => http.long<BatchResult>('/knowledge/doc/reindex-all', {}),
     docRebuild: (id: string) => http.long<IngestResult>('/knowledge/doc/rebuild', { id }),
     docDelete: (id: string) => http.post<boolean>('/knowledge/doc/delete', { id }),
-    docManual: (title: string, content: string) =>
-        http.long<IngestResult>('/knowledge/doc/manual', { title, content }),
+    docManual: (title: string, content: string, requestId?: string) =>
+        http.long<IngestResult>('/knowledge/doc/manual', { title, content, requestId }),
 };
