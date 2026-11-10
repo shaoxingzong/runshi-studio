@@ -297,6 +297,10 @@ export interface PostComment {
     authorAvatar?: string | null;
     // null 表示直接评论帖子；非 null 表示回复某条评论
     parentId?: string | null;
+    // 被回复的评论 ID（= parentId）；非空时前端在正文前显示「@某某」
+    replyToId?: string | null;
+    // 被回复者展示名；父评论已删除或待审时为空，此时不显示 @
+    replyToName?: string | null;
     content: string;
     // 楼层号（回复某条评论时为 null）
     floor?: number | null;

@@ -43,8 +43,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -75,6 +79,9 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
     /** 分页每页条数的默认值与上限 */
     private static final long DEFAULT_PAGE_SIZE = 10L;
     private static final long MAX_PAGE_SIZE = 50L;
+
+    /** 回复链最大层级（顶层评论算第 1 层）：展示是扁平的，上限只用于挡住恶意的无限嵌套 */
+    private static final int MAX_REPLY_DEPTH = 10;
 
     /** 帖子表 Mapper */
     private final StudioPostMapper studioPostMapper;
@@ -119,10 +126,12 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
         Long parentId = request.getParentId();
         if (parentId != null) {
             StudioPostComment parent = this.getById(parentId);
-            ThrowUtils.throwIf(parent == null
-                            || !parent.getPostId().equals(request.getPostId())
-                            || parent.getParentId() != null,
-                    ErrorCode.PARAMS_ERROR, "只能回复帖子下的顶层评论");
+            // parentId 记录「直接回复谁」：同一帖子内任意一层评论都能被回复，展示时再拍平到顶层楼层
+            ThrowUtils.throwIf(parent == null || !parent.getPostId().equals(request.getPostId()),
+                    ErrorCode.PARAMS_ERROR, "只能回复同一帖子下的评论");
+            // 层级上限只防恶意链式嵌套；正常对话几乎不会碰到
+            ThrowUtils.throwIf(replyDepth(parent) >= MAX_REPLY_DEPTH,
+                    ErrorCode.PARAMS_ERROR, "回复层级过深，请直接回复该评论所在楼层");
         }
 
         // 校验通过后才消费令牌：参数错误的请求不占用窗口，重复请求也不会重复触发 AI 审核
@@ -203,8 +212,10 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
     /**
      * 评论审核通过后投递互动通知（AI 判安全与人工审核通过两条路径共用）
      *
-     * <p>一条评论最多打扰两个人：帖子作者收到 POST_COMMENTED（逐条），父评论作者收到
-     * COMMENT_REPLIED。当两者是同一人时只发前者，避免同一事件双重提醒。
+     * <p>一条评论只打扰一个目标：
+     * 顶层评论通知帖子作者（POST_COMMENTED）；层内互相回复只通知被 @ 的那个人（COMMENT_REPLIED），
+     * 不再额外通知帖子作者——否则楼层里两个人对话会把楼主反复吵醒。
+     * 「不给自己发」由 NotificationService.notify 内置，这里不用重复判断。
      *
      * <p>批量审核场景下，帖子、评论者展示名、父评论作者都一次查完（3 次查询封顶），
      * 避免逐条评论各查一次库的 N+1。
@@ -245,21 +256,23 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
             String actorName = actorNames.getOrDefault(comment.getAuthorId(), "有人");
             String summary = commentSummary(comment.getContent());
 
-            // ① 被回复者：沿用原有 COMMENT_REPLIED 行为与文案（不改已上线语义）
+            // ① 层内回复：只通知被 @ 的人，文案带上 @ 姓名；不额外打扰帖子作者。
+            //    bizId 用评论 ID 而不是帖子 ID：同一楼层里多次被 @ 时每条都能独立留下，
+            //    否则会被 uk_receiver_biz 唯一键吞掉，只剩第一条（「互相 @ 漏通知」的根因）。
             Long parentAuthorId = comment.getParentId() == null
                     ? null : parentAuthors.get(comment.getParentId());
-            if (parentAuthorId != null) {
-                notificationService.notify(parentAuthorId, comment.getAuthorId(),
-                        NotificationTypeEnum.COMMENT_REPLIED.getValue(), "POST", comment.getPostId(),
-                        "有人回复了你的评论",
-                        "你的评论在《" + postTitle + "》下收到了新回复");
+            if (comment.getParentId() != null) {
+                if (parentAuthorId != null) {
+                    notificationService.notify(parentAuthorId, comment.getAuthorId(),
+                            NotificationTypeEnum.COMMENT_REPLIED.getValue(), "COMMENT", comment.getId(),
+                            actorName + " 在回复中 @ 了你",
+                            "《" + postTitle + "》：" + summary);
+                }
+                continue;
             }
 
-            // ② 帖子作者：新增的逐条通知。bizId 用评论 ID，同一帖子多条评论不会被唯一键吞掉。
-            //    若作者同时也是被回复者，上面已有 COMMENT_REPLIED，不再叠加一条，避免双重打扰。
-            boolean authorIsParentAuthor = parentAuthorId != null && post != null
-                    && Objects.equals(parentAuthorId, post.getAuthorId());
-            if (!authorIsParentAuthor && post != null && post.getAuthorId() != null) {
+            // ② 顶层评论：逐条通知帖子作者。bizId 用评论 ID，同一帖子多条评论不会被唯一键吞掉
+            if (post != null && post.getAuthorId() != null) {
                 notificationService.notify(post.getAuthorId(), comment.getAuthorId(),
                         NotificationTypeEnum.POST_COMMENTED.getValue(), "COMMENT", comment.getId(),
                         actorName + " 评论了你的帖子",
@@ -316,8 +329,23 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
         Map<Long, AuthorProfile> profiles = authorProfiles(all.stream()
                 .map(StudioPostComment::getAuthorId).toList());
 
+        // 被回复者姓名：parentId 指向的是某条评论（可能是顶层、也可能是层内另一条回复）。
+        // 一次 IN 查出父评论作者，再批量取名，避免渲染 @ 时逐条反查。
+        Set<Long> parentIds = all.stream()
+                .map(StudioPostComment::getParentId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        Map<Long, Long> parentAuthorIds = parentIds.isEmpty() ? Map.of()
+                : this.list(new LambdaQueryWrapper<StudioPostComment>()
+                        .in(StudioPostComment::getId, parentIds)
+                        .select(StudioPostComment::getId, StudioPostComment::getAuthorId))
+                .stream().collect(Collectors.toMap(
+                        StudioPostComment::getId, StudioPostComment::getAuthorId, (a, b) -> a));
+        // 父评论作者可能也是「非在队成员」：displayNames 内部先查成员档案、再拿账号昵称兜底
+        Map<Long, String> parentNames = displayNames(new HashSet<>(parentAuthorIds.values()));
+
         List<PostCommentVO> tops = new ArrayList<>();
-        Map<Long, List<PostCommentVO>> repliesByParent = new HashMap<>();
+        Map<Long, List<PostCommentVO>> childrenByParent = new HashMap<>();
         for (StudioPostComment comment : all) {
             PostCommentVO vo = new PostCommentVO();
             BeanUtils.copyProperties(comment, vo);
@@ -326,15 +354,21 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
                 vo.setAuthorName(author.name());
                 vo.setAuthorAvatar(author.avatar());
             }
-            if (comment.getParentId() == null) {
-                tops.add(vo);
+            if (comment.getParentId() != null) {
+                vo.setReplyToId(comment.getParentId());
+                Long parentAuthorId = parentAuthorIds.get(comment.getParentId());
+                if (parentAuthorId != null) {
+                    vo.setReplyToName(parentNames.get(parentAuthorId));
+                }
+                childrenByParent.computeIfAbsent(comment.getParentId(), key -> new ArrayList<>()).add(vo);
             } else {
-                repliesByParent.computeIfAbsent(comment.getParentId(), key -> new ArrayList<>()).add(vo);
+                tops.add(vo);
             }
         }
-        // 挂上各自的回复；没有回复的保持空列表（VO 里已初始化，前端可直接 v-for）
+        // 「真存储、扁显示」：每个顶层评论下收集全部后代（不限层级），按 id 升序拍平到 children。
+        // 父评论未通过审核时，子评论不可达（与之前一样不会出现在公开列表里）。
         for (PostCommentVO top : tops) {
-            top.setChildren(repliesByParent.getOrDefault(top.getId(), List.of()));
+            top.getChildren().addAll(flattenDescendants(top.getId(), childrenByParent));
         }
         return tops;
     }
@@ -460,27 +494,17 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
 
         long postId = target.getPostId();
 
-        this.update(new LambdaUpdateWrapper<StudioPostComment>()
-                .eq(StudioPostComment::getId, id)
-                .set(StudioPostComment::getDeletedBy, operatorId));
+        // 一次查全帖的 id/parentId，在内存里迭代收集全部后代：链式回复（A 回 B、B 回 C）也要一起删。
+        // 用 visited 防脏数据成环，用迭代而非递归避免栈溢出。
+        List<Long> removingIds = collectDescendantIds(postId, id);
 
-        List<Long> removingIds = this.list(new LambdaQueryWrapper<StudioPostComment>()
-                        .select(StudioPostComment::getId)
-                        .eq(StudioPostComment::getPostId, postId)
-                        .and(nested -> nested
-                                .eq(StudioPostComment::getId, id)
-                                .or()
-                                .eq(StudioPostComment::getParentId, id)))
-                .stream()
-                .map(StudioPostComment::getId)
-                .toList();
+        this.update(new LambdaUpdateWrapper<StudioPostComment>()
+                .in(StudioPostComment::getId, removingIds)
+                .set(StudioPostComment::getDeletedBy, operatorId));
 
         int rows = baseMapper.delete(new LambdaQueryWrapper<StudioPostComment>()
                 .eq(StudioPostComment::getPostId, postId)
-                .and(nested -> nested
-                        .eq(StudioPostComment::getId, id)
-                        .or()
-                        .eq(StudioPostComment::getParentId, id)));
+                .in(StudioPostComment::getId, removingIds));
 
         // 同事务关闭被删评论上的待处理举报（含被连带删除的回复）
         closePendingReports(removingIds, operatorId);
@@ -496,6 +520,85 @@ public class PostCommentServiceImpl extends ServiceImpl<StudioPostCommentMapper,
     }
 
     // 私有工具
+
+    /**
+     * 收集某个顶层评论下的全部后代（含多层），按 id 升序返回
+     *
+     * <p>用迭代而不是递归：即使数据被脏写成环，也不会栈溢出；visited 保证每个节点只收一次。
+     */
+    private List<PostCommentVO> flattenDescendants(
+            Long rootId, Map<Long, List<PostCommentVO>> childrenByParent) {
+        List<PostCommentVO> result = new ArrayList<>();
+        Set<Long> visited = new HashSet<>();
+        Deque<Long> stack = new ArrayDeque<>();
+        stack.push(rootId);
+        while (!stack.isEmpty()) {
+            Long parentId = stack.pop();
+            for (PostCommentVO child : childrenByParent.getOrDefault(parentId, List.of())) {
+                // 同一节点只收一次：正常数据不会重复，但不能让脏数据把接口拖死
+                if (!visited.add(child.getId())) {
+                    continue;
+                }
+                result.add(child);
+                stack.push(child.getId());
+            }
+        }
+        // 雪花 ID 单调递增：按 id 排序等价于按发布时间排序，深链里的回复也落在对话发生的顺序上
+        result.sort(Comparator.comparing(PostCommentVO::getId));
+        return result;
+    }
+
+    /**
+     * 收集某条评论及其全部后代的 ID（含自身），用于删除
+     *
+     * <p>一次查出该帖所有评论的 id/parentId，在内存里按父子关系迭代展开；
+     * visited 防环、迭代防栈溢出，也不需要一层一层回表查。
+     */
+    private List<Long> collectDescendantIds(long postId, long rootId) {
+        List<StudioPostComment> all = this.list(new LambdaQueryWrapper<StudioPostComment>()
+                .eq(StudioPostComment::getPostId, postId)
+                .select(StudioPostComment::getId, StudioPostComment::getParentId));
+
+        Map<Long, List<Long>> childrenByParent = new HashMap<>();
+        for (StudioPostComment comment : all) {
+            if (comment.getParentId() != null) {
+                childrenByParent.computeIfAbsent(comment.getParentId(), key -> new ArrayList<>())
+                        .add(comment.getId());
+            }
+        }
+
+        Set<Long> visited = new HashSet<>();
+        List<Long> result = new ArrayList<>();
+        Deque<Long> stack = new ArrayDeque<>();
+        stack.push(rootId);
+        visited.add(rootId);
+        result.add(rootId);
+        while (!stack.isEmpty()) {
+            Long current = stack.pop();
+            for (Long child : childrenByParent.getOrDefault(current, List.of())) {
+                if (visited.add(child)) {
+                    result.add(child);
+                    stack.push(child);
+                }
+            }
+        }
+        return result;
+    }
+
+    /** 计算一条评论的层级（顶层=1）；父链异常过长时最多走到上限即停 */
+    private int replyDepth(StudioPostComment comment) {
+        int depth = 1;
+        Long parentId = comment.getParentId();
+        while (parentId != null && depth < MAX_REPLY_DEPTH) {
+            depth++;
+            StudioPostComment parent = this.getById(parentId);
+            if (parent == null) {
+                break;
+            }
+            parentId = parent.getParentId();
+        }
+        return depth;
+    }
 
     /** 关闭被删评论上的待处理举报 */
     private void closePendingReports(List<Long> targetIds, long operatorId) {

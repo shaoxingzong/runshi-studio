@@ -35,8 +35,12 @@ const error = ref('');
 
 /** 顶层评论输入框 */
 const commentText = ref('');
-/** 正在回复的顶层评论 ID（null 表示没有打开任何回复框） */
+/** 正在回复的评论 ID（可以是顶层，也可以是层内某条回复；null 表示没打开回复框） */
 const replyTo = ref<string | null>(null);
+/** 被回复者展示名：回复框里显示「回复 @某某」，提交时 parentId 用 replyTo */
+const replyToName = ref('');
+/** 回复框所在的楼层 ID：回复框挂在楼层底部，而不是每条回复下面各开一个 */
+const replyFloor = ref<string | null>(null);
 const replyText = ref('');
 const submitting = ref(false);
 /** 点赞请求中（按钮 loading，防连点） */
@@ -201,6 +205,31 @@ function requireLogin(action: string): boolean {
 const commentRequestId = createRequestIdHolder();
 const replyRequestId = createRequestIdHolder();
 
+/**
+ * 打开回复框：target 可以是顶层评论，也可以是层内任意一条回复
+ *
+ * 同一时刻只开一个回复框，统一挂在所属楼层底部；点层内回复时自动带上「@某某」，
+ * parentId 填被回复那条的 ID，后端据此决定通知谁、VO 据此渲染 @。
+ */
+function openReply(target: PostComment, floorId: string) {
+    if (!requireLogin('回复')) {
+        return;
+    }
+    replyTo.value = target.id;
+    replyToName.value = target.authorName || '用户';
+    replyFloor.value = floorId;
+    replyText.value = '';
+    // 换目标就是一次新的提交：旧令牌若曾失败重试过，不能被新目标复用
+    replyRequestId.reset();
+}
+
+function closeReply() {
+    replyTo.value = null;
+    replyToName.value = '';
+    replyFloor.value = null;
+    replyText.value = '';
+}
+
 async function submitComment() {
     // 守卫必须放在最前面：连点时第二次会在 loading 渲染前进入函数
     if (submitting.value) {
@@ -222,12 +251,14 @@ async function submitComment() {
     }
 }
 
-async function submitReply(parentId: string) {
+async function submitReply() {
+    // 守卫必须放在最前面：连点时第二次会在 loading 渲染前进入函数
     if (submitting.value) {
         return;
     }
+    const parentId = replyTo.value;
     const text = replyText.value.trim();
-    if (!text || !requireLogin('回复')) {
+    if (!parentId || !text || !requireLogin('回复')) {
         return;
     }
     submitting.value = true;
@@ -240,8 +271,7 @@ async function submitReply(parentId: string) {
         });
         replyRequestId.reset();
         ElMessage.success('回复已提交，审核通过后可见');
-        replyText.value = '';
-        replyTo.value = null;
+        closeReply();
     } finally {
         submitting.value = false;
     }
@@ -411,7 +441,7 @@ usePageMeta({
                             <span v-if="user.userId && comment.authorId === user.userId" class="self-tag">我</span>
                             <span v-if="comment.floor" class="floor">{{ comment.floor }} 楼</span>
                             <span class="date">{{ comment.createdAt?.slice(0, 16) }}</span>
-                            <el-button link size="small" @click="replyTo = comment.id">回复</el-button>
+                            <el-button link size="small" @click="openReply(comment, comment.id)">回复</el-button>
                             <el-button link size="small" @click="openReport('comment', comment.id)">
                                 举报
                             </el-button>
@@ -427,7 +457,7 @@ usePageMeta({
                         </div>
                         <p class="comment-body">{{ comment.content }}</p>
 
-                        <!-- 楼中楼：只两层，children 由后端挂好，这里直接渲染 -->
+                        <!-- 楼中楼：一级评论是楼层，下面所有回复（含回复的回复）扁平排列 -->
                         <div v-if="comment.children?.length" class="replies">
                             <div v-for="reply in comment.children" :id="`comment-${reply.id}`" :key="reply.id" class="reply">
                                 <span class="reply-avatar">
@@ -440,8 +470,13 @@ usePageMeta({
                                 </span>
                                 <span class="author">{{ reply.authorName || '用户' }}</span>
                                 <span v-if="user.userId && reply.authorId === user.userId" class="self-tag">我</span>
+                                <template v-if="reply.replyToName">
+                                    <span class="reply-to">回复</span>
+                                    <span class="mention">@{{ reply.replyToName }}</span>
+                                </template>
                                 <span class="reply-text">{{ reply.content }}</span>
                                 <span class="date">{{ reply.createdAt?.slice(0, 16) }}</span>
+                                <el-button link size="small" @click="openReply(reply, comment.id)">回复</el-button>
                                 <el-button link size="small" @click="openReport('comment', reply.id)">
                                     举报
                                 </el-button>
@@ -457,22 +492,25 @@ usePageMeta({
                             </div>
                         </div>
 
-                        <div v-if="replyTo === comment.id" class="reply-box">
+                        <div v-if="replyFloor === comment.id && replyTo" class="reply-box">
+                            <p class="reply-target">
+                                回复 <span class="mention">@{{ replyToName }}</span>
+                            </p>
                             <el-input
                                 v-model="replyText"
                                 type="textarea"
                                 :rows="2"
                                 maxlength="1000"
-                                placeholder="回复这条评论…"
+                                :placeholder="`回复 @${replyToName}…`"
                             />
                             <div class="composer-foot">
-                                <el-button link @click="replyTo = null">取消</el-button>
+                                <el-button link @click="closeReply">取消</el-button>
                                 <el-button
                                     type="primary"
                                     size="small"
                                     :loading="submitting"
                                     :disabled="submitting"
-                                    @click="submitReply(comment.id)"
+                                    @click="submitReply"
                                 >
                                     提交回复
                                 </el-button>
@@ -817,6 +855,26 @@ h2 {
 
 .reply-text {
     margin-right: 8px;
+}
+
+/* 「回复 @某某」：@ 用品牌色区分，但不做链接——本轮不做点名字跳转 */
+
+.reply-to {
+    margin-right: 3px;
+    color: #9ca3af;
+    font-size: 12px;
+}
+
+.mention {
+    margin-right: 6px;
+    color: var(--brand);
+    font-weight: 600;
+}
+
+.reply-target {
+    margin: 0 0 6px;
+    font-size: 12px;
+    color: #6b7280;
 }
 
 .date {

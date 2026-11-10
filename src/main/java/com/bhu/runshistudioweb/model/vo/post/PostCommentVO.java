@@ -41,6 +41,16 @@ public class PostCommentVO implements Serializable {
     @JsonSerialize(using = ToStringSerializer.class)
     private Long parentId;
 
+    /**
+     * 被回复的评论 ID（= parentId，非空时表示这是一条回复）。
+     * 与 parentId 分开命名是为了前端语义清晰：parentId 决定树结构，replyToId 决定「@ 谁」。
+     */
+    @JsonSerialize(using = ToStringSerializer.class)
+    private Long replyToId;
+
+    /** 被回复者展示名（由 Service 批量填充；父评论查不到或已删除时为空，前端不显示 @） */
+    private String replyToName;
+
     /** 评论正文（纯文本） */
     private String content;
 
