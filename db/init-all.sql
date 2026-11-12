@@ -2,7 +2,7 @@
 -- 润石工作室官网 · 单文件全量初始化（仅结构 + 应用账号）
 -- ============================================================================================================
 --
--- 用途：在全新的空库上一键建好 studio_db（21 张表）并创建应用账号；不插入任何业务数据。
+-- 用途：在全新的空库上一键建好 studio_db（22 张表）并创建应用账号；不插入任何业务数据。
 -- 执行方式：
 --   ① mysql 客户端：mysql -uroot -p123456 < db/init-all.sql
 --   ② 已建好库：  mysql -uroot -p123456 studio_db < db/init-all.sql
@@ -15,7 +15,7 @@
 -- ============================================================================================================
 
 -- ============================================================================================================
--- 一、表结构（共 21 张表，DROP + CREATE）
+-- 一、表结构（共 22 张表，DROP + CREATE）
 -- ============================================================================================================
 -- 设计约定（贯穿全部表，改表前必读）：
 --   1) 主键统一用雪花算法 bigint（MyBatis-Plus ASSIGN_ID），**不自增**——便于分库分表、可提前生成 ID。
@@ -48,6 +48,7 @@
 --  19  studio_quiz_wrong         刷题错题本（唯一有状态的表）
 --  20  studio_notification       站内通知
 --  21  studio_operation_log      管理端操作日志（审计留痕）
+--  22  studio_board_item         工作室内部事项看板（仅成员可见）
 -- ============================================================================================================
 
 CREATE DATABASE IF NOT EXISTS `studio_db` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -676,6 +677,39 @@ CREATE TABLE `studio_operation_log` (
     -- 「这条内容被谁处置过」（事故反查的主路径）
     KEY `idx_target` (`target_type`, `target_id`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE = utf8mb4_unicode_ci COMMENT = '管理端操作日志表（审计留痕）';
+
+-- ------------------------------------------------------------------------------------------------------------
+-- 22 studio_board_item：工作室内部事项看板（Kanban）
+--
+-- 与 studio_post 的区别：这是「组织内部待办」，不是公开内容，因此没有审核状态、
+-- 封面、点赞、评论、浏览量；与 studio_notification 的区别：这是可流转的事项实体，
+-- 不是一次性事件快照，不给每个成员复制一行。
+-- 故意不加唯一键：同一标题的事项可以重复存在，防重复提交由 Redis 幂等令牌负责。
+-- ------------------------------------------------------------------------------------------------------------
+DROP TABLE IF EXISTS `studio_board_item`;
+
+CREATE TABLE `studio_board_item` (
+    `id` bigint NOT NULL COMMENT '主键 ID（雪花算法 ASSIGN_ID 生成，非自增）',
+    `title` varchar(128) NOT NULL COMMENT '事项标题',
+    `description` text COMMENT '事项说明（Markdown；前端渲染前必须清洗，禁止 v-html 原文）',
+    `status` tinyint NOT NULL DEFAULT '0' COMMENT '状态：0-待办, 1-进行中, 2-已完成（须与 BoardItemStatusEnum 一致）',
+    `assignee_member_id` bigint DEFAULT NULL COMMENT '负责人成员档案 ID（关联 studio_member.id；NULL=未指派）',
+    `deadline` datetime DEFAULT NULL COMMENT '截止日期时间；NULL=不设截止。过期只做高亮，不自动改状态',
+    `completed_at` datetime DEFAULT NULL COMMENT '完成时间（进入已完成时写入，回退时清空）',
+    `sort_order` int NOT NULL DEFAULT '0' COMMENT '同列内展示权重，越大越靠前',
+    `created_at` datetime NOT NULL COMMENT '创建时间',
+    `updated_at` datetime NOT NULL COMMENT '更新时间',
+    `created_by` bigint NOT NULL DEFAULT '0' COMMENT '创建人 ID',
+    `updated_by` bigint NOT NULL DEFAULT '0' COMMENT '修改人 ID',
+    `deleted_at` bigint NOT NULL DEFAULT '0' COMMENT '逻辑删除毫秒时间戳',
+    PRIMARY KEY (`id`),
+    -- 看板主查询：按状态分列，列内按截止日期升序（近的在前）
+    KEY `idx_status_deadline` (`status`, `deadline`, `deleted_at`),
+    -- 「谁还没交」：按负责人筛未完成项
+    KEY `idx_assignee_status` (`assignee_member_id`, `status`, `deleted_at`),
+    -- 逾期统计：全表扫 deadline 时走索引
+    KEY `idx_deadline` (`deadline`, `deleted_at`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COLLATE utf8mb4_unicode_ci COMMENT = '工作室内部事项看板（仅成员可见）';
 
 -- ============================================================================================================
 -- 附：初始管理员（刻意不内置，防弱口令上线）

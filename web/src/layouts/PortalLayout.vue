@@ -28,6 +28,8 @@ const navItems = [
     { path: '/posts', label: '社区' },
     { path: '/certificates', label: '荣誉墙' },
     { path: '/workspace', label: '打卡', memberOnly: true },
+    // 内部事项看板同样只对在队成员显示：后端按 studio_member 在队档案校验
+    { path: '/board', label: '事项看板', memberOnly: true },
     // 刷题同样只对在队成员显示：后端对 /quiz/** 的全部接口都做成员校验（认 studio_member 表）
     { path: '/quiz', label: '刷题', memberOnly: true },
     { path: '/ai', label: 'AI 助手' },

@@ -14,6 +14,8 @@ const menus = [
     { path: '/admin/members', label: '成员管理' },
     // 考勤统计紧挨成员管理：它回答的就是「这些人这个月来了几次」
     { path: '/admin/attendance', label: '考勤统计' },
+    // 内部事项：与考勤紧邻，都是「对内的日常管理」
+    { path: '/admin/board', label: '事项看板' },
     { path: '/admin/users', label: '用户管理' },
     { path: '/admin/projects', label: '项目管理' },
     { path: '/admin/certificates', label: '证书管理' },

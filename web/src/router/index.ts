@@ -64,6 +64,13 @@ const routes: RouteRecordRaw[] = [
                 component: () => import('@/views/portal/Workspace.vue'),
                 meta: { title: '打卡' },
             },
+            // 内部事项看板：仅在队成员可见（后端 /board/** 认 studio_member 在队档案）
+            {
+                path: 'board',
+                name: 'board',
+                component: () => import('@/views/portal/Board.vue'),
+                meta: { title: '事项看板' },
+            },
             {
                 path: 'quiz',
                 name: 'quiz',
@@ -129,6 +136,13 @@ const routes: RouteRecordRaw[] = [
                 name: 'admin-attendance',
                 component: () => import('@/views/admin/Attendance.vue'),
                 meta: { title: '考勤统计' },
+            },
+            // 内部事项看板：管理员发布/指派/下线，成员端只读并推进自己那条
+            {
+                path: 'board',
+                name: 'admin-board',
+                component: () => import('@/views/admin/Board.vue'),
+                meta: { title: '事项看板' },
             },
             {
                 path: 'users',

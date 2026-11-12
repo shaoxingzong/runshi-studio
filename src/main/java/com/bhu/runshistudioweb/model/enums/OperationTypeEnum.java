@@ -90,7 +90,24 @@ public enum OperationTypeEnum {
     REPORT_DELETE("REPORT_DELETE", "举报成立（删除内容）", TargetType.REPORT),
 
     /** 举报不成立：内容保留 */
-    REPORT_DISMISS("REPORT_DISMISS", "举报不成立", TargetType.REPORT);
+    REPORT_DISMISS("REPORT_DISMISS", "举报不成立", TargetType.REPORT),
+
+    // 工作室内部事项看板
+
+    /** 新增内部事项 */
+    BOARD_ITEM_ADD("BOARD_ITEM_ADD", "新增内部事项", TargetType.BOARD_ITEM),
+
+    /** 编辑内部事项 */
+    BOARD_ITEM_UPDATE("BOARD_ITEM_UPDATE", "编辑内部事项", TargetType.BOARD_ITEM),
+
+    /** 下线内部事项（逻辑删除） */
+    BOARD_ITEM_DELETE("BOARD_ITEM_DELETE", "下线内部事项", TargetType.BOARD_ITEM),
+
+    /** 指派 / 改派负责人（detail 只写姓名，不写正文） */
+    BOARD_ITEM_ASSIGN("BOARD_ITEM_ASSIGN", "指派事项负责人", TargetType.BOARD_ITEM),
+
+    /** 状态流转（detail 写「旧状态 → 新状态」） */
+    BOARD_ITEM_STATUS("BOARD_ITEM_STATUS", "流转事项状态", TargetType.BOARD_ITEM);
 
     /** 落库的动作码（与 DDL 中 action 列取值一致） */
     private final String code;
@@ -156,7 +173,10 @@ public enum OperationTypeEnum {
         QUIZ("QUIZ", "题库"),
 
         /** 举报记录（处置动作的对象是举报本身，内容变更另有日志） */
-        REPORT("REPORT", "举报");
+        REPORT("REPORT", "举报"),
+
+        /** 工作室内部事项看板 */
+        BOARD_ITEM("BOARD_ITEM", "内部事项");
 
         /** 落库值（studio_operation_log.target_type） */
         private final String code;
